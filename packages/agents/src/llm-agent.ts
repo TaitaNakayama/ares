@@ -100,7 +100,7 @@ function actionTool(name: keyof typeof ACTION_SCHEMAS): ToolDef {
 }
 
 const SYSTEM_PREFIX =
-  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. Prefer one action tool call plus one short `say` line (under 140 characters, plain, in character, no markdown; write money as dollars like $632,276.58, never raw cents).";
+  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. When an action is warranted, call the action tool (its `say` field carries your line) rather than `say` alone. Prefer one action tool call plus one short `say` line (under 140 characters, plain, in character, no markdown; write money as dollars like $632,276.58, never raw cents).";
 
 export class LlmBrain implements Brain {
   readonly role: AgentRole;
@@ -171,7 +171,11 @@ export class LlmBrain implements Brain {
           // An escalation with proposed options, or a report, needs room; a plain action with a line does not.
           maxOutputTokens: isReport ? 400 : tools.includes("escalate") || tools.includes("report_issue") ? 450 : 200,
         },
-        { prefer: isReport ? "cloud" : "local", localTimeoutMs: isReport ? this.reportTimeoutMs : this.actionTimeoutMs, cloudTimeoutMs: isReport ? this.reportTimeoutMs : this.actionTimeoutMs },
+        // Escalations with options and reports are long answers: give them the report deadline, and the cloud a little more.
+        (() => {
+          const long = isReport || tools.includes("escalate") || tools.includes("report_issue");
+          return { prefer: isReport ? "cloud" as const : undefined, localTimeoutMs: long ? this.reportTimeoutMs : this.actionTimeoutMs, cloudTimeoutMs: long ? this.reportTimeoutMs + 5_000 : this.actionTimeoutMs + 4_000 };
+        })(),
       );
     } catch (err) {
       this.note(false);
