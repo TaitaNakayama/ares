@@ -1,6 +1,6 @@
 # PLAN: Ares (Cal Hacks 13.0, solo)
 
-Last updated: Fri 2026-10-23 19:20 PT. Status of every foundational claim lives in [CLAIMS.md](CLAIMS.md); nothing below marked UNVERIFIED is presented as fact. Research reports with sources: [research/](research/).
+Last updated: Fri 2026-10-23 20:35 PT. **Change since v1: native iOS (Swift + SceneKit + Google Cardboard SDK) replaces Unity** (see section 9, decision 0). Status of every foundational claim lives in [CLAIMS.md](CLAIMS.md); nothing below marked UNVERIFIED is presented as fact. Research reports with sources: [research/](research/).
 
 **One line:** an AI agent team that runs procure-to-pay on its own (requests, receiving, three-way match, approvals, payments) under hard, deterministic controls, shown working on a crewed Mars base that the user commands from inside a Cardboard VR headset.
 
@@ -12,7 +12,8 @@ Verification status key: SOURCED = research with 2+ dated sources; REVIEWED = Op
 
 | Area | Choice + exact version | Why | Rejected alternative | Risk | Status |
 |---|---|---|---|---|---|
-| VR engine | **Unity 6000.0.85f1** (6.0 LTS, changeset `ee7790f1426a`, Apple Silicon) + iOS Build Support, **Universal 3D (URP)** template | Cardboard plugin's declared line is 6000.0 (README: 6000.0.58f2+); .68+ has UIScene support; latest 6.0 patch | 6000.3.27f1 (Google only confirmed 6.3 on Android); Built-in RP (failing case in cardboard#696) | Google's stated ceiling was 6000.0.62 (Jul 30). Fallback pins: 6000.0.68f1, then 6000.3.27f1 | SOURCED, review running (C-01) |
+| VR engine | **Native iOS: Swift 5 + SceneKit (per-eye offscreen render) + Google Cardboard SDK v1.36.0 C API** (head tracking, lens distortion via its Metal renderer, QR profile), built by XcodeGen + `xcodebuild`, deployed by `devicectl` | Fully headless build/deploy (overnight too); no Unity license; avoids Unity ToS 2026-06-30 §17.2(ff) on AI-agent/CLI access; plays to your native iOS experience | Unity 6000.0.85f1 + Cardboard XR 1.36.0 (installed, kept as fallback B: you press Build) | We own the stereo loop (~250 lines); SceneKit is soft-deprecated but fully working on iOS 26 | spike PASS on device (60 fps, stereo + distortion verified by remote capture); viewer check pending (C-01n) |
+| (superseded) | **Unity 6000.0.85f1** (6.0 LTS, changeset `ee7790f1426a`, Apple Silicon) + iOS Build Support, **Universal 3D (URP)** template | Cardboard plugin's declared line is 6000.0 (README: 6000.0.58f2+); .68+ has UIScene support; latest 6.0 patch | 6000.3.27f1 (Google only confirmed 6.3 on Android); Built-in RP (failing case in cardboard#696) | Google's stated ceiling was 6000.0.62 (Jul 30). Fallback pins: 6000.0.68f1, then 6000.3.27f1 | SOURCED, review running (C-01) |
 | XR plugin | **Google Cardboard XR Plugin v1.36.0** (2026-10-15), git tag `#v1.36.0` | Active (releases every 2-3 months), `resolutions.csv` includes iPhone17,1 (16 Pro), tested on iOS 26.x devices | DIY stereo (more work, no lens profile) | Not tested by Google on a 16 Pro specifically; MSAA double-render bug #442 | SOURCED (C-01, C-03, C-04) |
 | iOS build | Unity batchmode `-executeMethod` -> Xcode 26.6 project -> `xcodebuild -allowProvisioningUpdates` (automatic signing, team 6M6DG3Y544) -> `xcrun devicectl` install + launch over the network | Fully scriptable, no Xcode GUI in the loop; `ios-deploy` is broken on iOS 17+ | Xcode GUI Run button (manual) | First Xcode sign-in / profile creation may need a click | SOURCED, context-checked (C-02) |
 | Unity license | Unity Personal via one Unity Hub sign-in | Personal can't be activated headless (Unity 6.3 manual) | n/a | Needs the user once | SOURCED (C-05) |
@@ -202,6 +203,8 @@ What would make this fail on my iPhone, at the venue, at 3am:
 - [ ] Every number on screen is either cited or tagged SIMULATED
 
 ## 9. Decisions made on your behalf (override any of them)
+
+0. **Native iOS instead of Unity** (20:10). Unity's terms (updated 2026-06-30) §17.2(ff) forbid AI agents and command-line tools from invoking Unity except via Unity-authorized agentic access, and Claude does the building. Native also deploys headless. You were asked (D/B/A/C); I proceeded with the recommended D after the native spike ran at 60 fps on your phone. Fallback B (Unity, you press Build) stays available.
 
 1. **Unity 6000.0.85f1 + Cardboard 1.36.0 + URP.** This is your direction, pinned to exact versions, with fallback pins listed.
 2. **OpenAI as the live LLM provider,** because you have credits. The adapter is provider-agnostic and the rules brain is the default, so judges never wait on an API.
