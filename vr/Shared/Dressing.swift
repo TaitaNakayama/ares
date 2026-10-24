@@ -52,6 +52,43 @@ enum Dressing {
     return m
   }
 
+  // ---------------------------------------------------------------- sized text plates
+
+  /// Minimum glyph height (em, metres) for any label in the room: the decision-card detail size
+  /// (30 px at 640 px/m on the wall screens, about 0.047 m). Anything smaller is deleted, not shrunk.
+  static let minEm: CGFloat = 0.045
+  private static let plateScale: CGFloat = 700 // texture pixels per metre on label plates
+
+  private static func textWidth(_ s: String, px: CGFloat) -> CGFloat {
+    ceil((s as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: px, weight: .heavy)]).width)
+  }
+
+  /// The one stencil style used on every sign and equipment face: heavy caps on a flat plate with hairline rules.
+  /// The font shrinks to fit `rect` (never clips).
+  private static func drawPlate(_ c: CGContext, _ rect: CGRect, _ text: String, size: CGFloat, bg: PlatformColor, fg: PlatformColor) {
+    c.setFillColor(bg.cgColor)
+    c.fill(rect)
+    c.setFillColor(fg.withAlphaComponent(0.8).cgColor)
+    c.fill(CGRect(x: rect.minX + 4, y: rect.minY + 3, width: rect.width - 8, height: 2))
+    c.fill(CGRect(x: rect.minX + 4, y: rect.maxY - 5, width: rect.width - 8, height: 2))
+    let px = min(size, (rect.width - 24) / textWidth(text, px: 1))
+    let lh = PlatformFont.systemFont(ofSize: px, weight: .heavy).lineHeight
+    _ = Draw.text(text, at: CGPoint(x: rect.minX, y: rect.midY - lh / 2), size: px, weight: .heavy, color: fg, width: rect.width, align: .center)
+  }
+
+  /// A wall sign whose plate is measured from its text, with padding, and pushed off the curved wall
+  /// by the chord sagitta so its ends never sink into the panels.
+  private static func wallSign(_ text: String, deg: Float, y: Float, em: CGFloat = 0.08, bg: PlatformColor, fg: PlatformColor) -> SCNNode {
+    let px = em * plateScale
+    let wpx = ceil(textWidth(text, px: px) + px * 1.4), hpx = ceil(px * 1.9)
+    let m = picture(CGSize(width: wpx, height: hpx)) { c in drawPlate(c, CGRect(x: 0, y: 0, width: wpx, height: hpx), text, size: px, bg: bg, fg: fg) }
+    let wm = wpx / plateScale
+    let off = Float(wm * wm / (8 * CGFloat(Room.radius))) + 0.012
+    let h = holder(deg, r: Room.radius - off, y: y)
+    h.addChildNode(flat(m, w: wm, h: hpx / plateScale, at: .init(0, 0, 0)))
+    return h
+  }
+
   // ---------------------------------------------------------------- props from the bundle
 
   private static var templates: [String: SCNNode] = [:]
@@ -295,8 +332,7 @@ enum Dressing {
         c.setFillColor(PlatformColor(red: 0.95, green: 0.72, blue: 0.30, alpha: 1).cgColor)
         c.fillEllipse(in: CGRect(x: 56, y: 56, width: 34, height: 34))
         c.restoreGState()
-        _ = Draw.text("ARES", at: CGPoint(x: 0, y: 108), size: 40, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
-        _ = Draw.text("JEZERO BASE", at: CGPoint(x: 0, y: 206), size: 22, weight: .bold, color: PlatformColor(red: 0.95, green: 0.72, blue: 0.30, alpha: 1), width: 256, align: .center)
+        _ = Draw.text("ARES", at: CGPoint(x: 0, y: 100), size: 58, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
       } else {
         // Sunrise over ridges with a ring of dots for the crew.
         c.setFillColor(PlatformColor(red: 0.95, green: 0.60, blue: 0.25, alpha: 1).cgColor)
@@ -307,8 +343,7 @@ enum Dressing {
         ridge.addLine(to: CGPoint(x: 160, y: 110)); ridge.addLine(to: CGPoint(x: 250, y: 190)); ridge.addLine(to: CGPoint(x: 250, y: 250)); ridge.addLine(to: CGPoint(x: 10, y: 250))
         c.addPath(ridge); c.fillPath()
         c.restoreGState()
-        _ = Draw.text("SOL ONE-HUNDRED", at: CGPoint(x: 0, y: 36), size: 20, weight: .heavy, color: PlatformColor(red: 0.95, green: 0.72, blue: 0.30, alpha: 1), width: 256, align: .center)
-        _ = Draw.text("CREW", at: CGPoint(x: 0, y: 204), size: 30, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
+        _ = Draw.text("CREW", at: CGPoint(x: 0, y: 196), size: 50, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
         _ = ctr
       }
     }
@@ -339,9 +374,9 @@ enum Dressing {
         c.setFillColor(PlatformColor(white: 0.82, alpha: 1).cgColor)
         c.fill(CGRect(x: 205, y: 470, width: 14, height: 90)) // handle
         c.setFillColor(PlatformColor(red: 0.95, green: 0.93, blue: 0.86, alpha: 1).cgColor)
-        c.fill(CGRect(x: 30, y: 200, width: 196, height: 70)) // name tape
-        _ = Draw.text(names[i], at: CGPoint(x: 0, y: 214), size: 27, weight: .heavy, color: PlatformColor(white: 0.1, alpha: 1), width: 256, align: .center)
-        _ = Draw.text("CREW " + String(i + 1), at: CGPoint(x: 0, y: 320), size: 26, weight: .bold, color: PlatformColor(white: 1, alpha: 0.7), width: 256, align: .center)
+        c.fill(CGRect(x: 14, y: 200, width: 228, height: 64)) // name tape
+        let npx = min(30, 212 / textWidth(names[i], px: 1))
+        _ = Draw.text(names[i], at: CGPoint(x: 0, y: 232 - PlatformFont.systemFont(ofSize: npx, weight: .heavy).lineHeight / 2), size: npx, weight: .heavy, color: PlatformColor(white: 0.1, alpha: 1), width: 256, align: .center)
         // scuffs near the handle and the bottom edge
         c.setStrokeColor(PlatformColor(white: 1, alpha: 0.25).cgColor)
         c.setLineWidth(2)
@@ -408,22 +443,8 @@ enum Dressing {
       glow.addChildNode(f)
     }
     // Stencilled sign above the corner.
-    let sign = holder(-123, r: Room.radius - 0.012, y: 2.55)
-    sign.addChildNode(flat(stencil("HYDROPONICS · BAY 2", w: 640, h: 96, bg: PlatformColor(red: 0.08, green: 0.22, blue: 0.12, alpha: 1), fg: PlatformColor(red: 0.85, green: 1.0, blue: 0.85, alpha: 1)), w: 1.3, h: 0.195, at: .init(0, 0, 0)))
-    out.addChildNode(sign)
+    out.addChildNode(wallSign("HYDROPONICS", deg: -123, y: 2.55, bg: PlatformColor(red: 0.08, green: 0.22, blue: 0.12, alpha: 1), fg: PlatformColor(red: 0.85, green: 1.0, blue: 0.85, alpha: 1)))
     out.addChildNode(h)
-  }
-
-  /// A stencilled label plate: bold caps on a flat colour with hazard-style end caps.
-  private static func stencil(_ text: String, w: CGFloat, h: CGFloat, bg: PlatformColor, fg: PlatformColor) -> SCNMaterial {
-    picture(CGSize(width: w, height: h)) { c in
-      c.setFillColor(bg.cgColor)
-      c.fill(CGRect(x: 0, y: 0, width: w, height: h))
-      c.setFillColor(fg.withAlphaComponent(0.85).cgColor)
-      c.fill(CGRect(x: 4, y: 4, width: w - 8, height: 3))
-      c.fill(CGRect(x: 4, y: h - 7, width: w - 8, height: 3))
-      _ = Draw.text(text, at: CGPoint(x: 0, y: h * 0.18), size: h * 0.40, weight: .heavy, color: fg, width: w, align: .center)
-    }
   }
 
   // ---------------------------------------------------------------- storage
@@ -455,9 +476,7 @@ enum Dressing {
         out.addChildNode(bh)
       }
     }
-    let sign = holder(-142, r: Room.radius - 0.012, y: 2.4)
-    sign.addChildNode(flat(stencil("STORES A · DRY GOODS", w: 640, h: 96, bg: PlatformColor(red: 0.85, green: 0.62, blue: 0.12, alpha: 1), fg: PlatformColor(white: 0.08, alpha: 1)), w: 1.2, h: 0.18, at: .init(0, 0, 0)))
-    out.addChildNode(sign)
+    out.addChildNode(wallSign("STORES A", deg: -142, y: 2.4, bg: PlatformColor(red: 0.85, green: 0.62, blue: 0.12, alpha: 1), fg: PlatformColor(white: 0.08, alpha: 1)))
   }
 
   // ---------------------------------------------------------------- equipment with stencilled labels
@@ -471,9 +490,7 @@ enum Dressing {
       c.fill(CGRect(x: 0, y: 0, width: w, height: 6))
       c.fill(CGRect(x: 0, y: h - 6, width: w, height: 6))
       // stencil title on a dark plate
-      c.setFillColor(PlatformColor(white: 0.10, alpha: 1).cgColor)
-      c.fill(CGRect(x: 20, y: 24, width: w - 40, height: 74))
-      _ = Draw.text(title, at: CGPoint(x: 0, y: 36), size: 46, weight: .heavy, color: accent, width: w, align: .center)
+      drawPlate(c, CGRect(x: 20, y: 24, width: w - 40, height: 74), title, size: 46, bg: PlatformColor(white: 0.10, alpha: 1), fg: accent)
       // gauges
       for k in 0..<2 {
         let cx = w * (0.30 + CGFloat(k) * 0.40), cy: CGFloat = 190
@@ -539,59 +556,48 @@ enum Dressing {
   // ---------------------------------------------------------------- whiteboard
 
   private static func whiteboard(_ out: SCNNode) {
-    let board = picture(CGSize(width: 1280, height: 800)) { c in
+    // 1120 x 700 px on a 1.4 x 0.875 m board (800 px/m): every line is >= 44 px (0.055 m) tall.
+    let board = picture(CGSize(width: 1120, height: 700)) { c in
       c.setFillColor(PlatformColor(red: 0.95, green: 0.95, blue: 0.93, alpha: 1).cgColor)
-      c.fill(CGRect(x: 0, y: 0, width: 1280, height: 800))
+      c.fill(CGRect(x: 0, y: 0, width: 1120, height: 700))
       // ghosted old marker smears
       c.setFillColor(PlatformColor(white: 0.7, alpha: 0.10).cgColor)
-      for k in 0..<6 { c.fill(CGRect(x: 60 + CGFloat(k) * 190, y: 500 + CGFloat(k % 3) * 40, width: 150, height: 14)) }
+      for k in 0..<6 { c.fill(CGRect(x: 60 + CGFloat(k) * 170, y: 560 + CGFloat(k % 3) * 36, width: 130, height: 14)) }
       let blue = PlatformColor(red: 0.10, green: 0.25, blue: 0.70, alpha: 1)
-      let red = PlatformColor(red: 0.78, green: 0.15, blue: 0.12, alpha: 1)
       let green = PlatformColor(red: 0.1, green: 0.5, blue: 0.2, alpha: 1)
-      _ = Draw.text("SOL 100 PLAN", at: CGPoint(x: 40, y: 24), size: 84, weight: .heavy, color: blue, width: 800)
+      _ = Draw.text("SOL 100 PLAN", at: CGPoint(x: 40, y: 24), size: 92, weight: .heavy, color: blue, width: 700)
       c.setStrokeColor(blue.cgColor); c.setLineWidth(7)
-      c.move(to: CGPoint(x: 40, y: 125)); c.addLine(to: CGPoint(x: 700, y: 131)); c.strokePath()
-      let lines: [(String, PlatformColor, Bool)] = [
-        ("Ice drill: core sample 7", blue, true), ("Re-seat solar string 14", blue, true),
-        ("Dust storm prep (check τ)", red, false), ("Swap water filter", blue, false), ("Order O2 sensors", green, false),
-      ]
+      c.move(to: CGPoint(x: 40, y: 140)); c.addLine(to: CGPoint(x: 640, y: 146)); c.strokePath()
+      let lines = ["Ice drill", "Solar string", "Dust storm prep"]
       for (i, l) in lines.enumerated() {
-        let y = 160 + CGFloat(i) * 92
-        c.setStrokeColor(l.1.cgColor); c.setLineWidth(6)
-        c.stroke(CGRect(x: 44, y: y + 8, width: 44, height: 44))
-        if l.2 { c.move(to: CGPoint(x: 50, y: y + 30)); c.addLine(to: CGPoint(x: 64, y: y + 48)); c.addLine(to: CGPoint(x: 100, y: y - 6)); c.strokePath() }
-        _ = Draw.text(l.0, at: CGPoint(x: 112, y: y), size: 54, weight: .semibold, color: l.1, width: 780)
-        if l.2 { c.setLineWidth(5); c.move(to: CGPoint(x: 112, y: y + 32)); c.addLine(to: CGPoint(x: 620, y: y + 32)); c.strokePath() }
+        let y = 190 + CGFloat(i) * 130
+        c.setStrokeColor((i == 0 ? green : blue).cgColor); c.setLineWidth(7)
+        c.stroke(CGRect(x: 44, y: y + 10, width: 56, height: 56))
+        if i == 0 { c.move(to: CGPoint(x: 52, y: y + 40)); c.addLine(to: CGPoint(x: 70, y: y + 62)); c.addLine(to: CGPoint(x: 112, y: y - 4)); c.strokePath() }
+        _ = Draw.text(l, at: CGPoint(x: 126, y: y), size: 66, weight: .semibold, color: blue, width: 640)
       }
+      // one big sticky note
+      c.saveGState()
+      c.translateBy(x: 900, y: 190)
+      c.rotate(by: -0.05)
+      c.setShadow(offset: CGSize(width: 4, height: 6), blur: 8, color: PlatformColor(white: 0, alpha: 0.3).cgColor)
+      c.setFillColor(PlatformColor(red: 1.0, green: 0.90, blue: 0.35, alpha: 1).cgColor)
+      c.fill(CGRect(x: -130, y: -130, width: 260, height: 260))
+      c.setShadow(offset: .zero, blur: 0)
+      _ = Draw.text("Call\nEarth?", at: CGPoint(x: -110, y: -84), size: 62, weight: .bold, color: PlatformColor(red: 0.2, green: 0.15, blue: 0.1, alpha: 1), width: 230, maxLines: 2)
+      c.restoreGState()
       // little rover doodle
-      c.setStrokeColor(green.cgColor); c.setLineWidth(5)
-      c.stroke(CGRect(x: 880, y: 560, width: 150, height: 50))
-      c.strokeEllipse(in: CGRect(x: 888, y: 600, width: 34, height: 34))
-      c.strokeEllipse(in: CGRect(x: 988, y: 600, width: 34, height: 34))
-      c.move(to: CGPoint(x: 955, y: 560)); c.addLine(to: CGPoint(x: 975, y: 520)); c.strokePath()
-      _ = Draw.text("fictional crew, fictional sol", at: CGPoint(x: 780, y: 740), size: 28, weight: .medium, color: PlatformColor(white: 0.45, alpha: 1), width: 480, align: .right)
-      // sticky notes
-      let notes: [(CGRect, PlatformColor, String, CGFloat)] = [
-        (CGRect(x: 860, y: 40, width: 190, height: 190), PlatformColor(red: 1.0, green: 0.90, blue: 0.35, alpha: 1), "call\nEarth?", -0.05),
-        (CGRect(x: 1070, y: 90, width: 170, height: 170), PlatformColor(red: 1.0, green: 0.62, blue: 0.75, alpha: 1), "who ate the\nlast potato", 0.06),
-        (CGRect(x: 880, y: 270, width: 180, height: 180), PlatformColor(red: 0.62, green: 0.90, blue: 1.0, alpha: 1), "robots:\nbe nice", 0.04),
-      ]
-      for n in notes {
-        c.saveGState()
-        c.translateBy(x: n.0.midX, y: n.0.midY)
-        c.rotate(by: n.3)
-        c.setShadow(offset: CGSize(width: 4, height: 6), blur: 8, color: PlatformColor(white: 0, alpha: 0.3).cgColor)
-        c.setFillColor(n.1.cgColor)
-        c.fill(CGRect(x: -n.0.width / 2, y: -n.0.height / 2, width: n.0.width, height: n.0.height))
-        c.setShadow(offset: .zero, blur: 0)
-        _ = Draw.text(n.2, at: CGPoint(x: -n.0.width / 2 + 14, y: -n.0.height / 2 + 24), size: 30, weight: .bold, color: PlatformColor(red: 0.2, green: 0.15, blue: 0.1, alpha: 1), width: n.0.width - 24, maxLines: 3)
-        c.restoreGState()
-      }
+      c.setStrokeColor(green.cgColor); c.setLineWidth(6)
+      c.stroke(CGRect(x: 800, y: 500, width: 170, height: 56))
+      c.strokeEllipse(in: CGRect(x: 810, y: 548, width: 40, height: 40))
+      c.strokeEllipse(in: CGRect(x: 920, y: 548, width: 40, height: 40))
+      c.move(to: CGPoint(x: 885, y: 500)); c.addLine(to: CGPoint(x: 910, y: 450)); c.strokePath()
     }
-    let h = holder(103, r: Room.radius - 0.10, y: 1.55)
-    h.addChildNode(box(1.68, 1.08, 0.03, Tex.material(Tex.brushed()), at: SCNVector3(0, 0, -0.005)))
-    h.addChildNode(flat(board, w: 1.6, h: 1.0, at: SCNVector3(0, 0, 0.012)))
-    h.addChildNode(box(0.9, 0.03, 0.06, Tex.material(Tex.brushed()), at: SCNVector3(0, -0.56, 0.03))) // marker tray
+    // Pushed off the curved wall by more than the chord sagitta (0.061 m at +-0.7 m) so the ends never sink in.
+    let h = holder(103, r: Room.radius - 0.11, y: 1.55)
+    h.addChildNode(box(1.48, 0.96, 0.03, Tex.material(Tex.brushed()), at: SCNVector3(0, 0, -0.005)))
+    h.addChildNode(flat(board, w: 1.4, h: 0.875, at: SCNVector3(0, 0, 0.012)))
+    h.addChildNode(box(0.9, 0.03, 0.06, Tex.material(Tex.brushed()), at: SCNVector3(0, -0.5, 0.03))) // marker tray
     out.addChildNode(h)
     let p = holder(103, r: Room.radius - 0.012, y: 2.35)
     p.addChildNode(patchNode(1, size: 0.3))
@@ -629,9 +635,7 @@ enum Dressing {
       c.setStrokeColor(PlatformColor(white: 0.75, alpha: 1).cgColor); c.setLineWidth(10)
       c.strokeEllipse(in: CGRect(x: 176, y: 150, width: 160, height: 160))
       c.setFillColor(PlatformColor(white: 0.1, alpha: 1).cgColor)
-      c.fill(CGRect(x: 70, y: 780, width: 372, height: 130))
-      _ = Draw.text("AIRLOCK B", at: CGPoint(x: 0, y: 792), size: 62, weight: .heavy, color: PlatformColor(red: 0.96, green: 0.78, blue: 0.08, alpha: 1), width: 512, align: .center)
-      _ = Draw.text("PRESSURE DOOR · CYCLE FIRST", at: CGPoint(x: 70, y: 868), size: 22, weight: .bold, color: PlatformColor(white: 0.9, alpha: 1), width: 372, align: .center)
+      drawPlate(c, CGRect(x: 70, y: 790, width: 372, height: 96), "AIRLOCK B", size: 62, bg: PlatformColor(white: 0.10, alpha: 1), fg: PlatformColor(red: 0.96, green: 0.78, blue: 0.08, alpha: 1))
     }
     let h = holder(126, r: 3.84)
     h.addChildNode(box(1.2, 2.3, 0.14, solid(PlatformColor(white: 0.2, alpha: 1)), at: SCNVector3(0, 1.15, 0)))
