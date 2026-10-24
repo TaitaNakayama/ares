@@ -42,6 +42,7 @@ export function Header({ state, vr, live, error, refresh }: Props) {
       <div className="hdr-row controls">
         <button className="btn primary" disabled={busy} onClick={() => run("Next beat", () => api("/api/director/next", "POST", {}))}>Next beat</button>
         <button className="btn" disabled={busy} title="Fresh run: beats play on a timer and wait for the commander's choice in the headset" onClick={() => run("Autoplay", () => api("/api/director/autoplay", "POST", {}))}>Autoplay</button>
+        <button className="btn" disabled={busy} title="Make the headset's current direction 'forward' (ask the judge to look straight ahead)" onClick={() => run("Recentered", () => api("/api/headset/recenter", "POST", {}))}>Recenter headset</button>
         <button className="btn" disabled={busy} onClick={() => run(state.paused ? "Resumed" : "Paused", () => api("/api/director/speed", "POST", { speed: state.speed, paused: !state.paused }))}>
           {state.paused ? "Resume" : "Pause"}
         </button>
