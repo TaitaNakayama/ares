@@ -25,11 +25,18 @@ async function record(choice: string): Promise<{ frames: Frame[]; decideAt: numb
   });
   await new Promise((r) => ws.addEventListener("open", r));
   await sleep(4000);
-  await post("/api/director/next");
+  // Part 1 outside: pad (beat 1), science, solar (beat 2 + storm warning), door, then inside.
+  await post("/api/director/next"); // pad
   // Beat 1 with model-backed agents takes several decisions at a few seconds each: wait for the payments, up to 90 s.
   for (let i = 0; i < 180 && !((latest?.money?.payments?.length ?? 0) >= 2 && !(latest?.thinking?.length)); i++) await sleep(500);
   await sleep(3000);
-  await post("/api/director/next");
+  await post("/api/director/next"); // science
+  await sleep(10000);
+  await post("/api/director/next"); // solar + storm
+  await sleep(8000);
+  await post("/api/director/next"); // door
+  await sleep(6000);
+  await post("/api/director/enter");
   for (let i = 0; i < 400 && !(latest?.waiting?.length); i++) await sleep(500);
   if (!latest?.waiting?.length) throw new Error(`no escalation appeared (${frames.length} frames, beat ${latest?.beat})`);
   console.log(`  ${choice}: escalation after ${Math.round((Date.now() - t0) / 1000)} s`);

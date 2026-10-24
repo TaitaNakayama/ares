@@ -86,6 +86,17 @@ event (world or engine) ─▶ LlmBrain.react ──▶ router.complete ──�
 - **Labels**: each proposal's `source` is what produced it (`rules`, `llm`, `parser`, `human`, `console`), never the brain's capability. `/api/agents/history` lists every model call: layer, time, prompt tokens read, and why it fell back.
 - **Eval**: `scripts/eval-llm-story.ts` runs the full story per seed with the LLM brains and the rules brains, and reports beats in order, fallbacks by role and reason, replaced lines, latency, denials, and whether the pump report reached the commander.
 
+## The two-part demo (outside, then inside)
+
+The judge starts outside on the real Jezero terrain at ground level and walks in as the storm rises. Everything the scene shows comes from `vr_state`:
+
+- `scene.part`: `outside` | `inside`; `scene.station`: `pad` | `science` | `solar` | `door` | null. The server's director (`POST /api/director/next`) advances: **pad** (the cargo lander; the world runs beat 1, the short delivery, so the Cargo Keeper's counting line is said beside the boxes) → **science** (a crew scientist, `robots.scientist`, not one of the five agents, with world-written lines and the real Perseverance reference in `scene.science`) → **solar** (the Engineer's panel-check line, then the storm warning; beat 2 starts, tau ramps) → **door** (the judge gazes at the base door and presses; the headset sends `{"type":"vr_enter"}`; the director auto-enters after 25 s if nobody does) → `part: inside` (a `scene` push message too). Autoplay runs part 1 in about 40 s.
+- Lines follow the same rules as everything else: agents' lines come from their brains (model or rules), the scientist's and the Engineer's station lines are written by the world from the power model and the credited reference; nothing outside states a number the engine or world didn't provide.
+- The spectator follows through both parts: the headset's pose stream carries orientation today and must carry the head position for the walk (`vr_pose.p`), so the Mac camera moves along the same path.
+- The REPLAY tape records part 1 too (`scripts/record-tape.ts` drives the four stations and `enter`).
+
+Scene-side contract for the builders (vr/Shared): the outdoor set (lander with pallets at the pad, the science site, the solar field, the habitat with its pressure door) is laid out on the real terrain with the judge's path pad → science → solar → door at steady walking speed (no sudden acceleration; a few seconds per leg), the robots that belong outside (Cargo Keeper at the pad, Engineer at the solar field) stand at their stations while the others stay inside; the scientist is a labelled crew figure whose gaze-tap opens the credited close-up; the door tap triggers `vr_enter`; the storm (tau) drives sky colour, dust particles and the dimming of panels and lights, inside and out. Art direction: [ART.md](ART.md); third-party assets and NASA imagery: [CREDITS.md](CREDITS.md).
+
 ## The headset (vr/)
 
 - Scene code lives in `vr/Shared` (shared with the Mac spectator view); iOS-only code in `vr/AresVR/Sources`.
