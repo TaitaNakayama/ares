@@ -233,7 +233,7 @@ function vrState() {
   for (const n of s.orch.narration) robots[n.role] = n;
   const waiting = [...e.escalations.values()]
     .filter((x) => x.status === "awaiting_decision" && x.to === "local_authority")
-    .map((x: Escalation) => ({ id: x.id, reason: x.reason, decideBy: x.decideBy, decideByText: x.decideBy ? s.world.fmtTime(x.decideBy) : null, options: x.options.map((o) => ({ id: o.id, label: o.label, detail: o.detail })) }));
+    .map((x: Escalation) => ({ id: x.id, reason: x.reason, decideBy: x.decideBy, decideByText: x.decideBy ? s.world.fmtTime(x.decideBy) : null, options: x.options.map((o) => ({ id: o.id, label: o.label, detail: o.detail, proposedBy: o.proposedBy ? (e.actors.get(o.proposedBy)?.displayName ?? o.proposedBy) : null })) }));
   const pendingVer = [...e.verifications.values()].filter((v) => v.status === "pending");
   const payments = [...e.payments.values()].filter((p) => p.status === "sent").slice(-4).reverse().map((p) => ({ id: p.id, vendor: e.vendors.get(p.vendorId)?.name, amount: p.amount, amountText: formatCents(p.amount) }));
   return {

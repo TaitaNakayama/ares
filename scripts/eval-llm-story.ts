@@ -44,6 +44,8 @@ interface RunResult {
   pump: { reached: boolean; by?: string; urgency?: string; recommendation?: string; ms?: number };
   /** Story outcomes that must hold whoever decides: what the judge is promised to see. */
   checks: Record<string, boolean>;
+  /** Decision options the agents proposed that passed the engine's dry run. */
+  proposedOptions: number;
   wallMs: number;
 }
 
@@ -119,6 +121,7 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
     "all 7 beats in order": [1, 2, 3, 4, 5, 6, 7].every((b) => beats.includes(b)) && beats.join() === [...beats].sort((a, b) => a - b).join(),
     "pump report reached the commander": !!repEsc && repEsc.to === "local_authority",
   };
+  const proposedOptions = [...e.escalations.values()].flatMap((x) => x.options.filter((o) => o.proposedBy)).length;
   const hist: (LlmOutcome & { role?: string })[] = brains.flatMap((b) => (b instanceof LlmBrain ? b.history.filter((h) => !h.point.startsWith("warmup")).map((h) => ({ ...h, role: b.role })) : []));
   const prompts = hist.filter((h) => h.layer === "local" && h.usage).map((h) => h.usage!.promptTokens);
   const ms = hist.filter((h) => h.result === "llm").map((h) => h.ms ?? 0);
@@ -145,6 +148,7 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
     },
     pump: { reached: !!repEsc && repEsc.to === "local_authority", by: rep ? e.actors.get(rep.by)?.role : undefined, urgency: rep?.urgency, recommendation: rep?.recommendation, ms: performance.now() - tp },
     checks,
+    proposedOptions,
     wallMs: performance.now() - t0,
   };
 }
@@ -158,7 +162,7 @@ for (let i = 0; i < SEEDS; i++) {
     results.push(r);
     const failed = Object.entries(r.checks).filter(([, ok]) => !ok).map(([k]) => k);
     const flag = failed.length ? `  FAILED: ${failed.join("; ")}` : "";
-    console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}${r.llm.localPromptTokens ? ` local prompt tokens read median ${r.llm.localPromptTokens.median}` : ""}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
+    console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  options proposed ${r.proposedOptions}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}${r.llm.localPromptTokens ? ` local prompt tokens read median ${r.llm.localPromptTokens.median}` : ""}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
   }
 }
 const llm = results.filter((r) => r.brains === "llm");

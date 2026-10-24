@@ -69,7 +69,10 @@ describe("agent-proposed escalation options", () => {
       },
     });
     const esc = e.escalations.get(res.created!.id)!;
-    expect(esc.options.filter((o) => o.actions.some((a) => a.type === "reject_requisition"))).toHaveLength(1);
-    expect(esc.options.filter((o) => o.proposedBy).map((o) => o.label)).toEqual(["A", "B"]);
+    const rejects = esc.options.filter((o) => o.actions.some((a) => a.type === "reject_requisition"));
+    expect(rejects).toHaveLength(1);
+    expect(rejects[0]!.id).toBe("reject"); // the standard option, now marked as also proposed by the agent
+    expect(rejects[0]!.proposedBy).toBe("ctl");
+    expect(esc.options.filter((o) => o.proposedBy && o.id !== "reject").map((o) => o.label)).toEqual(["A", "B"]);
   });
 });

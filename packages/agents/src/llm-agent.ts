@@ -386,10 +386,27 @@ export class ReportRules implements Brain {
 
 // ---------------------------------------------------------------- deterministic repairs of known small-model slips
 
+/** snake_case keys and a few synonyms models like (quantity, vendor) -> the schema's camelCase names. */
+const KEY_ALIASES: Record<string, string> = { quantity: "qty", amount_cents: "amount", unit_price: "unitPrice", order_by: "orderBy", vendor: "vendorId", invoice: "invoiceId", quote: "quoteId", requisition: "requisitionId" };
+function camelKeys(v: unknown, notes: string[]): unknown {
+  if (Array.isArray(v)) return v.map((x) => camelKeys(x, notes));
+  if (!v || typeof v !== "object") return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    const camel = k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    const key = KEY_ALIASES[camel] ?? KEY_ALIASES[k] ?? camel;
+    if (key !== k) notes.push(`${k} -> ${key}`);
+    out[key] = camelKeys(val, notes);
+  }
+  return out;
+}
+
 function normalize(name: keyof typeof ACTION_SCHEMAS, raw: unknown, e: Engine): { args: unknown; notes: string[] } {
   const notes: string[] = [];
   if (!raw || typeof raw !== "object") return { args: raw, notes };
-  const a = { ...(raw as Record<string, unknown>) };
+  const renamed: string[] = [];
+  const a = camelKeys(raw, renamed) as Record<string, unknown>;
+  if (renamed.length) notes.push(`renamed ${[...new Set(renamed)].join(", ")}`);
   if (name === "report_issue" && a.subject !== undefined) {
     // Models like to "attach" the report to the sender or an invented id; a report needs no subject.
     const s = a.subject as { kind?: string; id?: string } | null;

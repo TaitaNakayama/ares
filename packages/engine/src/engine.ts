@@ -1546,7 +1546,12 @@ export class Engine {
           if (q && req) cost = q.unitPrice * (pa.params.qty ?? Math.min(req.qty, q.qtyAvailable));
         } else if (pa.type === "approve_invoice") cost = this.amountOf({ kind: "invoice", id: pa.params.invoiceId });
       }
-      if (standard.has(JSON.stringify(actions)) && actions.length) continue; // already a standard option
+      if (actions.length && standard.has(JSON.stringify(actions))) {
+        // The agent arrived at a standard option on its own: say so on that option instead of listing it twice.
+        const same = standardOptions.find((o) => JSON.stringify(o.actions) === JSON.stringify(actions));
+        if (same) same.proposedBy = by;
+        continue;
+      }
       out.push({ id: `agent-${i + 1}`, label: o.label, detail: o.detail ?? (actions.length ? `${actions[0]!.type.replace(/_/g, " ")} (proposed by ${this.actors.get(by)?.displayName ?? by})` : `Proposed by ${this.actors.get(by)?.displayName ?? by}; no system action.`), actions, costCents: cost, withinAuthority: true, proposedBy: by });
     }
     return out;
