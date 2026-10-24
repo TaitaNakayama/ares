@@ -27,7 +27,7 @@ export const MARS_POLICY: Policy = {
   ...DEFAULT_POLICY,
   name: "Ares Base P2P controls",
   version: 1,
-  approval: { agentMaxCents: 250_000_000, localAuthorityMaxCents: 1_100_000_000, remoteAuthorityMaxCents: 50_000_000_000, splitWindowDays: 7 },
+  approval: { agentMaxCents: 250_000_000, localAuthorityMaxCents: 1_200_000_000, remoteAuthorityMaxCents: 50_000_000_000, splitWindowDays: 7 },
   match: { priceTolerancePct: 2, payReceivedQtyOnly: true },
   // A call-back to the supplier's number on file happens in their business hours.
   vendorBankChange: { action: "hold_and_verify", verificationProcessingMs: 3 * HOUR },
