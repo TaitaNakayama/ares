@@ -634,6 +634,25 @@ export class MarsWorld implements World {
     };
   }
 
+  /**
+   * Where the demo story is (0-7), read from the engine's records rather than a script:
+   * 1 delivery, 2 storm, 3 battery request, 4 quote flagged, 5 blocked and sent to Earth or escalated,
+   * 6 the commander decides, 7 Earth's verdict on the bank change.
+   */
+  storyBeat(engine: Engine): number {
+    if (this.beat < 2 || !this.stormFrom) return this.beat;
+    const since = this.stormFrom.t;
+    const req = [...engine.requisitions.values()].find((r) => r.sku === "BAT-10" && r.createdAt >= since);
+    if (!req) return 2;
+    const quoteIds = new Set([...engine.quotes.values()].filter((q) => q.requisitionId === req.id).map((q) => q.id));
+    if (!engine.flags.some((f) => f.subject.kind === "quote" && quoteIds.has(f.subject.id))) return 3;
+    const ver = [...engine.verifications.values()].find((v) => v.sentAt >= since);
+    if (ver && ver.status !== "pending") return 7;
+    const esc = [...engine.escalations.values()].filter((x) => x.createdAt >= since);
+    if (esc.some((x) => x.to === "local_authority" && x.status !== "in_transit")) return 6;
+    return ver || esc.length ? 5 : 4;
+  }
+
   /** Mars-side vendor record helper for clients. */
   vendor(id: string): Vendor | undefined {
     return this.market.vendors.find((v) => v.id === id);

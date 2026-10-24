@@ -97,6 +97,11 @@ await session.prepare();
 const clients = new Set<WebSocket>();
 /** Headset sockets get only what the headset needs (small messages, no engine firehose). */
 const vrClients = new WeakSet<WebSocket>();
+/** The Mac's spectator view: loopback only, read-only. */
+const spectatorClients = new WeakSet<WebSocket>();
+/** Token-authenticated headsets; only the newest one's head pose is relayed to spectators. */
+const headsets = new Set<WebSocket>();
+let activeHeadset: WebSocket | undefined;
 let vrStats: Record<string, unknown> = {};
 let recDir: string | undefined;
 let recSeq = 0;
@@ -112,13 +117,37 @@ function wire(s: Session): () => void {
 }
 
 const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay"]);
+const SPECTATOR_TYPES = new Set(["vr_state", "narration", "reset", "headset", "vr_choice", "spectator_capture"]);
 function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
     if (c.readyState !== 1) continue;
     if (vrClients.has(c) && !VR_TYPES.has(msg.type)) continue;
+    if (spectatorClients.has(c) && !SPECTATOR_TYPES.has(msg.type)) continue;
+    if (!vrClients.has(c) && !spectatorClients.has(c) && msg.type === "spectator_capture") continue;
     c.send(text);
   }
+}
+
+/** Raw frames straight to the spectators (the head pose, 30+ times a second). */
+function toSpectators(text: string): void {
+  for (const c of clients) if (c.readyState === 1 && spectatorClients.has(c)) c.send(text);
+}
+
+function headsetStatus() {
+  return { type: "headset", connected: [...headsets].some((h) => h.readyState === 1) };
+}
+
+/** What the commander chose, for the spectator's decision card. */
+function announceChoice(escalationId: string, optionId: string, by: "headset" | "console", verdict: string): void {
+  const label = session.orch.engine.escalations.get(escalationId)?.options.find((o) => o.id === optionId)?.label ?? optionId;
+  broadcast({ type: "vr_choice", escalationId, optionId, label, by, verdict });
+}
+
+/** A pose message: unit quaternion `q` [x, y, z, w], optional gazed card index. Anything else is dropped. */
+function validPose(m: Record<string, unknown>): boolean {
+  const q = m.q;
+  return Array.isArray(q) && q.length === 4 && q.every((x) => typeof x === "number" && Number.isFinite(x) && Math.abs(x) <= 1.001);
 }
 
 let vrStateTimer: NodeJS.Timeout | undefined;
@@ -150,6 +179,8 @@ function vrState() {
     seed: s.seed,
     policyVersion: e.policy.version,
     beat: s.world.beat,
+    storyBeat: s.world.storyBeat(e),
+    storyBeats: 7,
     timelapse: s.isTimelapse,
     time: s.world.fmtTime(e.now),
     sol: t.sol,
@@ -383,6 +414,7 @@ const server = http.createServer(async (req, res) => {
       const role = b.as === "remote_authority" ? "remote_authority" : "local_authority";
       const r = await session.orch.submitHuman(role, { type: "decide", params: { escalationId: b.escalationId, optionId: b.optionId }, source: "console" });
       if (r.executed && session.world.beat >= 2) session.timelapse();
+      if (r.executed && role === "local_authority") announceChoice(String(b.escalationId), String(b.optionId), "console", r.decision.verdict);
       return send(res, 200, { verdict: r.decision.verdict, summary: r.decision.summary });
     }
     if (path === "/api/capture" && req.method === "POST") {
@@ -434,6 +466,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/api/headset/scan" && req.method === "POST") {
       broadcast({ type: "scan_viewer" });
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/api/spectator/capture" && req.method === "POST") {
+      broadcast({ type: "spectator_capture" });
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/api/spectator/frame" && req.method === "POST") {
+      // The spectator posts a JPEG of what it shows (3D view + overlays), so it can be checked without screen recording.
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const dir = new URL("../../../.cache/captures/", import.meta.url).pathname;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "spectator.jpg"), Buffer.concat(chunks));
+      writeFileSync(join(dir, `spectator-${Date.now()}.jpg`), Buffer.concat(chunks));
       return send(res, 200, { ok: true });
     }
     if (path === "/api/capture/request" && req.method === "POST") {
@@ -500,14 +546,30 @@ wss.on("connection", (ws, req) => {
     ws.close(4401, "not authorized");
     return;
   }
+  const spectator = client === "spectator";
   clients.add(ws);
   if (client === "vr") vrClients.add(ws);
+  if (spectator) spectatorClients.add(ws);
+  if (headset) {
+    headsets.add(ws);
+    activeHeadset = ws;
+    broadcast(headsetStatus());
+  }
   console.log(`[ws] ${client} connected from ${req.socket.remoteAddress} (${clients.size} clients)`);
-  ws.send(JSON.stringify({ type: "hello", client, seed: session.seed, meta: session.orch.meta, state: client === "vr" ? undefined : fullState(), vr: vrState() }));
+  const lean = client === "vr" || spectator;
+  ws.send(JSON.stringify({ type: "hello", client, seed: session.seed, meta: session.orch.meta, state: lean ? undefined : fullState(), vr: vrState(), ...(spectator ? { headset: headsetStatus().connected } : {}) }));
   ws.on("message", async (raw) => {
     try {
-      const m = JSON.parse(String(raw)) as { type: string; escalationId?: string; optionId?: string };
+      const text = String(raw);
+      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string };
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
+      // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
+      if (m.type === "vr_pose") {
+        if (ws === activeHeadset && validPose(m as Record<string, unknown>)) toSpectators(text);
+        return;
+      }
+      // The spectator is read-only.
+      if (spectator) return;
       if (m.type === "vr_stats") {
         vrStats = { ...m, receivedAt: new Date().toISOString() };
         if (process.env.ARES_LOG_VR) console.log("[vr]", JSON.stringify(m));
@@ -516,6 +578,7 @@ wss.on("connection", (ws, req) => {
       if (m.type === "decide" && m.escalationId && m.optionId && (headset || local)) {
         const r = await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: m.escalationId, optionId: m.optionId }, source: "human" });
         if (r.executed && session.world.beat >= 2) session.timelapse();
+        if (r.executed) announceChoice(m.escalationId, m.optionId, headset ? "headset" : "console", r.decision.verdict);
         ws.send(JSON.stringify({ type: "decided", verdict: r.decision.verdict, summary: r.decision.summary }));
       }
     } catch (err) {
@@ -524,6 +587,10 @@ wss.on("connection", (ws, req) => {
   });
   ws.on("close", (code) => {
     clients.delete(ws);
+    if (headsets.delete(ws)) {
+      if (activeHeadset === ws) activeHeadset = [...headsets].find((h) => h.readyState === 1);
+      broadcast(headsetStatus());
+    }
     console.log(`[ws] ${client} closed (${code}) (${clients.size} clients)`);
   });
 });
