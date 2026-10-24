@@ -20,6 +20,8 @@ final class Outside {
   private let beacon = SCNNode()
   private var lamps: [SCNNode] = []
   private let drillSign = SpritePanel(width: 22, height: 4.8, pixelsPerMeter: 51)
+  /// Outdoors the lattice tower beside the solar field needs a name, or it reads as a second rocket: a small pill above it.
+  private let drillLabel = SpritePanel(width: 7, height: 1.2, pixelsPerMeter: 140)
   private let dust = SCNParticleSystem()
   private var lastSkyKey = ""
   private var skyBusy = false
@@ -29,6 +31,8 @@ final class Outside {
   private let dustNode = SCNNode()
   /// The storm front: a wide gradient billboard on the horizon that rises and darkens with tau (no geometry beyond one plane).
   private let stormWall = SCNNode()
+  /// The storm's leading edge: a low, dark, crisp-topped band in front of the wall that thickens and rises with tau.
+  private let stormBand = SCNNode()
   private var outdoor = false
   private var lastTau: Double = 0.6
   private var lastSun: (Double, Double) = (120, 45)
@@ -52,6 +56,7 @@ final class Outside {
     buildDrill()
     buildDust()
     buildStormWall()
+    buildStormBand()
 
     sunNode.light = SCNLight()
     sunNode.light?.type = .directional
@@ -142,6 +147,7 @@ final class Outside {
     // Back inside: the emitter returns to its window-view spot, otherwise the grit it followed the judge with blows through the room.
     if !on { dustNode.position = SCNVector3(-10, 3, -30); dust.reset() }
     drillSign.node.isHidden = on
+    drillLabel.node.isHidden = !on
     setDetail(on)
     applyDust(tau: lastTau)
     reapplyFog()
@@ -342,6 +348,26 @@ final class Outside {
       rig.addChildNode(lamp)
       lamps.append(lamp)
     }
+    // Name tag over the tower (outdoor only), always turned toward the viewer about the vertical axis.
+    drillLabel.node.position = SCNVector3(0, h + 1.8, 0)
+    let bb = SCNBillboardConstraint()
+    bb.freeAxes = .Y
+    drillLabel.node.constraints = [bb]
+    drillLabel.node.isHidden = true
+    drillLabel.update(key: "drill") { ctx, size in
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.92), radius: size.height / 2)
+      ctx.setStrokeColor(PlatformColor(red: 0.95, green: 0.55, blue: 0.2, alpha: 0.95).cgColor)
+      ctx.setLineWidth(5)
+      ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 3, dy: 3), cornerWidth: size.height / 2 - 3, cornerHeight: size.height / 2 - 3, transform: nil))
+      ctx.strokePath()
+      let label = "Ice drill · water for the base"
+      var fs: CGFloat = 76
+      var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
+      while (label as NSString).size(withAttributes: [.font: font]).width > size.width - 70, fs > 30 { fs -= 2; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+      let tw = (label as NSString).size(withAttributes: [.font: font]).width
+      _ = Draw.text(label, at: CGPoint(x: (size.width - tw) / 2, y: (size.height - font.lineHeight) / 2), size: fs, weight: .heavy, color: PlatformColor(red: 1.0, green: 0.7, blue: 0.35, alpha: 1), width: size.width)
+    }
+    rig.addChildNode(drillLabel.node)
     let dt = toTerrain(Spots.drill)
     rig.position = SCNVector3(dt.x, groundY(Spots.drill.x, Spots.drill.y), dt.y)
     rig.name = "drill"
@@ -464,6 +490,62 @@ final class Outside {
     scene?.rootNode.addChildNode(stormWall)
   }
 
+  /// Dark dust band, 1024 x 128: opaque brown below a ragged, fairly crisp top edge (billows plus fine breakup), a sunlit rim on the edge.
+  private static func stormBandImage() -> PlatformImage {
+    Bitmap.image(size: CGSize(width: 1024, height: 128), scale: 1, opaque: false) { ctx in
+      var rng = SplitMix(77)
+      var edge = [CGFloat](repeating: 0.55, count: 1024)
+      for (period, amp) in [(256.0, 0.10), (96.0, 0.07), (40.0, 0.04), (13.0, 0.015)] {
+        let ph = rng.unit() * 6.28
+        let cycles = (1024.0 / period).rounded() // whole cycles so the band tiles at the ends
+        // |sin| gives rounded billow tops with cusps between them (dust), not mountain peaks.
+        for x in 0..<1024 { edge[x] += CGFloat(amp * (abs(sin(Double(x) / 1024.0 * cycles * 3.1416 + ph)) - 0.6)) }
+      }
+      for x in 0..<1024 {
+        let ends = CGFloat(min(1, Double(min(x, 1023 - x)) / 140)), taper = ends * ends * (3 - 2 * ends)
+        let top = max(0.15, min(0.95, edge[x])) * (0.35 + 0.65 * taper)
+        let topY = 128 * (1 - top)
+        // Body: dark at the base, a touch lighter toward the top; a 3 px soft edge.
+        for y in Int(topY)..<128 {
+          let f = CGFloat(128 - y) / 128 / max(top, 0.01) // 1 at the top edge, 0 at the base
+          let edgeSoft = min(1, (CGFloat(y) - topY) / 9)
+          let g = 0.17 + 0.10 * f
+          ctx.setFillColor(PlatformColor(red: g * 1.3, green: g * 0.84, blue: g * 0.6, alpha: 0.96 * edgeSoft).cgColor)
+          ctx.fill(CGRect(x: CGFloat(x), y: CGFloat(y), width: 1, height: 1))
+        }
+        // Sun-caught rim.
+        ctx.setFillColor(PlatformColor(red: 0.62, green: 0.42, blue: 0.28, alpha: 0.55).cgColor)
+        ctx.fill(CGRect(x: CGFloat(x), y: topY + 1, width: 1, height: 3))
+      }
+      // Billow shadows inside the band.
+      for _ in 0..<40 {
+        ctx.setFillColor(PlatformColor(white: 0, alpha: 0.10 + 0.10 * rng.unit()).cgColor)
+        ctx.fillEllipse(in: CGRect(x: rng.unit() * 1024, y: 40 + rng.unit() * 80, width: 30 + rng.unit() * 120, height: 8 + rng.unit() * 22))
+      }
+    }
+  }
+
+  private func buildStormBand() {
+    let m = SCNMaterial()
+    m.lightingModel = .constant
+    m.diffuse.contents = Self.stormBandImage()
+    m.diffuse.wrapS = .clamp
+    m.diffuse.wrapT = .clamp
+    m.diffuse.mipFilter = .linear
+    m.isDoubleSided = true
+    m.blendMode = .alpha
+    m.writesToDepthBuffer = false
+    m.readsFromDepthBuffer = true
+    stormBand.geometry = SCNPlane(width: 1, height: 1)
+    stormBand.geometry?.materials = [m]
+    stormBand.renderingOrder = -4
+    stormBand.name = "storm-band"
+    stormBand.isHidden = true
+    stormBand.simdPosition = SIMD3(-174, 0, -207)
+    stormBand.simdLook(at: SIMD3(0, 0, 0), up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
+    scene?.rootNode.addChildNode(stormBand)
+  }
+
   /// Rises from a low brown haze bank to a wall a few hundred metres high, darkening toward #5A3A2A as tau climbs.
   private func applyStormWall(t: Float) {
     let hgt = 30 + 330 * pow(t, 1.5) + 40 * t
@@ -472,6 +554,13 @@ final class Outside {
     let c = Self.mix(SIMD3(0.84, 0.64, 0.46), SIMD3(0.353, 0.227, 0.165), t: min(1, t * 1.4))
     stormWall.geometry?.firstMaterial?.multiply.contents = PlatformColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
     stormWall.geometry?.firstMaterial?.transparency = CGFloat(0.03 + 0.97 * min(1, t * 1.3))
+    // The front: invisible on a clear day, a low dark line by a storm warning, a tall black rim in the storm itself.
+    let vis = max(0, min(1, (t - 0.06) / 0.25))
+    stormBand.isHidden = vis < 0.01 || !outdoor
+    let bh = 14 + 110 * pow(t, 1.1)
+    stormBand.simdScale = SIMD3(1100, bh, 1)
+    stormBand.simdPosition = SIMD3(-174, bh / 2 - 6, -207)
+    stormBand.geometry?.firstMaterial?.transparency = CGFloat(vis)
   }
 
   // ---------------------------------------------------------------- state
