@@ -50,6 +50,8 @@ Decision (your call, Sat 04:50): make the agents real, keep the demo reliable. [
 
 **Also done since:** agent-proposed decision options (`escalate.options`: each action is dry-run through policy as the deciding human; illegal ones vanish, duplicates of the standard options are skipped; `proposedBy` marks them). A rules escalation floor: when the rules brain would escalate and the model neither escalates nor decides, the escalation still happens, labeled rules. Pushed to GitHub (everything since 93da083).
 
+**Tape:** re-recorded Sat 06:33 with the model-backed agents (real lines, the Rule Keeper's proposed option tagged, story beats, all four branches). The headset build with it is installed on the phone (the phone was locked, so I couldn't launch it: open Ares once).
+
 **Next, in order**
 1. Eval re-run with the floor and options (`.cache/eval-llm-3c.log`), then 30 seeds; report honestly next to the rules scorecard. Confirm live that the controller proposes options and they show on the card.
 2. Local warm-up measurement (`ARES_PREFER=local node scripts/eval-llm-story.ts --warm --seeds 2`): does the second call per decision point read fewer prompt tokens, and does it land under 8 s?
@@ -119,6 +121,7 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
 - Check on device: gaze a robot, see "tap to ask", press the button, see the dots, then the answer bubble (a few seconds with the local model); press again within 3 s does nothing; with a card up, looking at a card and pressing still chooses it.
 
 ## Needs you
+- **Open the Ares app on the phone once** (a new build with the new REPLAY tape is installed; the phone was locked so it didn't auto-launch).
 - **Phone in the viewer** (everything below is built and installed; the Cardboard button press itself is untested by me):
   - Gaze at a robot: nametag says "tap to ask"; press: thinking dots, then an answer bubble; a second press within 3 s does nothing; card taps still choose cards.
   - Nametags readable; speech bubble beside the speaker with its tail; the edge arrow when the speaker is behind you.
