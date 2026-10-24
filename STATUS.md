@@ -29,7 +29,7 @@ _Updated Sat 2026-10-24 04:25 PT_
 ## Agent audit
 - See [AUDIT.md](AUDIT.md). In short, the five agents are deterministic rule brains with templated dialogue. The LLM reads pasted invoices and drafts one escalation note (1 call in the whole story), and decides nothing. Two misleading `llm` labels and the "Five AI agents" claims are flagged there, awaiting your decision.
 
-## Spectator view on the Mac (in progress)
+## Spectator view on the Mac (done; needs your on-screen check)
 
 **Done and committed**
 - **Server relay** (971636c):
@@ -51,24 +51,24 @@ _Updated Sat 2026-10-24 04:25 PT_
   - Build: `scripts/build-spectator.sh` (Release) or `--debug`.
 - **Tier 1 C-15:** Opus review verify-07 says HOLDS WITH CAVEATS. Offscreen spike passed: the Debug app renders the scene and overlays correctly at 60 fps ([frame](docs/evidence/spectator-spike.jpg)).
 
-**Not done yet (next steps, in order)**
-1. **Headset pose streaming.** `VRViewController.draw` must call `link.sendPose(...)` every second frame (30 Hz):
-   - pose: the raw `cardboard.headView()`, never the forced or director pose;
-   - `gaze: world.gazedCard`, `cards: world.cardsShown`;
-   - `fovX = 2·atan(1/projection[0].columns.0.x)` in degrees.
+**Done since (headset pose, tested on the real phone and server, 2026-10-24)**
+- **Headset pose streaming** (9dcea6b): `VRViewController.draw` sends `vr_pose` every second frame from the raw `cardboard.headView()` (inverted to world-from-head), with gaze card, cards-shown flag and horizontal FOV (100° from the Cardboard projection). `Sound.shared` is prewarmed at startup.
+- **Measured:** `/api/vr/stats` live at 60 fps; a spectator socket got 120 `vr_pose` messages in 4 s (30.4 Hz) with unit quaternions (norm 0.99999 to 1.00001).
+- **Direction check:** with the phone moving, a headset eye capture (`.cache/captures/latest.jpg`) and a spectator capture taken together show the same view (power screen left, window and robot right), so the sign convention is right. LIVE badge shown.
+- **Resilience:** terminated the headset app with `xcrun devicectl device process terminate --pid <pid>`. Within the next capture (about 1.5 s) the Release spectator showed REPLAY with a drifting camera, and kept drifting over the next 6 s. Relaunching the phone app brought LIVE back within 6 s.
+- **Tape re-recorded** (e7c0f4c, `scripts/record-tape.ts` now uses Node's built-in WebSocket because `ws` is not installed). Frames carry `storyBeat`; REPLAY showed "4 of 7 Suspicious quote" after about 30 s. The badge is hidden during beat 0, the first ~5 s of the tape.
 
-   `Link.sendPose` already exists. Then reinstall with `scripts/build-ios.sh`.
-2. **End-to-end test with the phone in hand:** LIVE badge, the camera follows, the gaze dot, the gazed option highlighted, the choice shown on tap.
-3. **Resilience test:** quit the headset app or drop Wi-Fi, and the view should show REPLAY with a drift within about 1 s and never freeze. On reconnect, LIVE again.
-4. **Re-record the offline tape** (`node scripts/record-tape.ts`), so REPLAY frames carry `storyBeat`. The old tape has none, so the beat badge is hidden during REPLAY.
-5. **Your on-screen check** of the full-screen view (below).
-6. **ARCHITECTURE.md:** spectator section written; README and Devpost mentions still to add.
+**Next**
+1. Your on-screen check (below).
+2. Devpost mention of the spectator view.
 
 **Known caveats**
 - The SCNView delegate sets the camera on SceneKit's render thread; everything else runs on the main thread. The reviewer prefers MTKView + SCNRenderer on main. Watch for judder.
 - Hover, robot bobbing and animation timing are computed locally, so the view is a close mirror, not a frame-exact one.
 - 110° may look too wide; tune it after you see it.
-- First-use `Sound.shared` causes a 150 ms hitch on the headset. Prewarm it in `VRViewController`.
+- The Debug build shows "DEBUG mouse camera" (not REPLAY) while the server is up and no headset is live; REPLAY with the drift is the Release build.
+- Whether the spectator turns the same way as your real head (left vs right) was checked by comparing with the headset's own capture, not by watching you turn. Do that once.
+- `record-tape.ts` resets the live demo director and takes about 4.5 minutes; do not run it during a demo.
 
 **Uncommitted:** nothing. Throwaway scratch copies (`vrport`, the reviewer's probes) live in the session scratchpad only.
 
@@ -76,7 +76,7 @@ _Updated Sat 2026-10-24 04:25 PT_
 
 ## Needs you
 - Viewer checklist (in the terminal).
-- Spectator on-screen check: `scripts/build-spectator.sh --debug`, then swipe to its Space and drag the view with the mouse. Is it smooth, readable from across a table, and is the 110° view too wide?
+- Spectator on-screen check: put the phone in the viewer, run `scripts/build-spectator.sh`, swipe to its Space. Turn your head left and right: does the Mac view turn the same way, smoothly? Is it readable from across a table, and is 110° too wide? Then quit the phone app and confirm REPLAY appears.
 - Decisions in AUDIT.md: the label fix, and the "AI agents" wording or real agents.
 - Push to GitHub: yes or no.
 
