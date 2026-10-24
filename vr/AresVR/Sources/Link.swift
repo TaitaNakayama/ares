@@ -85,7 +85,11 @@ final class Link: NSObject, @unchecked Sendable {
        let l = obj["servers"] as? [String], !l.isEmpty {
       list = l
     }
-    return list.map { $0.contains("t=") ? $0 : $0 + "&t=" + token }
+    // Append the token unless the URL already has a `t` query item ("client=vr" also contains "t=").
+    return list.map { s in
+      let hasToken = URLComponents(string: s)?.queryItems?.contains { $0.name == "t" } ?? false
+      return hasToken ? s : s + (s.contains("?") ? "&" : "?") + "t=" + token
+    }
   }
 
   func start() {
@@ -147,6 +151,7 @@ final class Link: NSObject, @unchecked Sendable {
     index += 1
     guard let url = URL(string: s) else { return connectNext() }
     setStatus(.connecting(url.host ?? s))
+    NSLog("[link] trying %@", url.host ?? s)
     let t = session.webSocketTask(with: url)
     t.maximumMessageSize = 8 * 1024 * 1024
     task = t
@@ -182,7 +187,8 @@ final class Link: NSObject, @unchecked Sendable {
     t.receive { [weak self] result in
       guard let self else { return }
       switch result {
-      case .failure:
+      case .failure(let err):
+        NSLog("[link] %@ failed: %@", self.current?.host ?? "?", err.localizedDescription)
         self.lost(t)
       case .success(let msg):
         if case .string(let s) = msg { self.handle(s) }

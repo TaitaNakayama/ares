@@ -541,6 +541,7 @@ setInterval(() => scheduleVrState(), 1000);
 process.on("uncaughtException", (err) => console.error("uncaught", err));
 process.on("unhandledRejection", (err) => console.error("unhandled", err));
 
+if (process.env.ARES_DEBUG_NET) server.on("connection", (sock) => { if (!isLoopback(sock.remoteAddress)) console.log(`[net] tcp from ${sock.remoteAddress}`); });
 server.listen(PORT, "0.0.0.0", () => {
   const ips = Object.values(networkInterfaces()).flat().filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i!.address);
   console.log(`Ares server on :${PORT}  seed=${session.seed}  ips=${ips.join(", ")}`);
