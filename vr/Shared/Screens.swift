@@ -5,13 +5,21 @@ import AppKit
 import UIKit
 #endif
 
-/// The three wall screens. Text is sized for Cardboard: body cap height >= ~1.5 degrees.
+/// The three wall screens, drawn with the `Kit` design system (ScreenKit.swift). Text is sized for
+/// Cardboard: nothing below 30 px, body text 38 px and up. Each screen redraws only when its key changes.
 final class WallScreens {
   let power = TextPanel(width: 2.1, height: 1.2, pixelsPerMeter: 640)
   let money = TextPanel(width: 2.1, height: 1.2, pixelsPerMeter: 640)
   let waiting = TextPanel(width: 1.5, height: 0.62, pixelsPerMeter: 900)
+  // Client-side history of values the state gives us (no invented data): one sample every 3 s.
   private var tauHistory: [Double] = []
-  private var lastTauSample: TimeInterval = -10
+  private var solarHistory: [Double] = []
+  private var loadHistory: [Double] = []
+  private var sampleSerial = 0
+  private var lastSample: TimeInterval = -10
+
+  /// Beat names, from the story definition in world-mars (storyBeat): the demo's 7 steps.
+  static let beatNames = ["", "Delivery", "Dust storm", "Battery request", "Quote flagged", "Blocked, sent to Earth", "Commander decides", "Earth's verdict"]
 
   init(root: SCNNode) {
     for (panel, deg) in [(power, Float(-63)), (money, Float(63))] {
@@ -20,10 +28,11 @@ final class WallScreens {
       n.position = Room.ring(deg, r: Room.radius - 0.28, y: 1.78)
       n.look(at: SCNVector3(0, 1.78, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
       root.addChildNode(n)
-      let bezel = SCNNode(geometry: SCNBox(width: 2.22, height: 1.32, length: 0.04, chamferRadius: 0.03))
-      bezel.geometry?.firstMaterial?.diffuse.contents = PlatformColor(white: 0.16, alpha: 1)
-      bezel.position = SCNVector3(0, 0, -0.025)
-      n.addChildNode(bezel)
+      let bezel = SCNBox(width: 2.22, height: 1.32, length: 0.04, chamferRadius: 0.03)
+      bezel.firstMaterial?.diffuse.contents = PlatformColor(white: 0.16, alpha: 1)
+      let bn = SCNNode(geometry: bezel)
+      bn.position = SCNVector3(0, 0, -0.025)
+      n.addChildNode(bn)
     }
     // "Waiting for you" sits on the console under the window, tilted up toward the user.
     let w = waiting.node
@@ -33,87 +42,178 @@ final class WallScreens {
   }
 
   func update(_ s: VRState?, now: TimeInterval, linkText: String) {
-    if let tau = s?.tau, now - lastTauSample > 1 {
-      lastTauSample = now
-      tauHistory.append(tau)
-      if tauHistory.count > 90 { tauHistory.removeFirst() }
+    if now - lastSample > 3 {
+      lastSample = now
+      sampleSerial += 1
+      if let tau = s?.tau { tauHistory.append(tau); if tauHistory.count > 30 { tauHistory.removeFirst() } }
+      if let p = s?.power, let sol = p.solarKWhPerSol, let ld = p.loadKWhPerSol {
+        solarHistory.append(sol); loadHistory.append(ld)
+        if solarHistory.count > 30 { solarHistory.removeFirst(); loadHistory.removeFirst() }
+      }
     }
     drawPower(s)
     drawMoney(s, linkText: linkText)
     drawWaiting(s)
   }
 
+  // MARK: POWER
+
   private func drawPower(_ s: VRState?) {
     let p = s?.power
     let soc = p?.socPct ?? 0
     let tau = s?.tau ?? 0
     let left = p?.solsLeft
-    let key = "\(Int(soc))|\(Int((p?.solarKWhPerSol ?? 0) / 5))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(p?.drillOn ?? true)|\(tauHistory.count / 3)"
-    let hist = tauHistory
+    let drill = p?.drillOn ?? true
+    let time = s?.time ?? ""
+    let key = "\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)"
+    let tauH = tauHistory, solarH = solarHistory, loadH = loadHistory
+    let solar = p?.solarKWhPerSol ?? 0, load = p?.loadKWhPerSol ?? 0
     power.update(key: key) { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), Palette.bg)
-      _ = Draw.text("POWER", at: CGPoint(x: 48, y: 30), size: 58, weight: .heavy, color: Palette.orange)
+      Kit.chrome(ctx, size, accent: Palette.orange)
+      Kit.header(ctx, size, title: "POWER", color: Palette.orange, icon: Icon.bolt, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
       let low = (left ?? 99) < 6
-      _ = Draw.text("\(Int(soc.rounded()))%", at: CGPoint(x: 48, y: 104), size: 170, weight: .heavy, color: low ? Palette.red : Palette.text)
-      Draw.bar(ctx, CGRect(x: 52, y: 320, width: 560, height: 36), fraction: CGFloat(soc / 100), color: low ? Palette.red : Palette.green)
+      let tone = low ? Palette.red : Palette.green
+      // Battery ring.
+      let c1 = CGRect(x: 24, y: 104, width: 560, height: 410)
+      Kit.card(ctx, c1)
+      let center = CGPoint(x: c1.midX, y: c1.minY + 205)
+      Kit.ring(ctx, center: center, radius: 150, thickness: 30, fraction: CGFloat(soc / 100), color: tone)
+      Icon.battery(ctx, CGRect(x: center.x - 30, y: center.y - 112, width: 60, height: 40), Palette.dim)
+      _ = Draw.text("\(Int(soc.rounded()))%", at: CGPoint(x: c1.minX, y: center.y - 62), size: 84, weight: .heavy, color: low ? Palette.red : Palette.text, width: c1.width, align: .center)
       let reserve = left.map { String(format: "%.1f sols left", $0) } ?? "Charging"
-      _ = Draw.text(reserve, at: CGPoint(x: 48, y: 380), size: 74, weight: .bold, color: low ? Palette.amber : Palette.text)
-      _ = Draw.text("Solar \(Int(p?.solarKWhPerSol ?? 0)) · Use \(Int(p?.loadKWhPerSol ?? 0)) kWh/sol", at: CGPoint(x: 48, y: 480), size: 54, weight: .semibold, color: Palette.dim)
-      _ = Draw.text("Ice drill \((p?.drillOn ?? true) ? "ON" : "OFF")", at: CGPoint(x: 48, y: 560), size: 54, weight: .bold, color: (p?.drillOn ?? true) ? Palette.text : Palette.amber)
-      // Dust opacity sparkline.
-      let gx: CGFloat = 690, gy: CGFloat = 130, gw: CGFloat = 600, gh: CGFloat = 300
-      Draw.fill(ctx, CGRect(x: gx, y: gy, width: gw, height: gh), Palette.panel, radius: 12)
-      _ = Draw.text(String(format: "Dust τ %.1f", tau), at: CGPoint(x: gx + 24, y: gy + 16), size: 58, weight: .bold, color: tau > 2 ? Palette.amber : Palette.text)
-      if hist.count > 1 {
-        ctx.setStrokeColor(Palette.amber.cgColor)
-        ctx.setLineWidth(6)
-        for (i, v) in hist.enumerated() {
-          let x = gx + 20 + CGFloat(i) / CGFloat(max(1, hist.count - 1)) * (gw - 40)
-          let y = gy + gh - 20 - CGFloat(min(v, 6) / 6) * (gh - 110)
-          if i == 0 { ctx.move(to: CGPoint(x: x, y: y)) } else { ctx.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        ctx.strokePath()
+      _ = Draw.text(reserve, at: CGPoint(x: c1.minX, y: c1.maxY - 80), size: Kit.Size.value, weight: .heavy, color: low ? Palette.amber : Palette.text, width: c1.width, align: .center)
+      // Solar vs use.
+      let c2 = CGRect(x: 604, y: 104, width: 716, height: 410)
+      Kit.card(ctx, c2)
+      _ = Draw.text("kWh per sol", at: CGPoint(x: c2.minX + 24, y: c2.minY + 16), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text("Solar \(Int(solar))", at: CGPoint(x: c2.minX + 24, y: c2.minY + 62), size: Kit.Size.value, weight: .heavy, color: Palette.green)
+      Kit.textRight("Use \(Int(load))", right: c2.maxX - 24, y: c2.minY + 62, size: Kit.Size.value, weight: .heavy, color: Palette.amber, width: 330)
+      let lo = (min(solarH.min() ?? solar, loadH.min() ?? load, solar, load)) * 0.85
+      let hi = max(solarH.max() ?? solar, loadH.max() ?? load, solar, load, 1) * 1.05
+      let g = CGRect(x: c2.minX + 28, y: c2.minY + 150, width: c2.width - 56, height: c2.height - 180)
+      ctx.setStrokeColor(PlatformColor(white: 1, alpha: 0.10).cgColor); ctx.setLineWidth(1)
+      for i in 0...3 { let y = g.minY + g.height * CGFloat(i) / 3; ctx.move(to: CGPoint(x: g.minX, y: y)); ctx.addLine(to: CGPoint(x: g.maxX, y: y)) }
+      ctx.strokePath()
+      if solarH.count > 1 {
+        Kit.spark(ctx, g, solarH, lo: lo, hi: hi, color: Palette.green)
+        Kit.spark(ctx, g, loadH, lo: lo, hi: hi, color: Palette.amber, fill: false)
+      } else {
+        _ = Draw.text("Collecting readings", at: CGPoint(x: g.minX, y: g.midY - 20), size: Kit.Size.label, color: Palette.dim, width: g.width, align: .center)
       }
-      _ = Draw.text("Solar model: Opportunity rover, 2018 dust storm (JPL)", at: CGPoint(x: 48, y: size.height - 62), size: 30, weight: .medium, color: Palette.dim)
+      // Bottom row: ice drill chip + dust.
+      let c3 = CGRect(x: 24, y: 534, width: 560, height: 160)
+      Kit.card(ctx, c3)
+      Icon.drill(ctx, CGRect(x: c3.minX + 28, y: c3.minY + 30, width: 44, height: 56), Palette.dim)
+      _ = Draw.text("Ice drill", at: CGPoint(x: c3.minX + 92, y: c3.minY + 36), size: Kit.Size.label, color: Palette.dim)
+      Kit.chip(ctx, at: CGPoint(x: c3.minX + 28, y: c3.minY + 94), text: drill ? "ON" : "OFF", color: drill ? Palette.green : Palette.amber)
+      let c4 = CGRect(x: 604, y: 534, width: 716, height: 160)
+      Kit.card(ctx, c4)
+      let dustTone = tau > 2 ? Palette.amber : Palette.text
+      Icon.dust(ctx, CGRect(x: c4.minX + 26, y: c4.minY + 28, width: 56, height: 44), tau > 2 ? Palette.amber : Palette.dim)
+      _ = Draw.text("Dust", at: CGPoint(x: c4.minX + 98, y: c4.minY + 28), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text(String(format: "τ %.1f", tau), at: CGPoint(x: c4.minX + 26, y: c4.minY + 82), size: Kit.Size.value, weight: .heavy, color: dustTone)
+      if tauH.count > 1 {
+        Kit.spark(ctx, CGRect(x: c4.minX + 230, y: c4.minY + 30, width: c4.width - 260, height: c4.height - 60), tauH, lo: 0, hi: max(4, (tauH.max() ?? 0) * 1.1), color: Palette.amber)
+      }
+      _ = Draw.text("Solar model: Opportunity rover, 2018 dust storm (JPL)", at: CGPoint(x: 28, y: size.height - 56), size: Kit.Size.credit, weight: .semibold, color: Palette.dim)
     }
   }
 
+  // MARK: MONEY
+
   private func drawMoney(_ s: VRState?, linkText: String) {
     let m = s?.money
-    let pays = (m?.payments ?? []).prefix(3)
-    let key = "\(m?.cashText ?? "")|\(m?.runwayDays ?? 0)|\(m?.savedText ?? "")|\(pays.map { $0.id }.joined())|\(linkText)"
+    let pays = Array((m?.payments ?? []).prefix(3))
+    let time = s?.time ?? ""
+    let key = "\(m?.cashText ?? "")|\(m?.runwayDays ?? 0)|\(m?.savedText ?? "")|\(m?.committedText ?? "")|\(pays.map { $0.id }.joined())|\(linkText)|\(time)"
     money.update(key: key) { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), Palette.bg)
-      _ = Draw.text("MONEY", at: CGPoint(x: 48, y: 30), size: 58, weight: .heavy, color: Palette.gold)
-      _ = Draw.text(linkText, at: CGPoint(x: size.width - 520, y: 42), size: 32, weight: .semibold, color: linkText.hasPrefix("Live") ? Palette.green : Palette.red, width: 480, align: .right)
-      _ = Draw.text(Self.short(m?.cashText ?? "—"), at: CGPoint(x: 48, y: 104), size: 130, weight: .heavy)
-      _ = Draw.text("Runway \(m?.runwayDays ?? 0) days", at: CGPoint(x: 48, y: 270), size: 70, weight: .bold, color: (m?.runwayDays ?? 999) < 150 ? Palette.amber : Palette.text)
-      _ = Draw.text("Saved \(Self.short(m?.savedText ?? "$0"))", at: CGPoint(x: 48, y: 366), size: 78, weight: .heavy, color: Palette.green)
-      var y: CGFloat = 480
-      for p in pays {
-        _ = Draw.text("Paid \(Self.short(p.amountText ?? "")) · \(p.vendor ?? "")", at: CGPoint(x: 48, y: y), size: 46, weight: .semibold, color: Palette.dim, width: size.width - 96)
-        y += 62
+      Kit.chrome(ctx, size, accent: Palette.gold)
+      Kit.header(ctx, size, title: "MONEY", color: Palette.gold, icon: Icon.coins, right: linkText, rightColor: linkText.hasPrefix("Live") ? Palette.green : Palette.red)
+      let runway = m?.runwayDays ?? 0
+      let c1 = CGRect(x: 24, y: 104, width: 760, height: 220)
+      Kit.card(ctx, c1)
+      _ = Draw.text("Cash", at: CGPoint(x: c1.minX + 28, y: c1.minY + 16), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text(Self.short(m?.cashText ?? "—"), at: CGPoint(x: c1.minX + 28, y: c1.minY + 62), size: Kit.Size.hero, weight: .heavy, width: c1.width - 56)
+      let c2 = CGRect(x: 804, y: 104, width: 516, height: 220)
+      Kit.card(ctx, c2)
+      let rcol = runway < 150 ? Palette.amber : Palette.text
+      _ = Draw.text("Runway", at: CGPoint(x: c2.minX + 28, y: c2.minY + 16), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text("\(runway)", at: CGPoint(x: c2.minX + 28, y: c2.minY + 62), size: Kit.Size.hero, weight: .heavy, color: rcol, width: 300)
+      let rw = ("\(runway)" as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: Kit.Size.hero, weight: .heavy)]).width
+      _ = Draw.text("days", at: CGPoint(x: c2.minX + 28 + rw + 14, y: c2.minY + 110), size: Kit.Size.value, weight: .heavy, color: Palette.dim, width: 150)
+      Draw.bar(ctx, CGRect(x: c2.minX + 28, y: c2.maxY - 34, width: c2.width - 56, height: 12), fraction: CGFloat(min(runway, 365)) / 365, color: runway < 150 ? Palette.amber : Palette.gold)
+      // Saved + committed.
+      let c3 = CGRect(x: 24, y: 344, width: 636, height: 140)
+      Kit.card(ctx, c3, accent: Palette.green)
+      _ = Draw.text("Saved so far", at: CGPoint(x: c3.minX + 28, y: c3.minY + 14), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text(Self.short(m?.savedText ?? "$0"), at: CGPoint(x: c3.minX + 28, y: c3.minY + 58), size: 74, weight: .heavy, color: Palette.green, width: c3.width - 56)
+      let c4 = CGRect(x: 684, y: 344, width: 636, height: 140)
+      Kit.card(ctx, c4)
+      _ = Draw.text("Committed", at: CGPoint(x: c4.minX + 28, y: c4.minY + 14), size: Kit.Size.label, color: Palette.dim)
+      _ = Draw.text(m?.committedText.map { Self.short($0) } ?? "—", at: CGPoint(x: c4.minX + 28, y: c4.minY + 58), size: 74, weight: .heavy, color: Palette.text, width: c4.width - 56)
+      // Last payments.
+      let c5 = CGRect(x: 24, y: 504, width: 1296, height: 196)
+      Kit.card(ctx, c5)
+      _ = Draw.text("Recent payments", at: CGPoint(x: c5.minX + 28, y: c5.minY + 12), size: Kit.Size.label, color: Palette.dim)
+      if pays.isEmpty {
+        _ = Draw.text("None yet", at: CGPoint(x: c5.minX + 28, y: c5.minY + 74), size: Kit.Size.label, weight: .semibold, color: Palette.dim)
       }
-      _ = Draw.text("Suppliers, prices and budget are SIMULATED", at: CGPoint(x: 48, y: size.height - 62), size: 30, weight: .medium, color: Palette.dim)
+      var y = c5.minY + 54
+      for p in pays {
+        Draw.fill(ctx, CGRect(x: c5.minX + 28, y: y + 14, width: 14, height: 14), Palette.gold, radius: 7)
+        _ = Draw.text(p.vendor ?? "", at: CGPoint(x: c5.minX + 60, y: y), size: Kit.Size.label, weight: .semibold, width: 820)
+        Kit.textRight(Self.short(p.amountText ?? ""), right: c5.maxX - 28, y: y, size: Kit.Size.label, weight: .heavy, color: Palette.gold, width: 300)
+        y += 46
+      }
+      _ = Draw.text("Suppliers, prices and budget are SIMULATED", at: CGPoint(x: 28, y: size.height - 56), size: Kit.Size.credit, weight: .semibold, color: Palette.dim)
     }
   }
+
+  // MARK: WAITING / EARTH / MISSION
 
   private func drawWaiting(_ s: VRState?) {
     let w = s?.waiting?.first
     let earth = s?.earth?.first
-    let key = "\(w?.id ?? "")|\(w?.decideByText ?? "")|\(earth?.replyInMin ?? -1)|\(s?.lightTimeMin.map { Int($0 * 10) } ?? 0)"
     let light = s?.lightTimeMin ?? 0
+    let time = s?.time ?? ""
+    let beat = s?.storyBeat ?? 0
+    let beats = s?.storyBeats ?? 7
+    let mode = s?.agentMode
+    let key = "\(w?.id ?? "")|\(w?.decideByText ?? "")|\(earth?.id ?? "")|\(earth?.replyInMin ?? -1)|\(earth?.replyEtaText ?? "")|\(Int(light * 10))|\(time)|\(beat)|\(mode ?? "")"
     waiting.update(key: key) { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), Palette.bg)
-      _ = Draw.text("WAITING FOR YOU", at: CGPoint(x: 40, y: 26), size: 52, weight: .heavy, color: w != nil ? Palette.amber : Palette.dim)
+      let tone = w != nil ? Palette.amber : Palette.green
+      Kit.chrome(ctx, size, accent: tone)
+      Kit.header(ctx, size, title: w != nil ? "WAITING FOR YOU" : "ALL CLEAR", color: tone, icon: w != nil ? Icon.warning : Icon.check, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
       if let w {
-        _ = Draw.text("Decision needed\(w.decideByText.map { " by \($0)" } ?? "")", at: CGPoint(x: 40, y: 112), size: 60, weight: .bold, width: size.width - 80)
-        _ = Draw.text("Look at a choice above, then press the button.", at: CGPoint(x: 40, y: 200), size: 46, weight: .semibold, color: Palette.text, width: size.width - 80, maxLines: 2)
+        _ = Draw.text("Decision needed\(w.decideByText.map { " by \($0)" } ?? "")", at: CGPoint(x: 32, y: 100), size: Kit.Size.value, weight: .heavy, width: size.width - 64)
+        _ = Draw.text("Look at a choice above, then press the button.", at: CGPoint(x: 32, y: 168), size: 44, color: Palette.text, width: size.width - 64)
       } else {
-        _ = Draw.text("Nothing needs you. The team is handling it.", at: CGPoint(x: 40, y: 112), size: 52, weight: .semibold, color: Palette.dim, width: size.width - 80, maxLines: 2)
+        _ = Draw.text("Nothing needs you. The team is handling it.", at: CGPoint(x: 32, y: 108), size: 48, weight: .semibold, color: Palette.dim, width: size.width - 64)
       }
-      let earthLine = earth.map { "Earth reply in ~\($0.replyInMin ?? 0) min" } ?? String(format: "Earth is %.1f light-minutes away", light)
-      _ = Draw.text(earthLine, at: CGPoint(x: 40, y: size.height - 92), size: 46, weight: .bold, color: Palette.blue, width: size.width - 80)
+      // Earth link.
+      let c1 = CGRect(x: 24, y: 226, width: size.width - 48, height: 150)
+      Kit.card(ctx, c1, accent: Palette.blue)
+      Icon.antenna(ctx, CGRect(x: c1.minX + 24, y: c1.minY + 24, width: 58, height: 62), Palette.blue)
+      _ = Draw.text(String(format: "Earth is %.1f light-min away", light), at: CGPoint(x: c1.minX + 104, y: c1.minY + 18), size: 46, weight: .heavy, color: Palette.blue, width: c1.width - 128)
+      let ver = earth.map { e -> String in
+        let who = e.vendor.map { " · \($0)" } ?? ""
+        let eta = e.replyInMin.map { "reply in ~\($0) min" } ?? e.replyEtaText.map { "reply \($0)" } ?? "waiting"
+        return "Verification pending\(who): \(eta)"
+      } ?? "No verifications pending"
+      _ = Draw.text(ver, at: CGPoint(x: c1.minX + 104, y: c1.minY + 78), size: 42, weight: .semibold, color: earth != nil ? Palette.text : Palette.dim, width: c1.width - 128)
+      // Mission strip: beat N of 7 + name, progress dots, agent mode.
+      let y0 = size.height - 164
+      if beat > 0 {
+        _ = Draw.text("Beat \(beat) of \(beats) · \(Self.beatNames[min(beat, 7)])", at: CGPoint(x: 32, y: y0), size: 46, weight: .heavy, color: Palette.text, width: size.width - 340)
+      } else {
+        _ = Draw.text("Mission starting", at: CGPoint(x: 32, y: y0), size: Kit.Size.label, weight: .heavy, color: Palette.dim, width: 600)
+      }
+      if let mode { Kit.textRight("Agents: \(mode)", right: size.width - 32, y: y0, size: Kit.Size.label, color: Palette.cyan, width: 330) }
+      for i in 1...max(1, beats) {
+        let x = 32 + CGFloat(i - 1) * ((size.width - 64) / CGFloat(beats))
+        let w = (size.width - 64) / CGFloat(beats) - 12
+        Draw.fill(ctx, CGRect(x: x, y: y0 + 56, width: w, height: 14), i <= beat ? (i == beat ? Palette.amber : Palette.green) : PlatformColor(white: 1, alpha: 0.14), radius: 7)
+      }
     }
   }
 
