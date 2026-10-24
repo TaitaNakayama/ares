@@ -132,8 +132,8 @@ enum Room {
     // Emissive details stay separate (constant lighting).
     let glow = SCNMaterial()
     glow.lightingModel = .constant
-    glow.diffuse.contents = PlatformColor(red: 1.0, green: 0.86, blue: 0.62, alpha: 1)
-    let ringLight = SCNNode(geometry: SCNTorus(ringRadius: 2.2, pipeRadius: 0.035))
+    glow.diffuse.contents = PlatformColor(red: 0.98, green: 0.76, blue: 0.50, alpha: 1)
+    let ringLight = SCNNode(geometry: SCNTorus(ringRadius: 2.2, pipeRadius: 0.022))
     ringLight.geometry?.materials = [glow]
     ringLight.position = SCNVector3(0, height - 0.05, 0)
     root.addChildNode(ringLight)
@@ -149,31 +149,61 @@ enum Room {
       root.addChildNode(led)
       k += 6
     }
-    // Warm ceiling strips: emissive bars plus a soft additive glow sprite on the ceiling (no bloom pass).
+    // Warm ceiling cove tubes: slim rounded capsules along the wall (dimmer, warmer than before), each with a soft
+    // additive glow on the ceiling, a warm pool on the wall below it and one on the floor. No bloom pass, no lights.
     let strips = SCNNode()
     let sprites = SCNNode()
-    let stripMat = SCNMaterial()
-    stripMat.lightingModel = .constant
-    stripMat.diffuse.contents = PlatformColor(red: 1.0, green: 0.90, blue: 0.70, alpha: 1)
-    let halo = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.78, blue: 0.5, alpha: 1), strength: 0.55)
+    let tubeMat = SCNMaterial()
+    tubeMat.lightingModel = .constant
+    tubeMat.diffuse.contents = PlatformColor(red: 0.98, green: 0.74, blue: 0.46, alpha: 1)
+    let halo = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.70, blue: 0.40, alpha: 1), strength: 0.40)
+    let wallPool = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.68, blue: 0.38, alpha: 1), strength: 0.26)
+    let floorPool = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.66, blue: 0.36, alpha: 1), strength: 0.20)
     for k in 0..<8 {
       let deg = Float(k) * 45 + 22.5
-      let bar = SCNNode(geometry: SCNBox(width: 0.10, height: 0.02, length: 1.5, chamferRadius: 0))
-      bar.geometry?.materials = [stripMat]
-      bar.position = ring(deg, r: 2.9, y: height - 0.03)
-      bar.simdEulerAngles.y = -deg * .pi / 180
-      strips.addChildNode(bar)
-      let s = SCNNode(geometry: SCNPlane(width: 0.9, height: 2.3))
-      s.geometry?.materials = [halo]
-      s.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-      let holder = SCNNode()
-      holder.position = ring(deg, r: 2.9, y: height - 0.045)
-      holder.simdEulerAngles.y = -deg * .pi / 180
-      holder.addChildNode(s)
-      sprites.addChildNode(holder)
+      let yaw = -deg * .pi / 180
+      let cap = SCNCapsule(capRadius: 0.022, height: 1.5)
+      cap.radialSegmentCount = 8
+      cap.heightSegmentCount = 1
+      cap.capSegmentCount = 3
+      cap.materials = [tubeMat]
+      let tube = SCNNode(geometry: cap)
+      tube.eulerAngles.z = .pi / 2
+      let th = SCNNode()
+      th.position = ring(deg, r: 3.3, y: height - 0.03)
+      th.simdEulerAngles.y = yaw
+      th.addChildNode(tube)
+      strips.addChildNode(th)
+      // glow on the ceiling
+      let cs = SCNNode(geometry: SCNPlane(width: 2.4, height: 0.9))
+      cs.geometry?.materials = [halo]
+      cs.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+      cs.position = SCNVector3(0, -0.01, 0)
+      let ch = SCNNode()
+      ch.position = ring(deg, r: 3.3, y: height - 0.01)
+      ch.simdEulerAngles.y = yaw
+      ch.addChildNode(cs)
+      sprites.addChildNode(ch)
+      // warm pool on the wall below the tube
+      let wp = SCNNode(geometry: SCNPlane(width: 2.6, height: 1.5))
+      wp.geometry?.materials = [wallPool]
+      let wh = SCNNode()
+      wh.position = ring(deg, r: radius - 0.03, y: 2.45)
+      wh.simdEulerAngles.y = yaw
+      wh.addChildNode(wp)
+      sprites.addChildNode(wh)
+      // warm pool on the floor
+      let fp = SCNNode(geometry: SCNPlane(width: 2.6, height: 1.9))
+      fp.geometry?.materials = [floorPool]
+      fp.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+      let fh = SCNNode()
+      fh.position = ring(deg, r: 3.0, y: 0.012)
+      fh.simdEulerAngles.y = yaw
+      fh.addChildNode(fp)
+      sprites.addChildNode(fh)
     }
-    root.addChildNode(strips.flattenedClone())
-    let spriteFlat = sprites.flattenedClone()
+    root.addChildNode(Dressing.bake(strips))
+    let spriteFlat = Dressing.bake(sprites)
     spriteFlat.renderingOrder = 50
     root.addChildNode(spriteFlat)
     // Interior light: warm key from the ceiling, plus a cool fill from the screens on each side.

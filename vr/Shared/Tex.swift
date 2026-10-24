@@ -83,6 +83,10 @@ enum Tex {
       if let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(white: 0, alpha: 0.0).cgColor, PlatformColor(red: 0.10, green: 0.07, blue: 0.04, alpha: 0.45).cgColor] as CFArray, locations: [0, 1]) {
         c.drawLinearGradient(g, start: CGPoint(x: 0, y: 800), end: CGPoint(x: 0, y: 1024), options: [])
       }
+      // Warm light pool from the ceiling strips: a soft gradient over the top of the wall (baked, no light cost).
+      if let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.42).cgColor, PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.12).cgColor, PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.0).cgColor] as CFArray, locations: [0, 0.45, 1]) {
+        c.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: 340), options: [])
+      }
       // Scuff strokes at hand height (light paint-through marks).
       for _ in 0..<14 {
         let x = rng.next() * 110 + 8, y = 560 + rng.next() * 160

@@ -154,7 +154,7 @@ enum Dressing {
 
   /// Merges a hierarchy into one flat node per material. flattenedClone on nested holders mis-places
   /// children here, so every geometry is first re-parented flat with its world transform.
-  private static func bake(_ group: SCNNode) -> SCNNode {
+  static func bake(_ group: SCNNode) -> SCNNode {
     let flatGroup = SCNNode()
     group.enumerateHierarchy { n, _ in
       guard n.geometry != nil else { return }
