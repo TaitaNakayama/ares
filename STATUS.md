@@ -1,6 +1,6 @@
 # STATUS
 
-_Updated Fri 2026-10-23 20:55 PT_
+_Updated Fri 2026-10-23 21:12 PT_
 
 ## Works
 - **Engine** (world-agnostic): double-entry ledger, policy engine, three-way match, escalations, verifications, audit trail, trace-to-source, per-actor credentials.
@@ -20,8 +20,10 @@ _Updated Fri 2026-10-23 20:55 PT_
 - **Native VR app (AresVR):** stereo through the Cardboard distortion at 60 fps on the iPhone 16 Pro, gaze reticle, tap handling, live link over the hotspot.
 
 ## In progress
+- Re-recording the offline tape with current prices.
+- Demo video tooling: the headset streams a mono 16:9 director-camera view to the Mac (`/api/record/start` and `/api/record/stop` produce an MP4 in `docs/demo/`).
 - Spike A viewer check, with you. The full control room build is installed and renders at 60 fps (remote capture).
-- Opus review of the native renderer.
+- Opus review of the native renderer **done**. Critical: no stereo (fixed and verified, disparity -7 to -28 px on near objects). Plus recenter, the QR-hold trap, the profile string, debounce and link fixes.
 
 ## Done since the last update
 - Control room scene: window onto Jezero terrain, tau-driven sky, fog and sun, panels and drill, five robots with expressive faces and speech bubbles, three wall screens, 2x2 decision cards.

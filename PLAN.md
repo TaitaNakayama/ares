@@ -152,6 +152,18 @@ Checkpoints are bold. Anything that needs you physically is marked **[YOU]**.
 | **08:30** | **Submit on Devpost** (30-min buffer before the 09:00 hard deadline) |
 | 10:30-12:30 | Judging at the table |
 
+### Timeline v2 (re-planned Fri 21:10). About 6 h ahead of v1
+
+| When | Work |
+|---|---|
+| Fri 21:10-23:00 | **[YOU]** viewer check (tracking direction, legibility, comfort, button). Fix what you report. Test offline replay (server off). Test venue Wi-Fi vs hotspot |
+| 23:00-02:00 | Second world (BPI 2019, real P2P event log) through config. Habitat props outside. Audio cues. LLM live once a key exists. Re-run all reviews on changed code |
+| Sat 02:00-07:00 | **[YOU] sleep.** Claude: hardening, eval runs, docs, Devpost text, video edits |
+| 08:00-12:00 | **[YOU]** 20-min thermal soak off the charger. Rehearse the pitch x3 with the autoplay director. Record the screen-recording backup |
+| 12:00-19:00 | Polish from rehearsal feedback. Judge-scenario drills (inject, policy edits). Devpost draft up with video |
+| 19:00-Sun 01:00 | Stretch and buffer. **Feature freeze Sun 01:00** |
+| Sun 01:00-08:30 | Sleep, final checklist, submit by 08:30 |
+
 ## 6. Cut list (cut from the top first)
 
 1. Second real-world dataset (BPI 2019)
