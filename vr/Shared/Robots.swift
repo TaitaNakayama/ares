@@ -29,6 +29,7 @@ final class Robot {
   private var outcome = "said"
   private var nextBlink: TimeInterval = 2
   private let phase: Float
+  private let nametag: Nametag
 
   init(role: String, name: String, color: PlatformColor, at pos: SCNVector3, faceYaw: Float) {
     self.role = role
@@ -37,6 +38,7 @@ final class Robot {
     home = SIMD3<Float>(pos)
     homeYaw = faceYaw
     phase = Float(abs(role.hashValue % 100)) / 100 * 6.28
+    nametag = Nametag(name: name, role: role, color: color)
     node.position = pos
     node.simdEulerAngles.y = faceYaw
     node.addChildNode(body)
@@ -51,6 +53,8 @@ final class Robot {
     halo.geometry?.materials = [haloMat]
     halo.position = SCNVector3(0, -0.32, 0)
     node.addChildNode(halo)
+    nametag.node.position = SCNVector3(0, 0.62, 0)
+    node.addChildNode(nametag.node)
     setMood("calm", force: true)
   }
 
@@ -226,6 +230,8 @@ final class Robot {
     while dyaw > .pi { dyaw -= 2 * .pi }
     while dyaw < -.pi { dyaw += 2 * .pi }
     node.simdEulerAngles.y += dyaw * 0.08
+    // Nametag billboard: always faces the viewer, upright (the parent yaw is undone).
+    nametag.node.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
     if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
     if now > nextBlink {
       nextBlink = now + 2.5 + Double((sin(t * 7.1 + phase) + 1) * 2)
