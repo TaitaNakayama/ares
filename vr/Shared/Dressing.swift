@@ -731,23 +731,24 @@ enum Dressing {
     out.addChildNode(b)
     // Pipes: a pair along the left side and one crossing under duct A.
     func pipe(_ m: SCNMaterial, r: CGFloat, len: CGFloat, at p: SCNVector3, yaw: Float) {
+      let holder = SCNNode()
+      holder.position = p
+      holder.simdEulerAngles.y = yaw
       let g = SCNCylinder(radius: r, height: len); g.radialSegmentCount = 10
       let n = SCNNode(geometry: g)
       n.geometry?.materials = [m]
-      n.eulerAngles = SCNVector3(0, CGFloat(yaw), CGFloat.pi / 2)
-      n.position = p
-      out.addChildNode(n)
-      // clamps
+      n.eulerAngles.z = CGFloat.pi / 2
+      holder.addChildNode(n)
       var t = -len / 2 + 0.6
       while t < len / 2 - 0.2 {
         let c = SCNNode(geometry: SCNCylinder(radius: r + 0.012, height: 0.05))
         c.geometry?.materials = [dark]
-        c.eulerAngles = n.eulerAngles
-        let dx = CGFloat(cos(-yaw)) * t, dz = CGFloat(sin(-yaw)) * t
-        c.position = SCNVector3(p.x + dx, p.y, p.z + dz)
-        out.addChildNode(c)
+        c.eulerAngles.z = CGFloat.pi / 2
+        c.position = SCNVector3(t, 0, 0)
+        holder.addChildNode(c)
         t += 1.1
       }
+      out.addChildNode(holder)
     }
     pipe(orange, r: 0.055, len: 5.2, at: SCNVector3(-2.75, H - 0.09, 0.1), yaw: .pi / 2)
     pipe(blue, r: 0.04, len: 5.2, at: SCNVector3(-2.5, H - 0.075, 0.1), yaw: .pi / 2)

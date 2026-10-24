@@ -10,7 +10,7 @@ import UIKit
 /// (30 px for credit lines). Everything draws into a top-left-origin CGContext (the Bitmap convention).
 enum Kit {
   enum Size {
-    static let credit: CGFloat = 40   // citations and "SIMULATED" notes (one line each)
+    static let credit: CGFloat = 48   // citations and "SIMULATED" notes (one line each); 86% of the label size
     static let label: CGFloat = 56    // card labels, list rows
     static let value: CGFloat = 64    // secondary numbers, headings
     static let hero: CGFloat = 100    // the one big number on a screen
@@ -58,6 +58,14 @@ enum Kit {
   static func card(_ ctx: CGContext, _ r: CGRect, accent: PlatformColor? = nil) {
     ctx.addPath(rounded(r, 16)); ctx.setFillColor(PlatformColor(white: 1, alpha: 0.055).cgColor); ctx.fillPath()
     inset(ctx, r, radius: 16, color: (accent ?? PlatformColor(white: 1, alpha: 1)).withAlphaComponent(accent == nil ? 0.10 : 0.35), width: 2)
+  }
+
+  /// Footer line (citation / SIMULATED note): `Size.credit`, shrunk only as far as needed to stay on one line (never below 38).
+  static func footer(_ s: String, size: CGSize, y: CGFloat? = nil, color: PlatformColor = Palette.dim) {
+    var fs = Size.credit
+    let w = size.width - 56
+    while fs > 38, (s as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: fs, weight: .semibold)]).width > w { fs -= 1 }
+    _ = Draw.text(s, at: CGPoint(x: 28, y: y ?? size.height - 64), size: fs, weight: .semibold, color: color, width: w)
   }
 
   /// Right-aligned text ending at `right`.
