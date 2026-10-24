@@ -12,3 +12,4 @@ terrain/.venv/
 terrain/out-scenekit/
 vr/AresVR/Resources/ares.json
 .claude/worktrees/
+vr/Vendor/Vendor/
