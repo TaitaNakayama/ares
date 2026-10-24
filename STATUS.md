@@ -1,11 +1,11 @@
 # STATUS
 
-_Updated Fri 2026-10-23 23:10 PT_
+_Updated Fri 2026-10-23 23:30 PT_
 
 ## Works
 - **Engine** (world-agnostic): double-entry ledger, policy engine, three-way match, escalations, verifications, audit trail, trace-to-source, per-actor credentials.
   - Opus adversarial review, three rounds: 21 + 17 + 17 findings, all fixed, including the two low-severity items (E7, E9).
-  - 73 tests pass, plus 45 blocked-exploit repros and a property-based fuzz.
+  - 75 tests pass, plus 45 blocked-exploit repros and a property-based fuzz.
 - **Agents:** rule brains for all five roles. The orchestrator binds each agent's identity, so the LLM can never choose its own. Rogue mode swaps in a malicious Rule Keeper; a test proves every attempt is refused.
 - **Mars world:**
   - real Mars24 sun, real Earth-Mars light time (12.5 min);
@@ -23,11 +23,11 @@ _Updated Fri 2026-10-23 23:10 PT_
 
 - **Headset link with the token, verified on the device** (23:00): live over the venue Wi-Fi (10.20.50.20) and over the USB cable, 60 fps, thermal nominal. It reconnects by itself after a server restart.
   - Bug found and fixed on the way: the app never appended its token, because "client=vr" already contains "t=".
+- **LLM reader live** (OpenAI key in `.env`, gpt-6.1-sol, cached). Pasted messy invoices are read by the model. Charges for things we don't stock are left out deterministically and named, so the bank and quantity controls still run.
 - **Public repo:** https://github.com/TaitaNakayama/ares. Checked before pushing: no secrets or headset token in history, no Claude attribution, largest file 28 MB.
 
 ## Needs you
 - Viewer checklist (in the terminal).
-- Optional: `OPENAI_API_KEY` in `.env` (the server now loads `.env` at start).
 
 ## Cut
 - Second real dataset (BPI Challenge 2019): 4TU.ResearchData was unreachable on both networks.

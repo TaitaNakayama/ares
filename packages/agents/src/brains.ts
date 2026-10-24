@@ -163,9 +163,12 @@ export class ApRules implements Brain {
     const m = e.computeMatch(inv);
     const billed = inv.lines.reduce((s, l) => s + l.qty, 0);
     const paying = m.lines.reduce((s, l) => s + l.payQty, 0);
+    const earlier = m.lines.reduce((s, l) => s + l.alreadyBilled, 0);
     const say =
       paying < billed
-        ? `Invoice bills ${billed}, we received ${paying}. Paying only for ${paying}: ${formatCents(m.payable)}.`
+        ? earlier > 0
+          ? `Invoice bills ${billed}, but ${earlier} were already paid on earlier invoices. Paying only for the ${paying} received since: ${formatCents(m.payable)}.`
+          : `Invoice bills ${billed}, we received ${paying}. Paying only for ${paying}: ${formatCents(m.payable)}.`
         : `Invoice matches order and receipt. Submitting ${formatCents(m.payable)}.`;
     const short = paying < billed ? `Billed ${billed}, got ${paying}. Paying for ${paying} only.` : `Invoice matches. Submitting ${compact(m.payable)}.`;
     return [{ type: "submit_invoice", params: { invoiceId: inv.id, amount: m.payable }, rationale: say, say, short, mood: paying < billed ? "attentive" : "calm" }];

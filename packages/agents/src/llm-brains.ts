@@ -29,7 +29,7 @@ export class ApWithReader implements Brain {
           type: "record_invoice",
           params: { ...got.params, sourceRef: doc.id },
           rationale: `Read ${doc.id} via ${got.via}${got.notes.length ? ` (${got.notes.join("; ")})` : ""}`,
-          say: `Read a free-text invoice (${got.via}): ${l.qty} x ${ctx.itemName(l.sku)} from ${ctx.engine.vendors.get(got.params.vendorId)?.name}.`,
+          say: `Read a free-text invoice (${got.via}): ${l.qty} x ${ctx.itemName(l.sku)} from ${ctx.engine.vendors.get(got.params.vendorId)?.name}.${got.excluded?.length ? ` Left out ${got.excluded.join(", ")}: not on the order, so not payable.` : ""}`,
           short: `Read a pasted invoice (${got.via}).`,
         },
       ];

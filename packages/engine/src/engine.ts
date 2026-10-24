@@ -159,7 +159,8 @@ export interface MatchResult {
   matchedValue: Cents;
   prepaidApplied: Cents;
   grniRelief: Cents;
-  lines: { sku: string; billedQty: number; payQty: number; billedPrice: Cents; poPrice: Cents }[];
+  /** alreadyBilled: units of this SKU paid for on earlier invoices against the same order. */
+  lines: { sku: string; billedQty: number; payQty: number; alreadyBilled: number; billedPrice: Cents; poPrice: Cents }[];
   rules: RuleResult[];
 }
 
@@ -705,14 +706,16 @@ export class Engine {
         rules.push(fail("match.po_exists", `${l.sku} is not on ${po.id}`, "hold"));
         continue;
       }
-      const receivable = Math.max(0, Math.min(accepted.get(l.sku) ?? 0, pl.qty) - (invoiced.get(l.sku) ?? 0));
+      const alreadyBilled = invoiced.get(l.sku) ?? 0;
+      const receivable = Math.max(0, Math.min(accepted.get(l.sku) ?? 0, pl.qty) - alreadyBilled);
+      const recv = alreadyBilled > 0 ? `${receivable} received and not yet billed (${alreadyBilled} already paid)` : `received ${receivable}`;
       let payQty = l.qty;
       if (l.qty > receivable) {
         if (this.#policy.match.payReceivedQtyOnly) {
           payQty = receivable;
-          rules.push(pass("match.qty_within_receipt", `${l.sku}: billed ${l.qty}, received ${receivable}; paying for ${receivable}`));
+          rules.push(pass("match.qty_within_receipt", `${l.sku}: billed ${l.qty}, ${recv}; paying for ${receivable}`));
         } else {
-          rules.push(fail("match.qty_within_receipt", `${l.sku}: billed ${l.qty} but only ${receivable} received`, "hold"));
+          rules.push(fail("match.qty_within_receipt", `${l.sku}: billed ${l.qty}, ${recv}`, "hold"));
         }
       } else {
         rules.push(pass("match.qty_within_receipt", `${l.sku}: billed ${l.qty} of ${receivable} received`));
@@ -725,7 +728,7 @@ export class Engine {
       );
       matchedValue += payQty * l.unitPrice;
       grniRelief += payQty * pl.unitPrice;
-      lines.push({ sku: l.sku, billedQty: l.qty, payQty, billedPrice: l.unitPrice, poPrice: pl.unitPrice });
+      lines.push({ sku: l.sku, billedQty: l.qty, payQty, alreadyBilled, billedPrice: l.unitPrice, poPrice: pl.unitPrice });
     }
     const prepaidRemaining = this.prepaidBalance(po.id);
     const prepaidApplied = Math.min(prepaidRemaining, matchedValue);
@@ -1092,7 +1095,7 @@ export class Engine {
         const shortPaid = m.lines.reduce((s, l) => s + (l.billedQty - l.payQty) * l.billedPrice, 0);
         if (shortPaid > 0 && !inv.flags.includes("qty_over_receipt")) {
           inv.flags.push("qty_over_receipt");
-          const detail = m.lines.filter((l) => l.billedQty > l.payQty).map((l) => `${l.sku}: billed ${l.billedQty}, received ${l.payQty}`).join("; ");
+          const detail = m.lines.filter((l) => l.billedQty > l.payQty).map((l) => `${l.sku}: billed ${l.billedQty}, ${l.alreadyBilled > 0 ? `${l.payQty} received and not yet billed (${l.alreadyBilled} already paid)` : `received ${l.payQty}`}`).join("; ");
           this.raise("qty_over_receipt", { kind: "invoice", id: inv.id }, `${detail}; short-paying ${formatCents(shortPaid)}`, shortPaid, p.actorId);
           this.prevent({ kind: "invoice", id: inv.id }, "qty_over_receipt", shortPaid, detail);
         }

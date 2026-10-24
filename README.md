@@ -8,7 +8,7 @@ An AI agent team that runs procure-to-pay on its own under deterministic control
 
 ```bash
 pnpm install
-pnpm test                                   # 73 tests + 45 blocked-exploit repros + property fuzz
+pnpm test                                   # 75 tests + 45 blocked-exploit repros + property fuzz
 node packages/server/src/main.ts            # http://localhost:8787  (console + API + headset feed)
 node packages/eval/src/main.ts --seeds 100 --from 5000   # scorecard on held-out seeds
 node scripts/demo-dryrun.ts buy             # the whole demo story, headless

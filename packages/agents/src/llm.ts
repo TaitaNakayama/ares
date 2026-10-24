@@ -145,6 +145,8 @@ export interface ExtractedInvoice {
   params: z.infer<(typeof ACTION_SCHEMAS)["record_invoice"]>;
   via: "llm" | "parser";
   notes: string[];
+  /** Charges left out of the entry because they aren't items we order (e.g. "rush handling"). */
+  excluded?: string[];
 }
 
 /** Read a free-text invoice into `record_invoice` params: LLM first, deterministic parser as fallback. */
@@ -159,7 +161,15 @@ export async function readInvoice(text: string, e: Engine, llm?: LlmProvider): P
       });
       const call = res.toolCalls.find((c) => c.name === "record_invoice");
       const parsed = call ? ACTION_SCHEMAS.record_invoice.safeParse(call.args) : undefined;
-      if (parsed?.success) return { params: parsed.data, via: "llm", notes: [`read by ${res.model}${res.cached ? " (cached)" : ""}`] };
+      if (parsed?.success) {
+        const notes = [`read by ${res.model}${res.cached ? " (cached)" : ""}`];
+        // A charge for something we don't stock is on no order, so it can never be payable. Leave it
+        // out of the entry (and say so) so the controls check the rest of the invoice.
+        const known = parsed.data.lines.filter((l) => e.items.has(l.sku));
+        const excluded = parsed.data.lines.filter((l) => !e.items.has(l.sku)).map((l) => `"${l.sku}" (${formatCents(l.qty * l.unitPrice)})`);
+        if (known.length === 0 || excluded.length === 0) return { params: parsed.data, via: "llm", notes };
+        return { params: { ...parsed.data, lines: known }, via: "llm", notes: [...notes, `left out ${excluded.join(", ")}: not items we order`], excluded };
+      }
     } catch {
       // fall through to the parser
     }
