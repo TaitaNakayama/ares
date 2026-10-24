@@ -60,6 +60,32 @@ _Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
 6. The commander decides with gaze + tap. `decide` re-checks every sub-action against policy as the commander.
 7. Earth's answer arrives after the round trip: fake. The quote is voided, the vendor is put on hold, and the saved amount is recorded.
 
+## The agents (packages/agents)
+
+Three model layers, one generic LLM brain per role, rules as the floor.
+
+```
+event (world or engine) ─▶ LlmBrain.react ──▶ router.complete ──▶ cloud (OpenAI)  ─┐
+                              │                     │ (auto: cloud first when online)  │ one valid answer
+                              │                     └──▶ local (Ollama, offline)   ───┤
+                              │  timeout / error / invalid call / off-script line     │
+                              └──▶ rules brain (same role) ◀──────────────────────────┘
+                                          │
+                                   Intent[] (via: llm | rules | parser)
+                                          │
+                                   Engine.submit ─▶ policy.evaluate ─▶ verdict ─▶ executor
+```
+
+- **`router.ts`**: `ModelRouter` picks the layer and enforces deadlines (8 s per action, 15 s per free-text report; `ARES_LOCAL_TIMEOUT_MS`), marks the cloud offline for 60 s after a network error, and counts calls, errors and timeouts per layer. Mode `auto | local | cloud | rules`; `rules` is SAFE MODE (console button, `POST /api/agents/mode`), instant and mid-run. `ARES_PREFER` chooses the first layer in `auto` (default cloud: measured 2-8 s live; local needs a warm prompt prefix). `OllamaProvider` talks to `/api/chat` with `think:false`, `num_ctx 4096`, and reports prompt tokens read, which is how we see whether the prefix cache worked.
+- **`llm-agent.ts`**: `LlmBrain` reasons only at its role's decision points (a fixed table: the Engineer on needs and reports, the Rule Keeper on closed RFQs, held invoices, verification answers, and so on). Mechanical events stay on the rules brain. The model gets the event and a state summary, both written by code from engine state (catalog, vendors, limits, open requisitions with each quote's policy results and price ratio, invoices with their match, pending verifications, open escalations), and a tool list that is exactly the actions policy permits that role for that event, plus `say` and `report_issue`. Each action tool carries a `say` field so one call holds the decision and the line.
+- **Checks before anything is proposed**: unknown tool, schema failure, ids the engine doesn't have, invented report subjects. Known small-model slips are repaired deterministically and noted in the rationale (a `poId` next to an `invoiceId`, a missing `qtyRejected`, nested JSON as strings). Every spoken line is checked against the facts the engine provided: numbers (in cents, dollars, or compact form), ids, length, markdown, character. A failed line is replaced by the rules brain's line and the rationale says so. If the model proposes no action where the rules would act, the rules act (`via: rules`). If the rules would escalate and the model neither escalates nor decides, the escalation is added, labeled rules (the floor for the human handoff).
+- **Breaker**: two failures (timeout, error, policy denial) in the last four calls put that brain on rules for 60 s.
+- **Reports** (`world.ts` `report` event, `routing.ts`): any free text is routed to one agent (the model with one tiny `route` tool, keywords as fallback). The engine action `report_issue` (allowed to every agent role) always becomes an escalation to the on-site human with the agent's recommendation and two options (approve the recommendation, no action). `ReportRules` handles reports when a role has no model.
+- **Options proposed by agents**: `escalate.options` lets the escalating agent propose up to three options, each with the exact action it would take. The engine dry-runs each action through the full policy as the deciding human, keeps the clean ones next to its standard options (`proposedBy` set), and the decide step re-checks them.
+- **Thinking and asking**: the orchestrator emits `thinking` on/off around each model call (headset face, spectator pill). `Orchestrator.ask(role)` (`vr_ask` from the headset, `POST /api/ask`) makes an agent explain itself live from the current state: a validated line, or a code-written status line.
+- **Labels**: each proposal's `source` is what produced it (`rules`, `llm`, `parser`, `human`, `console`), never the brain's capability. `/api/agents/history` lists every model call: layer, time, prompt tokens read, and why it fell back.
+- **Eval**: `scripts/eval-llm-story.ts` runs the full story per seed with the LLM brains and the rules brains, and reports beats in order, fallbacks by role and reason, replaced lines, latency, denials, and whether the pump report reached the commander.
+
 ## The headset (vr/)
 
 - Scene code lives in `vr/Shared` (shared with the Mac spectator view); iOS-only code in `vr/AresVR/Sources`.
