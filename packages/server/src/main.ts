@@ -4,7 +4,7 @@ import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
-import { formatCents, RULE_LABELS, type Escalation } from "@ares/engine";
+import { formatCents, RULE_LABELS, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
 
@@ -15,6 +15,9 @@ const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
 const LLM = providerFromEnv(new URL("../../../.cache/llm/", import.meta.url).pathname);
 console.log(LLM ? `LLM: ${LLM.name} (${LLM.model})` : "LLM: none (rules brains + deterministic document parser)");
 const brains = () => [new RequesterRules(), new ReceiverRules(), new ApWithReader(LLM), new TreasuryRules(), new ControllerRules(), new EscalationDrafter(LLM)];
+
+/** Policy edited by the policy owner in the console; survives resets. */
+let policyOverride: Policy | undefined;
 
 /** One running scenario: a world, its engine and agents, and a real-time clock. */
 class Session {
@@ -34,7 +37,8 @@ class Session {
   constructor(seed: string, paceMs: number) {
     this.seed = seed;
     this.paceMs = paceMs;
-    this.world = new MarsWorld({ seed, mode: "demo" });
+    // A policy edited in the console carries over to every new run until restored.
+    this.world = new MarsWorld({ seed, mode: "demo", policy: policyOverride });
     this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0 });
     this.simNow = this.world.start - 32 * 86_400_000;
   }
@@ -321,9 +325,15 @@ const server = http.createServer(async (req, res) => {
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
     }
     if (path === "/api/policy" && req.method === "GET") return send(res, 200, session.orch.engine.policy);
+    if (path === "/api/policy/default" && req.method === "POST") {
+      policyOverride = undefined;
+      await reset();
+      return send(res, 200, { ok: true, policy: session.orch.engine.policy });
+    }
     if (path === "/api/policy" && req.method === "PUT") {
       const body = await readJson(req);
       session.orch.setPolicy(body);
+      policyOverride = session.orch.engine.policy;
       scheduleVrState();
       return send(res, 200, session.orch.engine.policy);
     }

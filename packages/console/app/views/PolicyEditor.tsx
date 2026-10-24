@@ -87,9 +87,10 @@ export function PolicyEditor({ state, refresh }: { state: AppState; refresh: () 
         <div className="row-gap apply">
           <button className="btn primary" disabled={busy || !!rawErr} onClick={apply}>Apply as version {server.version + 1}</button>
           <button className="btn" onClick={() => { setDraft(clone(server)); setRaw(JSON.stringify(server, null, 2)); setRawErr(""); setResult(null); }} disabled={!dirty}>Revert</button>
+          <button className="btn" disabled={busy} title="Fresh run with the default policy" onClick={async () => { try { await api("/api/policy/default", "POST", {}); setResult({ ok: true, text: "Default policy restored; a fresh run started." }); } catch (e) { setResult({ ok: false, text: (e as Error).message }); } }}>Restore default</button>
           {dirty && <span className="warnt">unsaved changes</span>}
         </div>
-        <p className="dim">Changes apply to the next decision; segregation-of-duties flags cannot be disabled.</p>
+        <p className="dim">Changes apply to the next decision and carry over to new runs (Reset) until you restore the default. Segregation-of-duties flags cannot be disabled.</p>
         {result && <pre className={result.ok ? "result ok" : "result bad"}>{result.ok ? "" : "REJECTED BY THE ENGINE: "}{result.text}</pre>}
       </Card>
       <Card title="Raw JSON" right={<span className="dim small">Add "execute_payment" to controller to see the engine refuse.</span>}>

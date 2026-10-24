@@ -28,6 +28,7 @@ final class Outside {
     root.eulerAngles.y = -(360 - Self.viewAzimuth) * .pi / 180
     scene.rootNode.addChildNode(root)
     loadTerrain()
+    buildProps()
     buildPanels()
     buildDrill()
     buildDust()
@@ -63,6 +64,64 @@ final class Outside {
       node.name = "terrain-\(name)"
       root.addChildNode(node)
     }
+  }
+
+  /// Kenney Space Kit (CC0) props: habitat domes, a landed cargo rocket, the Earth-link dish, a rover, rocks.
+  private func buildProps() {
+    let place: [(String, Float, Float, Float, Float)] = [
+      // name, azimuth, distance (m), scale, yaw (deg)
+      ("hangar_roundA", 338, 62, 5, 20),
+      ("hangar_roundB", 350, 85, 5, -30),
+      ("satelliteDish_large", 268, 26, 7, 120),
+      ("rover", 303, 22, 8, 60),
+      ("rock_largeA", 318, 10, 3, 0),
+      ("rock_largeB", 289, 21, 4, 45),
+      ("rocks_smallA", 306, 7, 6, 10),
+      ("supports_high", 344, 45, 4, 0),
+    ]
+    for (name, az, dist, scale, yaw) in place {
+      guard let n = loadProp(name) else { continue }
+      n.scale = SCNVector3(scale, scale, scale)
+      n.eulerAngles.y = yaw * .pi / 180
+      n.position = ground(az: az, dist: dist, y: groundHeight(az: az, dist: dist))
+      root.addChildNode(n)
+    }
+    // Landed cargo rocket: base + fuel + sides + nose, stacked.
+    let rocket = SCNNode()
+    var y: Float = 0
+    for (part, h) in [("rocket_baseA", Float(1.6)), ("rocket_fuelA", 0.5), ("rocket_sidesA", 1.0), ("rocket_sidesA", 1.0), ("rocket_topA", 0.8)] {
+      guard let n = loadProp(part) else { continue }
+      n.position = SCNVector3(0, y, 0)
+      rocket.addChildNode(n)
+      y += h
+    }
+    rocket.scale = SCNVector3(7, 7, 7)
+    rocket.position = ground(az: 297, dist: 140, y: groundHeight(az: 297, dist: 140))
+    rocket.name = "cargo-rocket"
+    root.addChildNode(rocket)
+  }
+
+  private func loadProp(_ name: String) -> SCNNode? {
+    guard let url = Bundle.main.url(forResource: name, withExtension: "obj") else { return nil }
+    let asset = MDLAsset(url: url)
+    asset.loadTextures()
+    let n = SCNNode()
+    for i in 0..<asset.count {
+      let child = SCNNode(mdlObject: asset.object(at: i))
+      for m in child.geometry?.materials ?? [] { m.lightingModel = .lambert }
+      n.addChildNode(child)
+    }
+    return n.flattenedClone()
+  }
+
+  /// Terrain height under a point (terrain frame), so props sit on the real ground.
+  private func groundHeight(az: Float, dist: Float) -> Float {
+    let p = ground(az: az, dist: dist)
+    let from = root.convertPosition(SCNVector3(p.x, 2000, p.z), to: nil)
+    let to = root.convertPosition(SCNVector3(p.x, -2000, p.z), to: nil)
+    let hits = root.hitTestWithSegment(from: from, to: to, options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
+    guard let h = hits.first(where: { $0.node.name?.hasPrefix("terrain") ?? false }) else { return 0 }
+    return root.convertPosition(h.worldCoordinates, from: nil).y
   }
 
   /// Point at compass azimuth (deg) and distance (m), in the terrain frame (+X east, +Z south).
