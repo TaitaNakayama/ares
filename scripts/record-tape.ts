@@ -2,7 +2,6 @@
 // The headset plays these if it cannot reach any server (C-08 offline fallback).
 //   node scripts/record-tape.ts [baseUrl]
 import { writeFileSync, mkdirSync } from "node:fs";
-import WebSocket from "ws";
 
 const BASE = process.argv[2] ?? "http://localhost:8787";
 const post = (p: string, body: unknown = {}) => fetch(BASE + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -16,15 +15,15 @@ async function record(choice: string): Promise<{ frames: Frame[]; decideAt: numb
   const frames: Frame[] = [];
   const t0 = Date.now();
   let latest: any;
-  ws.on("message", (raw) => {
-    const m = JSON.parse(String(raw));
+  ws.addEventListener("message", (ev) => {
+    const m = JSON.parse(String(ev.data));
     const st = m.type === "vr_state" ? m.state : m.type === "hello" ? m.vr : undefined;
     if (st) {
       latest = st;
       frames.push({ t: Date.now() - t0, state: st });
     }
   });
-  await new Promise((r) => ws.on("open", r));
+  await new Promise((r) => ws.addEventListener("open", r));
   await sleep(4000);
   await post("/api/director/next");
   await sleep(14000);
