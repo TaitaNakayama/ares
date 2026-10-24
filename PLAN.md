@@ -160,7 +160,7 @@ Checkpoints are bold. Anything that needs you physically is marked **[YOU]**.
 | 23:00-02:00 | Second world (BPI 2019, real P2P event log) through config. Habitat props outside. Audio cues. LLM live once a key exists. Re-run all reviews on changed code |
 | Sat 02:00-07:00 | **[YOU] sleep.** Claude: hardening, eval runs, docs, Devpost text, video edits |
 | 08:00-12:00 | **[YOU]** 20-min thermal soak off the charger. Rehearse the pitch x3 with the autoplay director. Record the screen-recording backup |
-| 12:00-19:00 | Polish from rehearsal feedback. Judge-scenario drills (inject, policy edits). Devpost draft up with video |
+| 12:00-19:00 | Polish from rehearsal feedback. Judge-scenario drills (inject, policy edits). **Devpost video:** final director-camera MP4 (`/api/record/*`), a glide-recorded console walkthrough (trace, policy edit, rogue mode, scorecard), then `glide render --narration script.txt --voice andrew --subtitles --resolution 1080p` (or your own voice). Devpost draft up |
 | 19:00-Sun 01:00 | Stretch and buffer. **Feature freeze Sun 01:00** |
 | Sun 01:00-08:30 | Sleep, final checklist, submit by 08:30 |
 
