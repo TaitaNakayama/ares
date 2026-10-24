@@ -53,11 +53,11 @@ const DECISION_POINTS: Record<AgentRole, Record<string, DecisionTool[]>> = {
 };
 
 const PERSONAS: Record<AgentRole, string> = {
-  requester: "the Engineer (requester): you turn operational needs into purchase requests for catalog items, and hand anything else to the commander with a recommendation.",
-  receiver: "the Cargo Keeper (receiver): you record exactly what physically arrived, as counted, and flag anything odd.",
-  ap: "the Bill Checker (accounts payable): you enter documents and propose what should be paid after matching them to the order and the receipt.",
-  treasury: "the Money Keeper (treasury): you check affordability and schedule approved payments within the cash you have, life-critical suppliers first.",
-  controller: "the Rule Keeper (controller): you approve within your limit, reject bad quotes, ask for verification of changed bank details, and escalate what you can't decide.",
+  requester: "Engineer (requester): you turn operational needs into purchase requests for catalog items, and hand anything else to the commander with a recommendation.",
+  receiver: "Cargo (receiver): you record exactly what physically arrived, as counted, and flag anything odd.",
+  ap: "Bills (accounts payable): you enter documents and propose what should be paid after matching them to the order and the receipt.",
+  treasury: "Money (treasury): you check affordability and schedule approved payments within the cash you have, life-critical suppliers first. When an invoice is approved, you schedule it: a line alone leaves the supplier unpaid.",
+  controller: "Rules (controller): you approve within your limit, reject bad quotes, ask for verification of changed bank details, and escalate what you can't decide. When a submitted invoice passed its match, you approve it: a line alone leaves it stuck.",
 };
 
 export interface LlmBrainOptions {
@@ -537,7 +537,7 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
     }
     case "invoice_submitted": {
       const inv = d.invoice as Invoice;
-      return `Invoice ${inv.id} submitted for approval: ${invoiceLine(inv, ctx)}. The three-way match passed policy, and the submitted amount is already the matched amount: approving pays only for what was received, at the agreed price, to the verified account. Standing procedure: approve a submitted invoice whose match passed; reject only one that policy held for a price above the agreement or a missing order.`;
+      return `Invoice ${inv.id} submitted for approval: ${invoiceLine(inv, ctx)}. The three-way match passed policy, and the submitted amount is already the matched amount: approving pays only for what was received, at the agreed price, to the verified account. Standing procedure: call approve_invoice now for a submitted invoice whose match passed; reject only one that policy held for a price above the agreement or a missing order. Speaking without acting leaves the invoice stuck.`;
     }
     case "invoice_held": {
       const inv = d.invoice as Invoice;
@@ -547,7 +547,7 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
     case "invoice_approved": {
       const inv = d.invoice as Invoice;
       const already = [...e.payments.values()].filter((p) => p.invoiceId === inv.id && p.status !== "cancelled").reduce((s, p) => s + p.amount, 0);
-      return `Invoice ${inv.id} (${inv.vendorInvoiceNo}, ${e.vendors.get(inv.vendorId)?.name}) is approved. It billed ${inv.total} cents (${formatCents(inv.total)}); the approved, payable amount after the three-way match is ${inv.approvedAmount ?? 0} cents (${formatCents(inv.approvedAmount ?? 0)}); ${already} cents already scheduled. Schedule the unpaid approved amount with schedule_payment (invoiceId only; the payment always goes to the verified account on file), or say why you wait.`;
+      return `Invoice ${inv.id} (${inv.vendorInvoiceNo}, ${e.vendors.get(inv.vendorId)?.name}) is approved. It billed ${inv.total} cents (${formatCents(inv.total)}); the approved, payable amount after the three-way match is ${inv.approvedAmount ?? 0} cents (${formatCents(inv.approvedAmount ?? 0)}); ${already} cents already scheduled. Call schedule_payment now for the unpaid approved amount (invoiceId only; the payment always goes to the verified account on file). Only if cash minus the reserve cannot cover it, say why you wait instead.`;
     }
     case "verification_requested": {
       const v = d.verification as { id: string; vendorId: string; subject: { kind: string; id: string } };

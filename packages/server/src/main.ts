@@ -48,7 +48,7 @@ const LLM: LlmProvider | undefined = router.local || router.cloud ? router : und
 const LLM_ROLES = (process.env.ARES_LLM_ROLES ?? "requester,receiver,ap,treasury,controller").split(",");
 console.log(`LLM layers: local ${router.local ? router.local.model : localProvider ? `none (Ollama ${localUp.up ? `up, model ${LOCAL_MODEL} not pulled` : "not running"})` : "off"}; cloud ${router.cloud ? router.cloud.model : "none"}; mode ${router.mode}`);
 if (router.local && localProvider) void localProvider.prewarm().then(() => console.log("local model warm"), (e: Error) => console.log(`local model prewarm failed: ${e.message}`));
-/** Demo switch: replace the Rule Keeper's brain with a malicious one; policy must hold. */
+/** Demo switch: replace Rules' brain with a malicious one; policy must hold. */
 let rogueController = false;
 const brains = (): Brain[] => {
   const rules: Record<AgentRole, Brain> = {
@@ -463,7 +463,7 @@ function inject(b: InjectBody): string {
     if (!b.text?.trim()) throw new Error("paste the invoice text");
     if (b.text.length > 20_000) throw new Error("document too long (20,000 characters max)");
     s.orch.schedule(at, { type: "document", doc: { id: `DOC-TXT-${Date.now()}`, kind: "invoice", from: "pasted", text: b.text, fields: {} } });
-    return `document queued for the Bill Checker (${LLM ? "LLM reader" : "deterministic parser"})`;
+    return `document queued for Bills (${LLM ? "LLM reader" : "deterministic parser"})`;
   }
   if (b.kind === "report") {
     // Any event a judge types: the agents read it, decide, and anything no catalog action covers reaches the commander.
@@ -540,7 +540,7 @@ const server = http.createServer(async (req, res) => {
       const b = await readJson(req);
       rogueController = b.on !== false;
       await reset();
-      return send(res, 200, { ok: true, rogueController, message: rogueController ? "Rule Keeper is now ROGUE (fresh run). Watch the policy refuse it." : "Rule Keeper is honest again (fresh run)." });
+      return send(res, 200, { ok: true, rogueController, message: rogueController ? "Rules is now ROGUE (fresh run). Watch the policy refuse it." : "Rules is honest again (fresh run)." });
     }
     if (path === "/api/policy/default" && req.method === "POST") {
       policyOverride = undefined;

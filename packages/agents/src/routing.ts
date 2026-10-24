@@ -20,7 +20,7 @@ export function llmRoute(router: ModelRouter, timeoutMs = 6_000): (text: string)
     try {
       const res = await router.complete(
         {
-          system: "Route an incoming report to the one agent whose job it is. requester = the Engineer: base operations, broken or failing equipment, water, power, crew needs, anything to buy (even when suppliers or prices are mentioned). receiver = the Cargo Keeper: deliveries, counts, damaged or missing goods. ap = the Bill Checker: invoices and documents. treasury = the Money Keeper: cash, payments, budget. controller = the Rule Keeper: a supplier's own status or conduct (bankruptcy, fraud, changed bank details), approvals. Call route exactly once.",
+          system: "Route an incoming report to the one agent whose job it is. requester = Engineer: base operations, broken or failing equipment, water, power, crew needs, anything to buy (even when suppliers or prices are mentioned). receiver = Cargo: deliveries, counts, damaged or missing goods. ap = Bills: invoices and documents. treasury = Money: cash, payments, budget. controller = Rules: a supplier's own status or conduct (bankruptcy, fraud, changed bank details), approvals. Call route exactly once.",
           user: text.slice(0, 1500),
           tools: [{ name: "route", description: "Pick the agent.", parameters: { type: "object", required: ["role"], properties: { role: { type: "string", enum: ROLES } } } }],
           maxOutputTokens: 40,
