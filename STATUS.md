@@ -165,3 +165,7 @@ The judge starts outside on the real Jezero terrain and walks pad, science, sola
 - Part 1 with `director/autoplay`: 39 s to "inside" (server timer). Legs are 16-18 m, about 12 s each at walking pace.
 - Draw calls: rocks are one node per station (4 chunks, 140 rocks each, hidden beyond 42 m); habitat, decals and props are merged per material. Storm outside: fog closes to ~420 m, dust capped at ~1500 live particles (larger, fewer).
 - Not verified on the phone unless listed in the final report; see the report for fps per station.
+
+## Real stereo + reality check (Tier 2, Sat, branch worktree-agent-ac5708fc34caa6912)
+- Science close-up page 0 is the rover's own Mastcam-Z stereo pair (sol 1529): left frame to the left eye, right to the right (two coincident quads, eye cameras mask the other eye's quad). Hyperstereo (24 cm baseline): reads as a miniature. Checked on the phone: `docs/evidence/polish/stereo-headset.jpg`; spectator shows the left frame (mono). Page 1 is WATSON.
+- Reality check (`RealityCheck.toggle()`): real 360 panorama (Van Zyl Overlook, filled gaps are SIMULATED and say so), pose flag `rc`, spectator mirror. Evidence: `reality-check-headset.jpg`, `reality-check-spectator.jpg`. Projection and azimuth of the panorama are not stated by NASA (treated as equirectangular 360 x 80, looks right on the phone). Debug: `--reality`, `--closeup` launch args; spectator key r.

@@ -210,9 +210,9 @@ final class VRViewController: UIViewController, MTKViewDelegate {
         Self.autoCloseUp = false
         world.openCloseUpAtHead()
       }
-      if Self.autoReality, now > 6, world.director.isOutside, !world.director.isWalking, RealityCheck.shared.isAllowed {
-        Self.autoReality = false
+      if Self.autoReality, now > 6, world.director.station == "science", !world.director.isWalking, RealityCheck.shared.isAllowed {
         RealityCheck.toggle()
+        if RealityCheck.shared.wantOn { Self.autoReality = false }
       }
     }
 
