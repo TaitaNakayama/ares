@@ -43,6 +43,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   private var frameCount = 0
   private var lastFpsTime = CACurrentMediaTime()
   private(set) var fps: Double = 0
+  private var poseFrame = 0
   private var statsTick = 0
 
   override var prefersStatusBarHidden: Bool { true }
@@ -82,6 +83,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
     scnRenderer.prepare(all, completionHandler: nil)
+    _ = Sound.shared // prewarm: the first use costs about 150 ms
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
     link.onRecenter = { [weak self] in self?.cardboard.recenter() }
@@ -168,6 +170,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     }
     let now = CACurrentMediaTime() - startTime
     var headView = cardboard.headView()
+    let rawHeadView = headView // the judge's real head, for the Mac spectator (never the forced/director pose)
     if overrideFrames > 0, let o = poseOverride {
       headView = o
       overrideFrames -= 1
@@ -180,6 +183,14 @@ final class VRViewController: UIViewController, MTKViewDelegate {
       headView = simd_float4x4(rot).inverse
     }
     world.update(time: now, headView: headView, fps: fps, link: link)
+
+    // Stream the judge's real head to the Mac spectator at 30 Hz: world-from-head rotation (inverse of the view).
+    poseFrame &+= 1
+    if poseFrame % 2 == 0 {
+      let q = simd_normalize(simd_quatf(rawHeadView.inverse))
+      let fovX = 2 * atan(1 / cardboard.projection[0].columns.0.x) * 180 / .pi
+      link.sendPose(q, gaze: world.gazedCard, cards: world.cardsShown, fovX: fovX)
+    }
 
     world.head.simdTransform = (headView * world.viewOffset).inverse // world-from-head
     // SceneKit renders committed state: commit this frame's head pose (and scene updates) now,
