@@ -56,6 +56,8 @@ final class Robot {
   private var bubbleVisible = false
   private var bubbleTailLeft: Bool?
   private var shownText = ""
+  private var tagY: Float = 0.62
+  private var bubbleOffset = SIMD3<Float>(0, 0.2, 0)
 
   init(role: String, name: String, color: PlatformColor, at pos: SCNVector3, faceYaw: Float) {
     self.role = role
@@ -334,7 +336,20 @@ final class Robot {
     let bubbleToRight = p.x < 0 // robots on the left put the bubble to their right, and vice versa
     let side: Float = bubbleToRight ? 1 : -1
     let w = Float(SpeechBubble.w)
-    let c = p + right * side * (w / 2 + 0.28) - radial * 0.15 + SIMD3(0, 0.2, 0)
+    let base = p + right * side * (w / 2 + 0.28) - radial * 0.15
+    // Keep clear of the wall screens (as seen from the commander): try raising, lowering or pushing outward.
+    var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity
+    search: for dx in [Float(0), 0.35, 0.7] {
+      for dy in [Float(0.2), 0.5, 0.8, -0.55, -0.85] {
+        let off = right * side * dx + SIMD3(0, dy, 0)
+        let a = ScreenRects.overlap(center: base + off, w: w, h: Float(SpeechBubble.h), user: user)
+        if a < bestArea { bestArea = a; best = SIMD3(dx, dy, 0) }
+        if a == 0 { break search }
+      }
+    }
+    let target = right * side * best.x + SIMD3(0, best.y, 0)
+    bubbleOffset += (target - bubbleOffset) * 0.12
+    let c = base + bubbleOffset
     bubble.node.simdPosition = c
     let toUser = user - c
     bubble.node.simdEulerAngles = SIMD3(0, atan2(toUser.x, toUser.z), 0)
@@ -374,6 +389,18 @@ final class Robot {
     updateBubble(now: now, user: user, speaking: speaking && !text.isEmpty && bubbleWanted)
     // Nametag billboard: always faces the viewer, upright (the parent yaw is undone).
     nametag.node.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
+    // Keep the tag off the wall screens: try above, higher, then below the robot; fade to 40% if nothing clears.
+    var tagTarget: Float = 0.62, tagFade: CGFloat = 1, bestArea = Float.infinity
+    let np = node.simdPosition
+    for ty in [Float(0.62), 0.8, 1.0, -0.55, -0.75] {
+      let a = ScreenRects.overlap(center: np + SIMD3(0, ty, 0), w: 1.12, h: 0.17, user: user)
+      if a < bestArea { bestArea = a; tagTarget = ty }
+      if a == 0 { break }
+    }
+    if bestArea > 0 { tagFade = 0.4 }
+    tagY += (tagTarget - tagY) * 0.12
+    nametag.node.simdPosition = SIMD3(0, tagY, 0)
+    nametag.node.opacity += (tagFade - nametag.node.opacity) * 0.15
     if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
     // Lean toward the commander and brighten the rim while speaking; pulse when the action went through.
     let dt = Float(now - spokeAt)

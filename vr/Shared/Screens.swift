@@ -1,4 +1,5 @@
 import SceneKit
+import simd
 #if os(macOS)
 import AppKit
 #else
@@ -34,6 +35,8 @@ final class WallScreens {
     let bn = SCNNode(geometry: bezel)
     bn.position = SCNVector3(0, 0, -0.025)
     n.addChildNode(bn)
+    let wt = n.simdWorldTransform
+    ScreenRects.all.append(.init(center: SIMD3(wt.columns.3.x, wt.columns.3.y, wt.columns.3.z), right: simd_normalize(SIMD3(wt.columns.0.x, wt.columns.0.y, wt.columns.0.z)), w: Float(bw), h: Float(bh)))
   }
 
   private static func wallGlow(deg: Float, y: Float, w: CGFloat, h: CGFloat) -> SCNNode {
@@ -46,6 +49,7 @@ final class WallScreens {
   }
 
   init(root: SCNNode) {
+    ScreenRects.all = []
     for (panel, deg) in [(power, Float(-63)), (money, Float(63))] {
       let n = panel.node
       // Flat panels on a curved wall: mount inside the curve so the edges don't sink into it.

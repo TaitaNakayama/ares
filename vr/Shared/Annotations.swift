@@ -134,7 +134,20 @@ final class SpeechBubble {
       Draw.fill(ctx, body.insetBy(dx: 5, dy: 5), bg, radius: 40)
       _ = Draw.text(name.uppercased(), at: CGPoint(x: body.minX + 36, y: body.minY + 22), size: 42, weight: .heavy, color: color)
       if deny { _ = Draw.text("REFUSED", at: CGPoint(x: body.maxX - 250, y: body.minY + 24), size: 38, weight: .heavy, color: Palette.red) }
-      _ = Draw.text(text, at: CGPoint(x: body.minX + 36, y: body.minY + 80), size: 64, weight: .bold, color: Palette.text, width: body.width - 72, maxLines: 3)
+      // Fit the whole text: shrink the font until it wraps within the bubble (never cut a word before the last line).
+      let avail = body.height - 80 - 22, tw = body.width - 72
+      var fs: CGFloat = 64
+      var lines = 1
+      while true {
+        let f = PlatformFont.systemFont(ofSize: fs, weight: .bold)
+        let para = NSMutableParagraphStyle(); para.lineBreakMode = .byWordWrapping
+        let r = (text as NSString).boundingRect(with: CGSize(width: tw, height: 4000), options: [.usesLineFragmentOrigin], attributes: [.font: f, .paragraphStyle: para], context: nil)
+        lines = max(1, Int((ceil(r.height) / f.lineHeight).rounded()))
+        if ceil(r.height) <= avail || fs <= 38 { break }
+        fs -= 3
+      }
+      let lh = PlatformFont.systemFont(ofSize: fs, weight: .bold).lineHeight
+      _ = Draw.text(text, at: CGPoint(x: body.minX + 36, y: body.minY + 80), size: fs, weight: .bold, color: Palette.text, width: tw, maxLines: max(lines, Int(avail / lh)))
     }
   }
 }
@@ -180,6 +193,55 @@ final class OffscreenArrow {
     let hx = d * 0.80, hy = d * 0.55
     let s = min(hx / max(abs(n.x), 0.001), hy / max(abs(n.y), 0.001))
     return (SIMD3(n.x * s, n.y * s, -d), atan2(n.y, n.x))
+  }
+}
+
+/// World-space rectangles of the wall screens, so tags and bubbles can keep out of their way
+/// (measured as angular boxes from the commander's seat).
+enum ScreenRects {
+  struct Rect { let center: SIMD3<Float>; let right: SIMD3<Float>; let w: Float; let h: Float }
+  nonisolated(unsafe) static var all: [Rect] = []
+
+  struct Box { var az0: Float, az1: Float, el0: Float, el1: Float }
+
+  private static func wrap(_ a: Float) -> Float {
+    var d = a
+    while d > .pi { d -= 2 * .pi }
+    while d < -.pi { d += 2 * .pi }
+    return d
+  }
+
+  /// Angular box (azimuth relative to `refAz`, elevation) of a rectangle seen from `user`.
+  static func box(center: SIMD3<Float>, right: SIMD3<Float>, w: Float, h: Float, user: SIMD3<Float>, refAz: Float) -> Box {
+    var b = Box(az0: .infinity, az1: -.infinity, el0: .infinity, el1: -.infinity)
+    for sx in [Float(-0.5), 0.5] {
+      for sy in [Float(-0.5), 0.5] {
+        let v = center + right * (w * sx) + SIMD3(0, h * sy, 0) - user
+        let az = wrap(atan2(v.x, -v.z) - refAz)
+        let el = atan2(v.y, hypot(v.x, v.z))
+        b.az0 = min(b.az0, az); b.az1 = max(b.az1, az)
+        b.el0 = min(b.el0, el); b.el1 = max(b.el1, el)
+      }
+    }
+    return b
+  }
+
+  /// Overlap area (radians squared) of a billboard of w x h at `center` with any screen, as seen from `user`.
+  static func overlap(center: SIMD3<Float>, w: Float, h: Float, user: SIMD3<Float>, pad: Float = 0.03) -> Float {
+    let d = center - user
+    let refAz = atan2(d.x, -d.z)
+    let dir = SIMD3<Float>(d.x, 0, d.z)
+    let n = simd_length(dir) > 0.01 ? simd_normalize(dir) : SIMD3<Float>(0, 0, -1)
+    let right = SIMD3<Float>(-n.z, 0, n.x)
+    let a = box(center: center, right: right, w: w, h: h, user: user, refAz: refAz)
+    var total: Float = 0
+    for s in all {
+      let b = box(center: s.center, right: s.right, w: s.w, h: s.h, user: user, refAz: refAz)
+      let ox = min(a.az1 + pad, b.az1) - max(a.az0 - pad, b.az0)
+      let oy = min(a.el1 + pad, b.el1) - max(a.el0 - pad, b.el0)
+      if ox > 0, oy > 0 { total += ox * oy }
+    }
+    return total
   }
 }
 
