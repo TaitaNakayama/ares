@@ -110,5 +110,6 @@ TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, 
 - **Sun model:** Mars24, NASA GISS (Allison & McEwen 2000).
 - **Power calibration:** JPL Opportunity mission updates (2018).
 - **Consumables:** NASA BVAD Rev 1 (2018).
+- **3D props and sounds:** Kenney Space Kit, Interface Sounds and Sci-fi Sounds (CC0).
 - **Fonts and system:** Apple system fonts.
 - No NASA or USGS endorsement is implied.

@@ -41,4 +41,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md), [PLAN.md](PLAN.md), [CLAIMS.md](CLAIMS.m
 - **Solar power vs dust:** Opportunity 2018 storm, JPL mission updates.
 - **Consumables:** NASA BVAD Rev 1.
 - **Google Cardboard SDK:** Apache-2.0.
+- **3D props and sounds:** Kenney Space Kit, Interface Sounds and Sci-fi Sounds (CC0).
 - Suppliers, prices, budget and invoices are **SIMULATED**. No NASA or USGS endorsement is implied.
