@@ -3,7 +3,7 @@
 // order, how many decisions the model actually made vs fell back, how many lines were replaced
 // for stating facts the engine didn't provide, latency, denials, and whether a novel event (the
 // broken water pump) reached the commander with a recommendation.
-//   node scripts/eval-llm-story.ts --seeds 5 [--mode auto|local|cloud] [--roles requester,controller] [--json out.json]
+//   [ARES_PREFER=local] node scripts/eval-llm-story.ts --seeds 5 [--mode auto|local|cloud] [--warm] [--roles requester,controller] [--json out.json]
 import { writeFileSync } from "node:fs";
 import {
   ApWithReader, ControllerRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, TreasuryRules,
@@ -19,6 +19,7 @@ const SEEDS = Number(opt("--seeds", "5"));
 const MODE = opt("--mode", "auto") as AgentMode;
 const ROLES = opt("--roles", "requester,receiver,ap,treasury,controller").split(",") as AgentRole[];
 const OUT = opt("--json", "");
+const WARM = args.includes("--warm"); // warm the local prefix cache per role before the LLM run (as the server does at boot)
 const PUMP = "URGENT from Hab-2: crew member Okafor broke the only water pump while clearing a filter. The water recycler is down; stored water covers 9 sols. Kepler Salvage offers a used replacement pump at half the new price ($9,000 instead of $18,000), no warranty, 3 sols delivery. A new pump from Tharsis Supply is $18,000 with 6 sols delivery.";
 
 const local = new OllamaProvider();
@@ -39,7 +40,7 @@ interface RunResult {
   cash: number;
   proposals: Record<string, number>;
   denied: Record<string, number>;
-  llm: { decisions: number; fallbacks: number; byReason: Record<string, number>; linesReplaced: number; p50: number; p95: number; max: number; byLayer: Record<string, number> };
+  llm: { decisions: number; fallbacks: number; byReason: Record<string, number>; linesReplaced: number; p50: number; p95: number; max: number; byLayer: Record<string, number>; localPromptTokens?: { median: number; max: number } };
   pump: { reached: boolean; by?: string; urgency?: string; recommendation?: string; ms?: number };
   wallMs: number;
 }
@@ -73,6 +74,11 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
   router.mode = "rules";
   await orch.runUntil(world.start);
   router.mode = mode;
+  if (kind === "llm" && WARM) {
+    const tw = performance.now();
+    for (const b of brains) if (b instanceof LlmBrain) { const self = [...e.actors.values()].find((a) => a.role === b.role)!; await b.warmup({ engine: e, self, fmtTime: world.fmtTime, itemName: (sku) => e.items.get(sku)?.name ?? sku }); }
+    console.log(`  warm-up ${((performance.now() - tw) / 1000).toFixed(0)}s`);
+  }
   mark();
   orch.scheduleAll(world.beatDelivery(e));
   await orch.runUntil(e.now + 2 * 3600e3);
@@ -95,7 +101,8 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
   const rep = [...e.reports.values()].at(-1);
   const repEsc = rep ? [...e.escalations.values()].find((x) => x.subject.kind === "report" && x.subject.id === rep.id) : undefined;
 
-  const hist: LlmOutcome[] = brains.flatMap((b) => (b instanceof LlmBrain ? b.history : []));
+  const hist: (LlmOutcome & { role?: string })[] = brains.flatMap((b) => (b instanceof LlmBrain ? b.history.filter((h) => !h.point.startsWith("warmup")).map((h) => ({ ...h, role: b.role })) : []));
+  const prompts = hist.filter((h) => h.layer === "local" && h.usage).map((h) => h.usage!.promptTokens);
   const ms = hist.filter((h) => h.result === "llm").map((h) => h.ms ?? 0);
   const paid = [...e.payments.values()].filter((p) => p.status === "sent").reduce((s, p) => s + p.amount, 0);
   return {
@@ -112,7 +119,8 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
     llm: {
       decisions: hist.filter((h) => h.result === "llm").length,
       fallbacks: hist.filter((h) => h.result === "fallback").length,
-      byReason: count(hist.filter((h) => h.result === "fallback").map((h) => (h.reason ?? "?").replace(/\(.*$/, "").trim().slice(0, 40))),
+      byReason: count(hist.filter((h) => h.result === "fallback").map((h) => `${h.role}:${h.point.replace(/^\w+:/, "")} ${(h.reason ?? "?").replace(/\(.*$/, "").trim().slice(0, 30)}`)),
+      localPromptTokens: prompts.length ? { median: q(prompts, 0.5), max: Math.max(...prompts) } : undefined,
       linesReplaced: hist.filter((h) => h.result === "llm" && /line replaced/.test(h.reason ?? "")).length,
       p50: q(ms, 0.5), p95: q(ms, 0.95), max: Math.max(0, ...ms),
       byLayer: count(hist.filter((h) => h.result === "llm").map((h) => h.layer ?? "?")),
@@ -130,7 +138,7 @@ for (let i = 0; i < SEEDS; i++) {
     const r = await run(seed, kind);
     results.push(r);
     const flag = r.onStory ? "" : "  OFF-STORY";
-    console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
+    console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}${r.llm.localPromptTokens ? ` local prompt tokens read median ${r.llm.localPromptTokens.median}` : ""}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
   }
 }
 const llm = results.filter((r) => r.brains === "llm");

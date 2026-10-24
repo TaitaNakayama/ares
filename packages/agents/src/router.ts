@@ -12,8 +12,10 @@ import { CachedProvider, type LlmProvider, type LlmRequest, type LlmResponse } f
 export type AgentMode = "auto" | "local" | "cloud" | "rules";
 
 export interface RouteOptions {
-  /** Which layer to try first in `auto` mode. Default local. */
+  /** Which layer to try first in `auto` mode. Default ARES_PREFER (cloud: measured 2-8 s live; local needs a warm prompt prefix to answer in time). */
   prefer?: "local" | "cloud";
+  /** Restrict the call to one layer (used by warm-ups). */
+  only?: "local" | "cloud";
   /** Per-call deadline for the local model. Default 12 s (ARES_LOCAL_TIMEOUT_MS). */
   localTimeoutMs?: number;
   /** Per-call deadline for the cloud model. Default 15 s. */
@@ -36,6 +38,8 @@ export class RouterUnavailable extends Error {}
 
 /** Default local deadline. The reviewer's 8 s holds for a warm prompt prefix; a cold ~900-token prompt needs ~7 s just to be read on this Mac. */
 export const LOCAL_TIMEOUT_MS = Number(process.env.ARES_LOCAL_TIMEOUT_MS ?? 8_000);
+/** Layer tried first in auto mode. */
+export const PREFER: "local" | "cloud" = process.env.ARES_PREFER === "local" ? "local" : "cloud";
 
 export class ModelRouter implements LlmProvider {
   mode: AgentMode = "auto";
@@ -67,12 +71,13 @@ export class ModelRouter implements LlmProvider {
       case "rules":
         return [];
       case "local":
-        return this.local ? ["local"] : [];
+        return this.local && opts.only !== "cloud" ? ["local"] : [];
       case "cloud":
-        return cloudOk ? ["cloud"] : [];
+        return cloudOk && opts.only !== "local" ? ["cloud"] : [];
       case "auto": {
-        const seq: ("local" | "cloud")[] = opts.prefer === "cloud" ? ["cloud", "local"] : ["local", "cloud"];
-        return seq.filter((l) => (l === "local" ? !!this.local : cloudOk));
+        const prefer = opts.prefer ?? PREFER;
+        const seq: ("local" | "cloud")[] = prefer === "cloud" ? ["cloud", "local"] : ["local", "cloud"];
+        return seq.filter((l) => (l === "local" ? !!this.local : cloudOk)).filter((l) => !opts.only || l === opts.only);
       }
     }
   }

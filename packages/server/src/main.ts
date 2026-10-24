@@ -133,6 +133,20 @@ class Session {
 
 let session = new Session(process.env.ARES_SEED ?? "ares-demo", PACE_MS);
 await session.prepare();
+/** Warm the local model's prompt-prefix cache for every agent decision point, one call at a time, off the critical path. */
+function warmLocal(s: Session): void {
+  if (!router.local || process.env.ARES_WARMUP === "off") return;
+  void (async () => {
+    const t0 = Date.now();
+    for (const b of s.orch.brainList) {
+      if (!(b instanceof LlmBrain)) continue;
+      const self = [...s.orch.engine.actors.values()].find((a) => a.role === b.role);
+      if (self) await b.warmup({ engine: s.orch.engine, self, fmtTime: s.world.fmtTime, itemName: (sku) => s.orch.engine.items.get(sku)?.name ?? sku });
+    }
+    console.log(`local prefix warm-up done in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  })();
+}
+warmLocal(session);
 const clients = new Set<WebSocket>();
 /** Headset sockets get only what the headset needs (small messages, no engine firehose). */
 const vrClients = new WeakSet<WebSocket>();

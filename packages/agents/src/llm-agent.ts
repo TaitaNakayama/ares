@@ -210,10 +210,10 @@ export class LlmBrain implements Brain {
       this.note(false);
       return fallback(dropped.length ? `invalid tool call (${dropped.join(" | ")})` : "no action proposed");
     }
-    if (actions.length > 1) {
-      // One decision per turn keeps the audit trail readable; extra calls are dropped, not lost (the engine would see them next time).
-      dropped.push(`${actions.length - 1} extra call(s) dropped`);
-      actions.splice(1);
+    if (actions.length > 3) {
+      // A turn is a few related actions at most (e.g. request verification, then escalate).
+      dropped.push(`${actions.length - 3} extra call(s) dropped`);
+      actions.splice(3);
     }
 
     // The spoken line: checked against the facts the engine provided; otherwise the rules' line.
@@ -229,13 +229,40 @@ export class LlmBrain implements Brain {
       // The role had nothing it must do; the model may still speak (a validated line) or stay quiet.
       return spoken ? [{ type: "__say", params: {}, rationale: "", say: spoken, short: shorten(spoken), mood, via: "llm" }] : [];
     }
-    const it = actions[0]!;
-    it.say = spoken;
-    it.short = shorten(spoken ?? "");
-    it.mood = mood;
-    if (verdict !== "ok") it.rationale += ` [line by rules: ${verdict}]`;
-    this.lastLlmIntents.add(it);
-    return [it];
+    // The line goes with the first action; the others are silent proposals (the engine narrates refusals).
+    actions.forEach((it, i) => {
+      if (i === 0) {
+        it.say = spoken;
+        it.short = shorten(spoken ?? "");
+        if (verdict !== "ok") it.rationale += ` [line by rules: ${verdict}]`;
+      }
+      it.mood = mood;
+      this.lastLlmIntents.add(it);
+    });
+    return actions;
+  }
+
+  /**
+   * Warm the model server's prompt-prefix cache for every decision point of this role, so the first
+   * real decision doesn't pay for reading ~900 tokens of persona and tool schemas. Local layer only.
+   */
+  async warmup(ctx: BrainContext): Promise<void> {
+    if (!this.router.local) return;
+    const summary = stateSummary(this.role, ctx);
+    for (const [point, toolNames] of Object.entries(DECISION_POINTS[this.role])) {
+      if (!this.points.has(point)) continue;
+      const tools = toolNames.filter((t) => t === "say" || ctx.engine.policy.permissions[this.role]?.includes(t));
+      const t0 = Date.now();
+      try {
+        const res = await this.router.complete(
+          { system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`, user: `STATE:\n${summary}\n\nEVENT:\n(warm-up: nothing has happened; reply with say only)`, tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))), maxOutputTokens: 20 },
+          { only: "local", localTimeoutMs: 60_000 },
+        );
+        this.history.push({ at: t0, point: `warmup ${point}`, layer: res.layer, ms: res.ms, usage: res.usage, result: "llm" });
+      } catch (err) {
+        this.history.push({ at: t0, point: `warmup ${point}`, result: "fallback", reason: (err as Error).message });
+      }
+    }
   }
 
   /**
