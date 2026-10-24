@@ -81,8 +81,9 @@ A laptop console shows that it isn't scripted:
 ## How we know it works
 
 1. **Adversarial review.** Separate Opus reviewers that hadn't seen our reasoning attacked the engine twice. Round 1 broke it with 21 findings, including a hold verdict that still paid, duplicate invoice lines that doubled the payable, and a prepaid PO paid twice. Every finding is fixed, and each one is now a regression test: 63 tests plus 39 blocked-exploit repros.
-2. **Property-based fuzz.** 200 seeds × 400 steps mix an honest driver with an adversary sending random, forbidden and malformed proposals. Result: 0 forbidden actions executed, books always balance, and no payment ever reaches an unverified account.
-3. **Evaluation against the answer key.** Held-out seeds 5000-5099 (100 runs × 30 purchase cycles), stress profile: error rates far above real life.
+2. **Rogue agent, live.** A console switch replaces the Rule Keeper's brain with a malicious one. It approves the fraudulent quote, tries to pay it, self-confirms the fake bank details and decides for the commander. Every attempt is refused on stage, and a test asserts it.
+3. **Property-based fuzz.** 200 seeds × 400 steps mix an honest driver with an adversary sending random, forbidden and malformed proposals. Result: 0 forbidden actions executed, books always balance, and no payment ever reaches an unverified account.
+4. **Evaluation against the answer key.** Held-out seeds 5000-5099 (100 runs × 30 purchase cycles), stress profile: error rates far above real life.
    - 100% recall on duplicates, fake bank details (invoice and quote), inflated quotes and invoices, short deliveries and over-contract quotes.
    - **35% on subtle +3-7% overpricing**, which is the honest limit of statistics at this policy.
    - 0.0% of clean invoices blocked, 0.1% of legitimate quotes falsely flagged, 0 payments to fraudulent accounts, 0 ledger integrity failures.

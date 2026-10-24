@@ -23,6 +23,7 @@ Setup before each judge:
 "Earth's answer just arrived, after the real light-time delay: the bank change was fake. $89 million saved. Here's the key part: the AI agents only *propose*. Deterministic code checks every action against policy before anything moves. Two independent reviewers attacked it. We fixed everything they found, and on 100 held-out scenarios it never paid a fraudster."
 
 ## Deep dives (if they stay)
+0. **Rogue agent** (console → **Rogue Rule Keeper**, then Autoplay): "Now I've replaced the Rule Keeper's brain with a malicious one. It approves the fraudster, pays without approval, and confirms the fake bank itself." The headset shows "REFUSED BY POLICY" on each attempt. "The agent's intent doesn't matter, only what the policy lets through." Turn it off afterwards.
 1. **Trace** (console → Ledger → click the last payment): the request, quote, PO, payment, every rule that passed, who proposed and who approved, and the hash chain.
 2. **Policy changes behavior** (Policy tab):
    - Lower the Commander's emergency limit from $12M to $5M and apply. Reset and replay: the option becomes "Buy 6".
