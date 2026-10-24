@@ -39,6 +39,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   #if DEBUG
   // Debug fallback only: a mouse-driven camera while no headset is connected. Compiled out of the demo build.
   private var mouseYaw: Float = 0
+  private var closeUpShown = false
   private var mousePitch: Float = 0
   #endif
 
@@ -171,6 +172,13 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     if mode == .live, let p = sample.p { world.director.externalHead = (p, sample.yaw ?? 0) } else { world.director.externalHead = nil }
     world.update(time: now - start, headView: simd_float4x4(headQ).inverse, fps: fps, link: link)
     if mode == .live { world.setCloseUpMirror(sample.closeUp) }
+    #if DEBUG
+    // Captures: `--closeup` opens the science close-up once the story is at the science site and the walk is over.
+    if CommandLine.arguments.contains("--closeup"), world.director.station == "science", !world.director.isWalking, !world.director.closeUp.isOpen, now - start > 2, !closeUpShown {
+      closeUpShown = true
+      world.openCloseUpAtHead()
+    }
+    #endif
     camLock.lock()
     targetPos = world.director.eye
     targetYaw = world.director.yaw

@@ -20,7 +20,7 @@ enum Spots {
 
   static let start = Spot(pos: [2, -57], look: [26, -55])
   static let pad = Spot(pos: [15, -43], look: [26, -55])
-  static let science = Spot(pos: [1, -34], look: [-2.2, -36.6])
+  static let science = Spot(pos: [1, -34], look: [-2.6, -36.2])
   static let solar = Spot(pos: [-11, -22], look: [-22, -35])
   static let door = Spot(pos: [0, -9], look: [0, -5.5])
   /// Where the glide ends before the fade (about 1 m from the door).
@@ -40,8 +40,8 @@ enum Spots {
   static let lander = SIMD2<Float>(27, -55)
   static let crates = SIMD2<Float>(22, -50)
   static let cargoKeeper = SIMD2<Float>(18.8, -47)
-  static let outcrop = SIMD2<Float>(-3.6, -37.6)
-  static let scientist = SIMD2<Float>(-1.4, -36.0)
+  static let outcrop = SIMD2<Float>(-3.9, -34.8)
+  static let scientist = SIMD2<Float>(-1.3, -37.6)
   static let engineer = SIMD2<Float>(-14.5, -26.5)
   static let fieldCenter = SIMD2<Float>(-22, -35)
   static let habRadius: Float = 4.3

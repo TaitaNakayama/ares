@@ -76,6 +76,8 @@ final class Scientist {
     let mm = SCNMaterial()
     mm.lightingModel = .blinn
     mm.diffuse.contents = c
+    let (cr, cg, cb, _) = c.rgba()
+    mm.emission.contents = PlatformColor(red: cr * 0.22, green: cg * 0.22, blue: cb * 0.22, alpha: 1)
     mm.specular.contents = PlatformColor(white: CGFloat(shine), alpha: 1)
     mm.shininess = 0.25
     return mm
@@ -185,7 +187,10 @@ final class Scientist {
     let sh = SCNNode(geometry: SCNPlane(width: 1.5, height: 1.5))
     let sm = SCNMaterial()
     sm.lightingModel = .constant
-    sm.diffuse.contents = Tex.blob()
+    sm.diffuse.contents = Bitmap.image(size: CGSize(width: 64, height: 64), scale: 1, opaque: false) { ctx in
+      let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [PlatformColor(red: 0.1, green: 0.05, blue: 0.03, alpha: 0.55).cgColor, PlatformColor(red: 0.1, green: 0.05, blue: 0.03, alpha: 0).cgColor] as CFArray, locations: [0, 1])!
+      ctx.drawRadialGradient(g, startCenter: CGPoint(x: 32, y: 32), startRadius: 0, endCenter: CGPoint(x: 32, y: 32), endRadius: 32, options: [])
+    }
     sm.blendMode = .alpha
     sm.writesToDepthBuffer = false
     sh.geometry?.materials = [sm]

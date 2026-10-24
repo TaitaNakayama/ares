@@ -1,4 +1,5 @@
 import SceneKit
+import QuartzCore
 import ModelIO
 import SceneKit.ModelIO
 #if os(macOS)
@@ -103,12 +104,12 @@ final class OutdoorSet {
     upright.addChildNode(merged)
     let holder = SCNNode()
     holder.addChildNode(upright)
-    let (lo, hi) = holder.boundingBox
-    let hh = Float(hi.y - lo.y)
+    let (lo, hi) = sc.rootNode.boundingBox // file space, Z up (children included; the flattened clone loses it)
+    let hh = Float(hi.z - lo.z)
     if hh > 0.001 {
       let k = height / hh
       upright.simdScale = SIMD3(repeating: k)
-      upright.simdPosition = SIMD3(0, -Float(lo.y) * k - 0.08 * height, 0) // sunk a little into the ground
+      upright.simdPosition = SIMD3(0, -Float(lo.z) * k - 0.08 * height, 0) // sunk a little into the ground
     }
     return holder
   }
@@ -292,10 +293,9 @@ final class OutdoorSet {
     let cone = SCNCone(topRadius: 0.01, bottomRadius: 0.55, height: CGFloat(dist))
     let bm = SCNMaterial()
     bm.lightingModel = .constant
-    bm.diffuse.contents = PlatformColor(red: 1.0, green: 0.72, blue: 0.25, alpha: 1)
+    bm.diffuse.contents = PlatformColor(red: 0.20, green: 0.13, blue: 0.04, alpha: 1)
     bm.blendMode = .add
     bm.writesToDepthBuffer = false
-    bm.transparency = 0.16
     bm.isDoubleSided = true
     cone.materials = [bm]
     scanCone.geometry = cone
@@ -306,7 +306,7 @@ final class OutdoorSet {
     outdoorOnly.addChildNode(aim)
     let line = SCNPlane(width: 3.4, height: 0.05)
     let lm = bm.copy() as! SCNMaterial
-    lm.transparency = 0.9
+    lm.diffuse.contents = PlatformColor(red: 0.8, green: 0.5, blue: 0.12, alpha: 1)
     line.materials = [lm]
     scanLine.geometry = line
     scanLine.simdPosition = SIMD3(c.x, groundY(c) + 0.3, c.y)
@@ -658,7 +658,7 @@ final class OutdoorSet {
   func setDoor(armed: Bool, hovered: Bool) {
     let want: CGFloat = armed ? 1 : 0
     if doorSign.node.opacity != want { doorSign.node.opacity += (want - doorSign.node.opacity) * 0.15 }
-    doorGlow.opacity = hovered ? 0.85 : (armed ? 0.25 + 0.15 * CGFloat(sin(CACurrentMediaTime() * 3)) : 0)
+    doorGlow.opacity = hovered ? 0.5 : (armed ? 0.10 + 0.06 * CGFloat(sin(CACurrentMediaTime() * 3)) : 0)
     doorMat.emission.contents = hovered ? PlatformColor(red: 0.35, green: 0.2, blue: 0.05, alpha: 1) : PlatformColor.black
   }
 
