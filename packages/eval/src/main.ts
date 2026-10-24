@@ -20,6 +20,7 @@ console.log(`  ${"error type".padEnd(22)} planted  caught  recall`);
 for (const p of sc.perError) console.log(`  ${p.type.padEnd(22)} ${String(p.planted).padStart(7)} ${String(p.caught).padStart(7)}  ${pct(p.recall)}`);
 console.log(`  overall recall            ${pct(sc.overallRecall)}`);
 console.log(`  clean invoices            ${sc.cleanInvoices}  false alarms (not paid in full): ${pct(sc.falseAlarmRate)}  held-then-paid: ${pct(sc.frictionRate)}`);
+console.log(`  clean quotes falsely flagged for price: ${pct(sc.quoteFalseFlagRate)}`);
 console.log(`  money saved               ${formatCents(sc.savedCents)}`);
 console.log(`  overpaid                  ${formatCents(sc.overpaidCents)}`);
 console.log(`  wrongly blocked           ${formatCents(sc.wronglyBlockedCents)}`);

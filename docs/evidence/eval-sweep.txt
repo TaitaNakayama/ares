@@ -1,0 +1,4 @@
+z>4 materiality $100000: subtle recall 39%  overall 92.0%  invoice false alarms 0.0%  clean quotes flagged 0.1%  escalations/cycle 0.73  overpaid $3.08M
+z>3 materiality $100000: subtle recall 47%  overall 93.0%  invoice false alarms 0.0%  clean quotes flagged 0.2%  escalations/cycle 0.73  overpaid $2.36M
+z>2.5 materiality $100000: subtle recall 59%  overall 94.6%  invoice false alarms 0.0%  clean quotes flagged 0.6%  escalations/cycle 0.74  overpaid $1.92M
+z>2 materiality $100000: subtle recall 67%  overall 95.6%  invoice false alarms 0.0%  clean quotes flagged 1.4%  escalations/cycle 0.74  overpaid $1.13M

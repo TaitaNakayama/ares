@@ -1,0 +1,27 @@
+  25/100 seeds
+  50/100 seeds
+  75/100 seeds
+  100/100 seeds
+
+Ares evaluation: seeds 5000..5099 (100 runs x 30 purchase cycles), policy "Ares Base P2P controls" v1
+  error type             planted  caught  recall
+  duplicate_invoice          191     189  99.0%
+  bank_fraud_invoice         131     131  100.0%
+  bank_fraud_quote           141     141  100.0%
+  inflated_quote             168     168  100.0%
+  subtle_inflated_quote      178      63  35.4%
+  inflated_invoice           171     171  100.0%
+  short_delivery             289     289  100.0%
+  over_contract_quote         61      61  100.0%
+  overall recall            91.2%
+  clean invoices            2602  false alarms (not paid in full): 0.1%  held-then-paid: 0.2%
+  clean quotes falsely flagged for price: 0.1%
+  money saved               $1,316,506,456.94
+  overpaid                  $9,954,455.64
+  wrongly blocked           $2,587,373.52
+  payments to fraud accts   0
+  escalations per cycle     0.690
+  median days to pay        0.0
+  ledger integrity failures 0
+  proposals 40129, denied by policy 195
+  took 7.6 s

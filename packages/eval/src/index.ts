@@ -13,6 +13,8 @@ export interface RunScore {
   planted: Record<string, number>;
   caught: Record<string, number>;
   cleanInvoices: number;
+  cleanQuotes: number;
+  cleanQuotesFlagged: number;
   cleanPaidInFull: number;
   cleanWronglyBlockedCents: number;
   cleanHeldThenPaid: number;
@@ -36,6 +38,8 @@ export interface Scorecard {
   overallRecall: number;
   cleanInvoices: number;
   falseAlarmRate: number;
+  /** Legitimate quotes flagged for price (human review needed). */
+  quoteFalseFlagRate: number;
   frictionRate: number;
   savedCents: number;
   overpaidCents: number;
@@ -50,7 +54,7 @@ export interface Scorecard {
   ms: number;
 }
 
-const ERROR_TYPES: ErrorType[] = ["duplicate_invoice", "bank_fraud_invoice", "bank_fraud_quote", "inflated_quote", "inflated_invoice", "short_delivery", "over_contract_quote"];
+const ERROR_TYPES: ErrorType[] = ["duplicate_invoice", "bank_fraud_invoice", "bank_fraud_quote", "inflated_quote", "subtle_inflated_quote", "inflated_invoice", "short_delivery", "over_contract_quote"];
 
 export function scoreRun(world: MarsWorld, e: Engine): RunScore {
   const planted: Record<string, number> = Object.fromEntries(ERROR_TYPES.map((t) => [t, 0]));
@@ -68,6 +72,8 @@ export function scoreRun(world: MarsWorld, e: Engine): RunScore {
   let saved = 0;
   const daysToPay: number[] = [];
 
+  let cleanQuotes = 0;
+  let cleanQuotesFlagged = 0;
   for (const k of world.answerKey) {
     if (k.kind === "invoice") scoreInvoice(k);
     else if (k.kind === "quote") scoreQuote(k);
@@ -98,17 +104,26 @@ export function scoreRun(world: MarsWorld, e: Engine): RunScore {
 
   function scoreQuote(k: AnswerKeyEntry) {
     const q = quoteBySrc.get(k.docId);
-    if (!k.errors.length) return;
+    if (!k.errors.length) {
+      // Legitimate quote: any flag is a false alarm that costs a human a look (and possibly a delay).
+      cleanQuotes++;
+      if (q && q.flags.some((f) => f === "price_anomaly" || f === "price_over_contract")) cleanQuotesFlagged++;
+      return;
+    }
     for (const t of k.errors) planted[t] = (planted[t] ?? 0) + 1;
     const ordered = q ? [...e.pos.values()].some((po) => po.quoteId === q.id) : false;
-    if (!ordered) {
+    // Detection, not luck: the quote must have been flagged by the controls (a cheaper
+    // competitor winning doesn't count as a catch).
+    const flagged = !!q && q.flags.length > 0;
+    if (flagged && !ordered) {
       for (const t of k.errors) caught[t] = (caught[t] ?? 0) + 1;
-      saved += k.billedCents;
-    } else {
+      saved += k.errors.some((x) => x.startsWith("bank_fraud")) ? k.billedCents : Math.round(k.billedCents * 0.05);
+    } else if (ordered) {
       // Ordered on a bad quote: the overpayment is what was paid above a fair price (or all of it for fraud).
       const po = [...e.pos.values()].find((x) => x.quoteId === q!.id)!;
       const paid = e.paidAgainstPo(po.id);
-      overpaid += k.errors.some((x) => x.startsWith("bank_fraud")) ? paid : Math.max(0, paid - Math.round(paid / 3));
+      const factor = k.errors.includes("subtle_inflated_quote") ? 0.05 : k.errors.includes("over_contract_quote") ? 0.1 : 0.5;
+      overpaid += k.errors.some((x) => x.startsWith("bank_fraud")) ? paid : Math.round(paid * factor);
     }
   }
 
@@ -124,6 +139,8 @@ export function scoreRun(world: MarsWorld, e: Engine): RunScore {
     planted,
     caught,
     cleanInvoices,
+    cleanQuotes,
+    cleanQuotesFlagged,
     cleanPaidInFull,
     cleanWronglyBlockedCents: cleanWronglyBlocked,
     cleanHeldThenPaid,
@@ -186,6 +203,7 @@ function summarize(runs: RunScore[], opts: EvalOptions, cycles: number, policy: 
     overallRecall: plantedAll ? caughtAll / plantedAll : 1,
     cleanInvoices: clean,
     falseAlarmRate: clean ? 1 - sum((r) => r.cleanPaidInFull) / clean : 0,
+    quoteFalseFlagRate: sum((r) => r.cleanQuotes) ? sum((r) => r.cleanQuotesFlagged) / sum((r) => r.cleanQuotes) : 0,
     frictionRate: clean ? sum((r) => r.cleanHeldThenPaid) / clean : 0,
     savedCents: sum((r) => r.savedCents),
     overpaidCents: sum((r) => r.overpaidCents),

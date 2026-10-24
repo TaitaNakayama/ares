@@ -109,6 +109,9 @@ importers:
       '@ares/engine':
         specifier: workspace:*
         version: link:../packages/engine
+      '@ares/eval':
+        specifier: workspace:*
+        version: link:../packages/eval
       '@ares/world-mars':
         specifier: workspace:*
         version: link:../packages/world-mars

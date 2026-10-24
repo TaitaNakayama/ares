@@ -6,6 +6,7 @@
   "@ares/engine": "workspace:*",
   "@ares/agents": "workspace:*",
   "@ares/world-mars": "workspace:*",
-  "ws": "8.22.0"
+  "ws": "8.22.0",
+  "@ares/eval": "workspace:*"
  }
 }

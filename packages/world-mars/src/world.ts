@@ -37,7 +37,7 @@ export const MARS_POLICY: Policy = {
   treasury: { minRunwayDays: 120 },
 };
 
-export type ErrorType = "duplicate_invoice" | "bank_fraud_invoice" | "bank_fraud_quote" | "inflated_quote" | "inflated_invoice" | "short_delivery" | "over_contract_quote";
+export type ErrorType = "duplicate_invoice" | "bank_fraud_invoice" | "bank_fraud_quote" | "inflated_quote" | "subtle_inflated_quote" | "inflated_invoice" | "short_delivery" | "over_contract_quote";
 export type DecoyType = "legit_bank_change" | "small_price_rise" | "damaged_rejected" | "genuine_after_fraud";
 
 export interface ErrorRates {
@@ -48,6 +48,8 @@ export interface ErrorRates {
   inflated_invoice: number;
   short_delivery: number;
   over_contract_quote: number;
+  /** +3-7% over the supplier's usual price: at the edge of what statistics can separate from drift. */
+  subtle_inflated_quote: number;
   legit_bank_change: number;
   small_price_rise: number;
   damaged_rejected: number;
@@ -61,6 +63,7 @@ export const DEFAULT_RATES: ErrorRates = {
   inflated_invoice: 0.06,
   short_delivery: 0.1,
   over_contract_quote: 0.05,
+  subtle_inflated_quote: 0.06,
   legit_bank_change: 0.05,
   small_price_rise: 0.15,
   damaged_rejected: 0.06,
@@ -357,6 +360,10 @@ export class MarsWorld implements World {
       target.unitPrice = Math.round(target.unitPrice * (1.5 + rng.next() * 2));
       target.errors.push("inflated_quote");
       for (const q of quotes) if (q !== target) q.qtyAvailable = Math.max(1, Math.floor(qty / 2)); // others can't cover it
+    } else if (pickQuote(r.subtle_inflated_quote)) {
+      target.unitPrice = Math.round(target.unitPrice * (1.03 + rng.next() * 0.04));
+      target.errors.push("subtle_inflated_quote");
+      for (const q of quotes) if (q !== target) q.qtyAvailable = Math.max(1, Math.floor(qty / 2)); // force a real decision
     } else if (pickQuote(r.over_contract_quote) && this.market.contracts.some((c) => c.vendorId === target.vendorId && c.sku === item.sku)) {
       const c = this.market.contracts.find((x) => x.vendorId === target.vendorId && x.sku === item.sku)!;
       target.unitPrice = Math.round(c.unitPrice * (1.06 + rng.next() * 0.1));

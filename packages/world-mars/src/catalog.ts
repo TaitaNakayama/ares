@@ -91,9 +91,13 @@ export function generateMarket(rng: Rng, start: number): GeneratedMarket {
       const factor = 0.93 + rng.next() * 0.17;
       const p = Math.round(deliveredCents(item) * factor);
       basePrice.get(vid)!.set(item.sku, p);
+      // Realistic history: ~3% noise and a slow inflation drift (older prices lower).
       const n = rng.int(6, 12);
+      const drift = 0.01 + rng.next() * 0.03; // 1-4% per year
       for (let k = 0; k < n; k++) {
-        history.push({ vendorId: vid, sku: item.sku, unitPrice: Math.round(p * (1 + rng.normal(0, 0.012))), at: start - (k + 1) * rng.int(30, 70) * DAY });
+        const ageDays = (k + 1) * rng.int(30, 70);
+        const trend = 1 - drift * (ageDays / 365);
+        history.push({ vendorId: vid, sku: item.sku, unitPrice: Math.round(p * trend * (1 + rng.normal(0, 0.03))), at: start - ageDays * DAY });
       }
       if (rng.chance(0.4)) {
         contracts.push({ id: `C-${contracts.length + 101}`, vendorId: vid, sku: item.sku, unitPrice: Math.round(p * 1.01), validFrom: start - 300 * DAY, validTo: start + 400 * DAY });
