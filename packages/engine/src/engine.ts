@@ -12,6 +12,7 @@ import {
   type FlagCode,
   type GoodsReceipt,
   type HumanRole,
+  type Report,
   type Invoice,
   type Item,
   type Payment,
@@ -196,6 +197,7 @@ export class Engine {
   readonly payments = new Map<string, Payment>();
   readonly verifications = new Map<string, Verification>();
   readonly escalations = new Map<string, Escalation>();
+  readonly reports = new Map<string, Report>();
   readonly documents = new Map<string, Document>();
   readonly flags: Flag[] = [];
   readonly prevented: Prevented[] = [];
@@ -539,6 +541,8 @@ export class Engine {
       }
       case "raise_flag":
         return [pass("state.valid", "flags are informational")];
+      case "report_issue":
+        return [a.params.subject && !this.refExists(a.params.subject) ? fail("state.valid", `no ${a.params.subject.kind} ${a.params.subject.id}`, "deny") : pass("state.valid", "reports always reach a human")];
       case "confirm_funds": {
         const req = this.requisitions.get(a.params.requisitionId);
         if (!req) return [fail("state.valid", `no requisition ${a.params.requisitionId}`, "deny")];
@@ -1114,6 +1118,15 @@ export class Engine {
         this.raise("agent_concern", a.params.subject, a.params.detail, 0, p.actorId);
         break;
       }
+      case "report_issue": {
+        const rep: Report = { id: this.ids.next("REP"), by: p.actorId, summary: a.params.summary, recommendation: a.params.recommendation, urgency: a.params.urgency, subject: a.params.subject, at: this.now };
+        this.reports.set(rep.id, rep);
+        this.emit("report_filed", { report: rep });
+        const ref = this.createEscalation({ kind: "report", id: rep.id }, rep.summary, [], p.actorId, rep.recommendation);
+        rep.escalationId = ref.id;
+        created = ref;
+        break;
+      }
       case "confirm_funds": {
         const req = this.requisitions.get(a.params.requisitionId)!;
         if (escalate) {
@@ -1403,7 +1416,8 @@ export class Engine {
     // the local authority decides instead, with options limited to its emergency limit.
     const remoteAnswerAt = this.now + 2 * this.remoteLatencyMs + this.#policy.vendorBankChange.verificationProcessingMs;
     const urgent = routeBy !== undefined && remoteAnswerAt > routeBy;
-    const to: HumanRole = urgent ? "local_authority" : "remote_authority";
+    // A report (something no catalog action covers) always goes to the human on site.
+    const to: HumanRole = subject.kind === "report" || urgent ? "local_authority" : "remote_authority";
     const options = this.buildOptions(subject, to);
     const esc: Escalation = {
       id: this.ids.next("ESC"),
@@ -1495,6 +1509,11 @@ export class Engine {
         });
       }
       opts.push({ id: "reject", label: "Reject the invoice", detail: "It will never be paid.", actions: [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: "rejected by authority" } }], costCents: 0, withinAuthority: true });
+    } else if (subject.kind === "report") {
+      const rep = this.reports.get(subject.id);
+      if (!rep) return opts;
+      opts.push({ id: "approve", label: "Approve the recommendation", detail: rep.recommendation, actions: [], costCents: 0, withinAuthority: true });
+      opts.push({ id: "dismiss", label: "No action now", detail: "Acknowledge the report without acting on it.", actions: [], costCents: 0, withinAuthority: true });
     }
     return opts.filter((o) => o.withinAuthority);
   }
@@ -1659,6 +1678,7 @@ export class Engine {
       vendor: this.vendors,
       verification: this.verifications,
       escalation: this.escalations,
+      report: this.reports,
     };
     return !!maps[ref.kind]?.has(ref.id);
   }
@@ -1741,6 +1761,8 @@ export class Engine {
         return this.verifications.get(r.id);
       case "escalation":
         return this.escalations.get(r.id);
+      case "report":
+        return this.reports.get(r.id);
       case "proposal":
         return this.proposals.find((p) => p.id === r.id);
     }
@@ -1781,6 +1803,7 @@ export class Engine {
       payments: [...this.payments.values()],
       verifications: [...this.verifications.values()],
       escalations: [...this.escalations.values()],
+      reports: [...this.reports.values()],
       flags: this.flags,
       trialBalance: this.ledger.trialBalance(),
       ledger: this.ledger.all(),

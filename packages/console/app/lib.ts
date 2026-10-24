@@ -91,7 +91,14 @@ export interface Vr {
   waiting: { id: string }[];
   earth: { id: string; vendor?: string; replyEtaText: string; replyInMin: number }[];
 }
+export type AgentMode = "auto" | "local" | "cloud" | "rules";
+export interface BrainStats { calls: number; ok: number; errors: number; timeouts: number; msTotal: number; lastError?: string; lastMs?: number }
+export interface AgentsInfo {
+  mode: AgentMode; local?: string; cloud?: string; cloudOnline: boolean;
+  stats: { local: BrainStats; cloud: BrainStats; rulesFallbacks: number };
+}
 export interface AppState {
+  agentMode?: AgentMode; agents?: AgentsInfo; thinking?: string[]; llm?: string | null;
   seed: string; speed: number; paused: boolean; beat: number;
   snapshot: Snapshot; narration: Narration[]; audit: AuditRec[]; ruleLabels: Record<string, string>;
   integrity: { ok: boolean; problems: string[] }; vr: Vr;

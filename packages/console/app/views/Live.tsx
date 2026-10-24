@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import { usd, type AppState, type Narration, type Vr } from "../lib";
 import { Card, Outcome, RoleChip } from "./ui";
 
-export function Live({ state, vr, narration }: { state: AppState; vr: Vr; narration: Narration[] }) {
+export function Live({ state, vr, narration, thinking }: { state: AppState; vr: Vr; narration: Narration[]; thinking: string[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const last = narration.at(-1)?.seq;
-  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [last]);
+  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [last, thinking.length]);
   const waiting = vr.waiting.length > 0;
   const solsLeft = vr.power.solsLeft;
   return (
@@ -33,6 +33,14 @@ export function Live({ state, vr, narration }: { state: AppState; vr: Vr; narrat
               </div>
               <p>{n.text}</p>
               <time>#{n.seq}</time>
+            </article>
+          ))}
+          {thinking.map((role) => (
+            <article key={`think-${role}`} className="msg-row thinking">
+              <div className="who">
+                <RoleChip role={role} />
+                <span className="think"><i className="pulse" />thinking…</span>
+              </div>
             </article>
           ))}
         </div>

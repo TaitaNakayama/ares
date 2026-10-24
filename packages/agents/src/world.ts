@@ -1,4 +1,4 @@
-import type { BankAccount, EngineConfig, EngineEvent, Engine, PaymentTerms, ReceiptLine, Time, Line } from "@ares/engine";
+import type { AgentRole, BankAccount, EngineConfig, EngineEvent, Engine, PaymentTerms, ReceiptLine, Time, Line } from "@ares/engine";
 
 /**
  * A world is a swappable simulation that feeds the engine. It owns everything
@@ -36,7 +36,9 @@ export type WorldEvent =
   /** Simulated outside party acting through the engine (e.g. remote authority answering). */
   | { type: "external"; actorId: string; action: string; params: unknown; summary: string; short?: string }
   | { type: "telemetry"; data: Record<string, unknown> }
-  | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood };
+  | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood }
+  /** Free-text report of something no catalog event covers (a broken pump, an injury, a supplier failing). Routed to one agent role. */
+  | { type: "report"; id: string; from: string; text: string; to?: AgentRole };
 
 export type Mood = "calm" | "worried" | "suspicious" | "attentive" | "happy";
 

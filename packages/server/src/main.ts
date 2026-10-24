@@ -4,8 +4,8 @@ import { networkInterfaces } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, RogueBrain, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
-import { formatCents, RULE_LABELS, type Escalation, type Policy } from "@ares/engine";
+import { ApWithReader, ControllerRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
+import { formatCents, RULE_LABELS, type AgentRole, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
 
@@ -32,11 +32,41 @@ const isLoopback = (a?: string) => a === "127.0.0.1" || a === "::1" || a === "::
 const PACE_MS = Number(process.env.ARES_PACE_MS ?? 2200);
 const BASE_SPEED = Number(process.env.ARES_SPEED ?? 120);
 const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
-const LLM = providerFromEnv(new URL("../../../.cache/llm/", import.meta.url).pathname);
-console.log(LLM ? `LLM: ${LLM.name} (${LLM.model})` : "LLM: none (rules brains + deterministic document parser)");
+/**
+ * Model layers: local (Ollama, offline) -> cloud (OpenAI, when a key is set and we're online) -> rules.
+ * ARES_LOCAL_MODEL=off disables the local layer; ARES_AGENT_MODE=rules is safe mode from the start;
+ * ARES_LLM_ROLES limits which roles reason with a model (default: all five).
+ */
+const CACHE_DIR = new URL("../../../.cache/llm/", import.meta.url).pathname;
+const LOCAL_MODEL = process.env.ARES_LOCAL_MODEL ?? "qwen3.5:9b";
+const localProvider = LOCAL_MODEL === "off" ? undefined : new OllamaProvider(LOCAL_MODEL);
+const localUp = localProvider ? await localProvider.available() : { up: false, hasModel: false };
+const cloudProvider = process.env.OPENAI_API_KEY ? new OpenAIProvider(process.env.OPENAI_API_KEY) : undefined;
+const router = new ModelRouter(localUp.up && localUp.hasModel ? localProvider : undefined, cloudProvider, CACHE_DIR);
+router.mode = (["auto", "local", "cloud", "rules"] as AgentMode[]).find((m) => m === process.env.ARES_AGENT_MODE) ?? "auto";
+const LLM: LlmProvider | undefined = router.local || router.cloud ? router : undefined;
+const LLM_ROLES = (process.env.ARES_LLM_ROLES ?? "requester,receiver,ap,treasury,controller").split(",");
+console.log(`LLM layers: local ${router.local ? router.local.model : localProvider ? `none (Ollama ${localUp.up ? `up, model ${LOCAL_MODEL} not pulled` : "not running"})` : "off"}; cloud ${router.cloud ? router.cloud.model : "none"}; mode ${router.mode}`);
+if (router.local && localProvider) void localProvider.prewarm().then(() => console.log("local model warm"), (e: Error) => console.log(`local model prewarm failed: ${e.message}`));
 /** Demo switch: replace the Rule Keeper's brain with a malicious one; policy must hold. */
 let rogueController = false;
-const brains = () => [new RequesterRules(), new ReceiverRules(), new ApWithReader(LLM), new TreasuryRules(), rogueController ? new RogueBrain("controller", new ControllerRules()) : new ControllerRules(), new EscalationDrafter(LLM)];
+const brains = (): Brain[] => {
+  const rules: Record<AgentRole, Brain> = {
+    requester: new RequesterRules(),
+    receiver: new ReceiverRules(),
+    ap: new ApWithReader(LLM),
+    treasury: new TreasuryRules(),
+    controller: rogueController ? new RogueBrain("controller", new ControllerRules()) : new ControllerRules(),
+  };
+  const list: Brain[] = [];
+  for (const role of Object.keys(rules) as AgentRole[]) {
+    const useLlm = !!LLM && LLM_ROLES.includes(role) && !(role === "controller" && rogueController);
+    list.push(useLlm ? new LlmBrain({ role, rules: rules[role], router }) : rules[role]);
+    if (!useLlm) list.push(new ReportRules(role)); // reports still reach the commander without a model
+  }
+  list.push(new EscalationDrafter(LLM));
+  return list;
+};
 
 /** Policy edited by the policy owner in the console; survives resets. */
 let policyOverride: Policy | undefined;
@@ -49,6 +79,8 @@ class Session {
   speed = BASE_SPEED;
   paused = false;
   lastTelemetry: Record<string, unknown> = {};
+  /** Roles whose LLM brain is deciding right now (shown as "thinking" in the headset and spectator). */
+  readonly thinking = new Set<string>();
   readonly startedAt = Date.now();
   /** Real time at which to drop out of a time-lapse. */
   private timelapseUntilAnswer = false;
@@ -61,13 +93,20 @@ class Session {
     this.paceMs = paceMs;
     // A policy edited in the console carries over to every new run until restored.
     this.world = new MarsWorld({ seed, mode: "demo", policy: policyOverride });
-    this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0 });
+    this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0, routeReport: LLM ? llmRoute(router) : undefined });
     this.simNow = this.world.start - 32 * 86_400_000;
   }
 
   /** Runs the prologue instantly (no pacing), then enables pacing for the live part. */
   async prepare(): Promise<void> {
-    await this.orch.runUntil(this.world.start);
+    // The prologue is the pre-story history: rules only, so a reset takes milliseconds, not minutes of model calls.
+    const mode = router.mode;
+    router.mode = "rules";
+    try {
+      await this.orch.runUntil(this.world.start);
+    } finally {
+      router.mode = mode;
+    }
     this.simNow = this.world.start;
     this.orch.setPace(this.paceMs);
   }
@@ -111,14 +150,21 @@ let unsubscribe = wire(session);
 
 function wire(s: Session): () => void {
   return s.orch.on((m: OrchestratorMessage) => {
+    if (m.type === "thinking") {
+      if (m.on) s.thinking.add(m.role);
+      else s.thinking.delete(m.role);
+      broadcast({ type: "thinking", role: m.role, actorId: m.actorId, on: m.on });
+      scheduleVrState();
+      return;
+    }
     if (m.type === "telemetry") s.lastTelemetry = m.data;
     broadcast({ type: m.type, ...(m.type === "engine" ? { event: m.event } : m.type === "narration" ? { narration: m.narration } : { at: m.at, data: m.data }) });
     scheduleVrState();
   });
 }
 
-const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay"]);
-const SPECTATOR_TYPES = new Set(["vr_state", "narration", "reset", "headset", "vr_choice", "spectator_capture"]);
+const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay", "thinking"]);
+const SPECTATOR_TYPES = new Set(["vr_state", "narration", "reset", "headset", "vr_choice", "spectator_capture", "thinking"]);
 function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
@@ -182,6 +228,8 @@ function vrState() {
     beat: s.world.beat,
     storyBeat: s.world.storyBeat(e),
     storyBeats: 7,
+    thinking: [...s.thinking],
+    agentMode: router.mode,
     timelapse: s.isTimelapse,
     time: s.world.fmtTime(e.now),
     sol: t.sol,
@@ -221,9 +269,12 @@ function fullState() {
     ruleLabels: RULE_LABELS,
     integrity: e.verifyIntegrity(),
     rogueController,
+    agentMode: router.mode,
+    agents: router.status(),
+    thinking: [...s.thinking],
     policyCustom: policyOverride !== undefined,
     headset: { connected: [...clients].filter((c) => vrClients.has(c) && c.readyState === 1).length, stats: vrStats },
-    llm: LLM ? `${LLM.name} (${LLM.model})` : null,
+    llm: LLM ? `${router.mode}: ${[router.local && `local ${router.local.model}`, router.cloud && `cloud ${router.cloud.model}`].filter(Boolean).join(", ")}` : null,
     vr: vrState(),
   };
 }
@@ -287,9 +338,19 @@ async function reset(seed?: string): Promise<void> {
 
 // ---------------------------------------------------------------- injection (judge-invented events)
 
+/** One-click judge events (SIMULATED). The agents decide what to do; nothing here is scripted. */
+const REPORT_PRESETS = {
+  pump: "URGENT from Hab-2: crew member Okafor broke the only water pump while clearing a filter. The water recycler is down; stored water covers 9 sols. Kepler Salvage offers a used replacement pump at half the new price ($9,000 instead of $18,000), no warranty, 3 sols delivery. A new pump from Tharsis Supply is $18,000 with 6 sols delivery.",
+  injury: "From the medical bay: crew member Reyes fractured a wrist during the EVA. We have splints but the pain medication stock is down to 2 days. The nearest resupply flight is 11 sols out. Tharsis Supply lists a medical kit on the catalog; a courier pod could reach us in 2 sols at triple the normal freight charge.",
+  bankruptcy: "News from Earth: Tharsis Supply has filed for bankruptcy protection this morning. Deliveries in transit may be seized by creditors. We have an open order and an invoice pending with them. Their sales contact says payments should now go to a new account held by the administrator.",
+} as const;
+
 interface InjectBody {
-  kind: "invoice" | "quote" | "need" | "storm" | "delivery" | "text";
+  kind: "invoice" | "quote" | "need" | "storm" | "delivery" | "text" | "report";
   text?: string;
+  /** report: who it comes from, or one of the one-click presets. */
+  from?: string;
+  preset?: keyof typeof REPORT_PRESETS;
   vendorId?: string;
   poId?: string;
   requisitionId?: string;
@@ -352,6 +413,14 @@ function inject(b: InjectBody): string {
     s.orch.schedule(at, { type: "document", doc: { id: `DOC-TXT-${Date.now()}`, kind: "invoice", from: "pasted", text: b.text, fields: {} } });
     return `document queued for the Bill Checker (${LLM ? "LLM reader" : "deterministic parser"})`;
   }
+  if (b.kind === "report") {
+    // Any event a judge types: the agents read it, decide, and anything no catalog action covers reaches the commander.
+    const text = (b.preset ? REPORT_PRESETS[b.preset] : b.text)?.trim();
+    if (!text) throw new Error("type the report or pick a preset");
+    if (text.length > 4000) throw new Error("report too long (4,000 characters max)");
+    s.orch.schedule(at, { type: "report", id: `REP-J-${Date.now()}`, from: b.from?.trim() || "Judge", text });
+    return `report queued for the agents (${LLM ? `${router.mode} mode` : "rules only"})`;
+  }
   if (b.kind === "storm") {
     s.world.tau = b.tau ?? 4.6;
     return `tau set to ${s.world.tau}`;
@@ -392,6 +461,16 @@ const server = http.createServer(async (req, res) => {
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
     }
     if (path === "/api/policy" && req.method === "GET") return send(res, 200, session.orch.engine.policy);
+    if (path === "/api/agents/mode" && req.method === "GET") return send(res, 200, router.status());
+    if (path === "/api/agents/mode" && req.method === "POST") {
+      // Safe mode = "rules": every agent is on its rules brain instantly, mid-run, no reset.
+      const b = await readJson(req);
+      const mode = (["auto", "local", "cloud", "rules"] as AgentMode[]).find((m) => m === b.mode);
+      if (!mode) return send(res, 400, { error: "mode must be auto, local, cloud or rules" });
+      router.mode = mode;
+      broadcast({ type: "agent_mode", mode });
+      return send(res, 200, { ok: true, ...router.status(), message: mode === "rules" ? "SAFE MODE: all agents on rules brains." : `Agents in ${mode} mode (${router.model}).` });
+    }
     if (path === "/api/agents/rogue" && req.method === "POST") {
       const b = await readJson(req);
       rogueController = b.on !== false;

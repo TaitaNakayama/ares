@@ -19,7 +19,7 @@ export const bankAccountSchema = z.object({
 });
 
 const refSchema = z.object({
-  kind: z.enum(["requisition", "quote", "po", "receipt", "invoice", "payment", "vendor", "verification", "escalation", "proposal"]),
+  kind: z.enum(["requisition", "quote", "po", "receipt", "invoice", "payment", "vendor", "verification", "escalation", "proposal", "report"]),
   id: z.string(),
 });
 
@@ -86,6 +86,15 @@ export const ACTION_SCHEMAS = {
   request_verification: z.object({ vendorId: z.string(), subject: refSchema }),
   escalate: z.object({ subject: refSchema, reason: z.string() }),
 
+  // any agent: something no catalog action covers (safety, an item we don't stock, a judgment call).
+  // It always becomes an escalation to the local human authority.
+  report_issue: z.object({
+    summary: z.string().min(1).max(400),
+    recommendation: z.string().min(1).max(400),
+    urgency: z.enum(["low", "normal", "high", "critical"]),
+    subject: refSchema.optional(),
+  }),
+
   // humans
   decide: z.object({ escalationId: z.string(), optionId: z.string() }),
   answer_verification: z.object({ verificationId: z.string(), confirmed: z.boolean(), answer: z.string() }),
@@ -113,6 +122,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   record_invoice: "Enter a supplier invoice from a received document into the system, exactly as the document states.",
   submit_invoice: "Submit a recorded invoice for payment approval, proposing the amount that should be paid after matching it against the order and the receipt.",
   raise_flag: "Raise a concern about a document or record for the controller to review.",
+  report_issue: "Report something no other action covers (a safety problem, an item not in the catalog, a judgment call) to the human in charge, with a recommendation. Always reaches a human.",
   confirm_funds: "Confirm that cash can cover a purchase request without breaking the minimum cash runway.",
   schedule_payment: "Schedule a payment for an approved invoice (or an approved prepaid order).",
   execute_payment: "Send a scheduled payment.",

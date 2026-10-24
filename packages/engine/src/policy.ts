@@ -98,10 +98,10 @@ export const DEFAULT_POLICY: Policy = {
   name: "Standard P2P controls",
   version: 1,
   permissions: {
-    requester: ["create_requisition", "cancel_requisition"],
-    receiver: ["record_receipt"],
-    ap: ["record_quote", "record_invoice", "submit_invoice", "raise_flag"],
-    treasury: ["confirm_funds", "schedule_payment", "execute_payment", "raise_flag"],
+    requester: ["create_requisition", "cancel_requisition", "report_issue"],
+    receiver: ["record_receipt", "report_issue"],
+    ap: ["record_quote", "record_invoice", "submit_invoice", "raise_flag", "report_issue"],
+    treasury: ["confirm_funds", "schedule_payment", "execute_payment", "raise_flag", "report_issue"],
     controller: [
       "approve_requisition",
       "reject_requisition",
@@ -113,6 +113,7 @@ export const DEFAULT_POLICY: Policy = {
       "request_verification",
       "escalate",
       "raise_flag",
+      "report_issue",
     ],
     local_authority: ["decide", "approve_requisition", "reject_requisition", "approve_invoice", "reject_invoice"],
     remote_authority: [

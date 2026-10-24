@@ -52,7 +52,9 @@ export class EscalationDrafter implements Brain {
 
   async react(input: AgentInput, ctx: BrainContext): Promise<Intent[]> {
     if (input.kind !== "engine" || input.event.type !== "escalation_created") return [];
-    const id = (input.event.data.escalation as { id: string }).id;
+    const esc = input.event.data.escalation as { id: string; subject: { kind: string } };
+    if (esc.subject.kind === "report") return []; // the agent's own recommendation is the message
+    const id = esc.id;
     const text = await draftEscalation(ctx.engine as Engine, id, this.llm);
     return text ? [{ type: "__draft", params: { escalationId: id, message: text }, rationale: "" }] : [];
   }

@@ -194,3 +194,18 @@ legend { padding: 0 8px; color: var(--accent); font-weight: 700; font-size: 0.9r
 .note { white-space: pre-wrap; background: #0a0f18; border-left: 3px solid var(--rules); padding: 8px 12px; margin: 8px 0; border-radius: 6px; font-size: 0.95rem; }
 
 .btn.danger { background: #5a1a1a; border-color: #ff5c54; color: #ffd6d3; }
+
+.think { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-style: italic; font-size: 0.9rem; }
+.pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+.msg-row.thinking { opacity: 0.85; }
+.btn.safe { font-size: 1rem; padding: 8px 18px; border-color: var(--bad); color: var(--bad); }
+.btn.safe.on { background: var(--bad); color: #fff; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--panel2); border: 0; border-right: 1px solid var(--line); padding: 8px 12px; cursor: pointer; font-weight: 600; color: var(--muted); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: #2563d6; color: #fff; }
+.seg button:disabled { opacity: 0.6; cursor: default; }
+.agents-fact { font-size: 0.9rem; font-weight: 600; }
+.agents-fact.warn { color: var(--warn); }
+.preset-row { margin-top: 12px; }

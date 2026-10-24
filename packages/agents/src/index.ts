@@ -4,3 +4,6 @@ export * from "./orchestrator.ts";
 export * from "./llm.ts";
 export * from "./llm-brains.ts";
 export * from "./rogue.ts";
+export * from "./router.ts";
+export * from "./llm-agent.ts";
+export * from "./routing.ts";

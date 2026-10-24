@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type AppState, type Vr } from "../lib";
+import { api, type AgentMode, type AppState, type Vr } from "../lib";
 
 interface Props { state: AppState; vr: Vr; live: boolean; error: string | null; refresh: () => Promise<void> }
 
@@ -20,6 +20,13 @@ export function Header({ state, vr, live, error, refresh }: Props) {
     }
   };
   const pol = state.snapshot.policy;
+  const mode: AgentMode = state.agents?.mode ?? state.agentMode ?? "auto";
+  const safe = mode === "rules";
+  const setMode = (m: AgentMode) => run(`Agent mode: ${m}`, () => api("/api/agents/mode", "POST", { mode: m }));
+  const ag = state.agents;
+  const agentsText = !ag || (!ag.local && !ag.cloud)
+    ? "Agents: rules only"
+    : `LLM ${[ag.local ? `local ${ag.local}` : "", ag.cloud ? `cloud ${ag.cloud}${ag.cloudOnline ? "" : " (offline)"}` : ""].filter(Boolean).join(" · ")} · fallbacks ${ag.stats.rulesFallbacks}`;
   return (
     <header className="hdr">
       <div className="hdr-row">
@@ -52,6 +59,13 @@ export function Header({ state, vr, live, error, refresh }: Props) {
         <button className="btn" disabled={busy} title="Fresh run: beats play on a timer and wait for the commander's choice in the headset" onClick={() => run("Autoplay", () => api("/api/director/autoplay", "POST", {}))}>Autoplay</button>
         <button className="btn" disabled={busy} title="Make the headset's current direction 'forward' (ask the judge to look straight ahead)" onClick={() => run("Recentered", () => api("/api/headset/recenter", "POST", {}))}>Recenter headset</button>
         <button className={(state as unknown as { rogueController?: boolean }).rogueController ? "btn danger" : "btn"} disabled={busy} title="Swap the Rule Keeper's brain for a malicious one (fresh run). The controls must still hold." onClick={() => run("Rogue toggled", () => api("/api/agents/rogue", "POST", { on: !(state as unknown as { rogueController?: boolean }).rogueController }))}>{(state as unknown as { rogueController?: boolean }).rogueController ? "Rogue Rule Keeper: ON" : "Rogue Rule Keeper"}</button>
+        <button className={safe ? "btn safe on" : "btn safe"} disabled={busy} title="Safe mode: every agent switches instantly to its deterministic rules brain, mid-run, no reset" onClick={() => setMode(safe ? "auto" : "rules")}>{safe ? "Safe mode: ON (rules)" : "SAFE MODE"}</button>
+        <div className="seg" role="group" aria-label="Agent brain mode">
+          {(["auto", "local", "cloud", "rules"] as AgentMode[]).map((m) => (
+            <button key={m} className={mode === m ? "on" : ""} aria-pressed={mode === m} disabled={busy} onClick={() => { if (mode !== m) void setMode(m); }}>{m}</button>
+          ))}
+        </div>
+        <span className={ag?.local || ag?.cloud ? "agents-fact" : "agents-fact warn"} title={state.llm ?? undefined}>{agentsText}</span>
         <button className="btn" disabled={busy} onClick={() => run(state.paused ? "Resumed" : "Paused", () => api("/api/director/speed", "POST", { speed: state.speed, paused: !state.paused }))}>
           {state.paused ? "Resume" : "Pause"}
         </button>

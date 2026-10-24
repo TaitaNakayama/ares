@@ -1,5 +1,6 @@
 import { Engine, type AgentRole, type EngineEvent, type ProposalInput, type SubmitResult, type Time } from "@ares/engine";
 import type { AgentInput, Brain, BrainContext, Intent } from "./brains.ts";
+import { keywordRoute } from "./routing.ts";
 import type { Mood, ScheduledWorldEvent, World, WorldEvent } from "./world.ts";
 
 export interface Narration {
@@ -20,7 +21,9 @@ export interface Narration {
 export type OrchestratorMessage =
   | { type: "narration"; narration: Narration }
   | { type: "telemetry"; at: Time; data: Record<string, unknown> }
-  | { type: "engine"; event: EngineEvent };
+  | { type: "engine"; event: EngineEvent }
+  /** An LLM brain is deciding (on) or done (off): the headset and spectator show the robot thinking. */
+  | { type: "thinking"; actorId: string; role: string; on: boolean; at: Time };
 
 export interface OrchestratorOptions {
   world: World;
@@ -30,6 +33,8 @@ export interface OrchestratorOptions {
   paceMs?: number;
   /** Hard cap on cascaded events per run, in case of a feedback loop. */
   maxSteps?: number;
+  /** Which agent role a free-text report goes to. Default: keyword routing. */
+  routeReport?: (text: string) => Promise<AgentRole> | AgentRole;
 }
 
 /**
@@ -46,6 +51,7 @@ export class Orchestrator {
   private readonly fmtTime: (t: Time) => string;
   private paceMs: number;
   private readonly maxSteps: number;
+  private readonly routeReport: (text: string) => Promise<AgentRole> | AgentRole;
   private timeline: { at: Time; seq: number; event: WorldEvent }[] = [];
   private queue: EngineEvent[] = [];
   private listeners: ((m: OrchestratorMessage) => void)[] = [];
@@ -62,6 +68,7 @@ export class Orchestrator {
     this.fmtTime = opts.fmtTime ?? ((t) => new Date(t).toISOString());
     this.paceMs = opts.paceMs ?? 0;
     this.maxSteps = opts.maxSteps ?? 50_000;
+    this.routeReport = opts.routeReport ?? keywordRoute;
     const setup = this.world.setup();
     this.meta = setup.meta;
     this.engine = new Engine({ ...setup.config, requireCredentials: true });
@@ -184,7 +191,12 @@ export class Orchestrator {
     if (event.type === "document") {
       this.engine.ingestDocument({ id: event.doc.id, kind: event.doc.kind, from: event.doc.from, text: event.doc.text });
     }
-    await this.toBrains({ kind: "world", event, at: this.engine.now });
+    let delivered: WorldEvent = event;
+    if (event.type === "report") {
+      this.engine.ingestDocument({ id: event.id, kind: "report", from: event.from, text: event.text });
+      if (!event.to) delivered = { ...event, to: await this.routeReport(event.text) };
+    }
+    await this.toBrains({ kind: "world", event: delivered, at: this.engine.now });
   }
 
   private async drain(): Promise<void> {
@@ -202,11 +214,15 @@ export class Orchestrator {
       if (!self) continue;
       const ctx: BrainContext = { engine: this.engine, self, fmtTime: this.fmtTime, itemName: (sku) => this.engine.items.get(sku)?.name ?? sku };
       let intents: Intent[];
+      const thinks = brain.kind === "llm" && !!(brain as { pointOf?: (i: AgentInput) => string | undefined }).pointOf?.(input);
+      if (thinks) this.emit({ type: "thinking", actorId: self.id, role: self.role, on: true, at: this.engine.now });
       try {
         intents = await brain.react(input, ctx);
       } catch (err) {
         this.narrate(self.id, `(${brain.kind} brain error: ${(err as Error).message})`, "attentive");
         continue;
+      } finally {
+        if (thinks) this.emit({ type: "thinking", actorId: self.id, role: self.role, on: false, at: this.engine.now });
       }
       for (const it of intents) await this.act(self.id, brain, it);
     }
@@ -225,6 +241,7 @@ export class Orchestrator {
     }
     const res = this.engine.submit({ actorId, type: it.type, params: it.params, rationale: it.rationale, source: it.via ?? "rules", credential: this.#creds.get(actorId) });
     const v = res.decision.verdict;
+    (brain as { observe?: (i: Intent, v: string) => void }).observe?.(it, v);
     if (v === "deny") {
       const failed = res.decision.rules.filter((r) => !r.ok).map((r) => r.detail).join("; ");
       this.narrate(actorId, `Policy refused my ${it.type.replace(/_/g, " ")}: ${failed}`, "attentive", res, `Policy refused my ${it.type.replace(/_/g, " ")}.`);

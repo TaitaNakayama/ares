@@ -13,7 +13,7 @@ const TABS = ["Live feed", "Ledger", "Audit trail", "Queues", "Policy", "Inject"
 type Tab = (typeof TABS)[number];
 
 export function App() {
-  const { state, vr, narration, error, live, refresh } = useAres();
+  const { state, vr, narration, thinking, error, live, refresh } = useAres();
   const fromHash = TABS.find((t) => t.toLowerCase().replace(/ /g, "-") === location.hash.slice(1));
   const [tab, setTabRaw] = useState<Tab>(fromHash ?? "Live feed");
   const setTab = (t: Tab) => { setTabRaw(t); history.replaceState(null, "", "#" + t.toLowerCase().replace(/ /g, "-")); };
@@ -35,7 +35,7 @@ export function App() {
         ))}
       </nav>
       <main className="main">
-        {tab === "Live feed" && <Live state={state} vr={vr} narration={narration} />}
+        {tab === "Live feed" && <Live state={state} vr={vr} narration={narration} thinking={thinking} />}
         {tab === "Ledger" && <LedgerView state={state} />}
         {tab === "Audit trail" && <AuditView state={state} />}
         {tab === "Queues" && <Queues state={state} vr={vr} refresh={refresh} />}

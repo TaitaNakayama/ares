@@ -33,6 +33,8 @@ export function Inject({ state, refresh, goLive }: { state: AppState; refresh: (
         {res && <p className={res.ok ? "result ok" : "result bad"}>{res.ok ? "Injected: " : "Error: "}{res.text}. {res.ok && "Now watch the Live feed."}</p>}
       </Card>
 
+      <Report post={post} goLive={goLive} />
+
       <PasteDoc state={state} post={post} goLive={goLive} />
 
       <Form title="Invoice" onSubmit={(f) => post({ kind: "invoice", vendorId: f.vendor || undefined, poId: f.po || undefined, qty: num(f.qty), unitPrice: dollars(f.price), bank: f.bank, invoiceNo: f.no || undefined })}
@@ -124,6 +126,27 @@ function PasteDoc({ state, post, goLive }: { state: AppState; post: (b: Record<s
       <div className="row-gap apply">
         <button className="btn primary" disabled={!value.trim()} onClick={async () => { const ok = await post({ kind: "text", text: value }); if (ok) goLive(); }}>Send to the Bill Checker</button>
         <button className="btn" onClick={() => setText(null)}>Reset example</button>
+      </div>
+    </Card>
+  );
+}
+
+function Report({ post, goLive }: { post: (b: Record<string, unknown>) => Promise<boolean>; goLive: () => void }) {
+  const [text, setText] = useState("");
+  const [from, setFrom] = useState("Judge");
+  const send = async (body: Record<string, unknown>) => { const ok = await post(body); if (ok) goLive(); };
+  return (
+    <Card title="Report" className="span2">
+      <p className="big">Any event. The agents decide; anything no catalog action covers reaches the commander.</p>
+      <textarea className="json-edit" style={{ minHeight: 90 }} placeholder="e.g. The greenhouse irrigation line has a leak and we are losing water." value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="row-gap apply">
+        <label className="field"><span>From</span><input className="in" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <button className="btn primary" disabled={!text.trim()} onClick={() => void send({ kind: "report", text, from: from.trim() || "Judge" })}>Send to the agents</button>
+      </div>
+      <div className="row-gap preset-row">
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "pump" })}>Broken water pump</button>
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "injury" })}>Crew injury, medicine needed</button>
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "bankruptcy" })}>Supplier bankruptcy</button>
       </div>
     </Card>
   );

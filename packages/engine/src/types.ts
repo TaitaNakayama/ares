@@ -187,7 +187,19 @@ export interface Verification {
   answer?: string;
 }
 
-export type RefKind = "requisition" | "quote" | "po" | "receipt" | "invoice" | "payment" | "vendor" | "verification" | "escalation" | "proposal";
+export type RefKind = "requisition" | "quote" | "po" | "receipt" | "invoice" | "payment" | "vendor" | "verification" | "escalation" | "proposal" | "report";
+
+/** An agent's report of something no catalog action covers; it always reaches a human. */
+export interface Report {
+  id: string;
+  by: string;
+  summary: string;
+  recommendation: string;
+  urgency: "low" | "normal" | "high" | "critical";
+  subject?: Ref;
+  at: Time;
+  escalationId?: string;
+}
 
 export interface Ref {
   kind: RefKind;
