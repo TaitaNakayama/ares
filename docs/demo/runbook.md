@@ -36,4 +36,4 @@ Then open Ares on the phone (unlocked, Auto-Lock Never), put it in the viewer. T
 Console → **Reset** (fresh seed or the demo seed), phone stays in the viewer. The agents' first decisions after a reset come from the cloud in 2-8 s each.
 
 ## 6. What is real, if asked
-Terrain: HiRISE DEM of Jezero; sun: Mars24; the scientist's close-up: Perseverance WATSON "Kenmore", sol 1526 (PIA26576); the LOCATION screen: PIA23976; power curve: Opportunity 2018 storm (JPL). Suppliers, prices, budget, crew names: SIMULATED/fictional. The agents: a model proposes, deterministic controls decide, rules are the floor; 30-seed eval 30/30 on every promised outcome; 22% of decisions fell back to rules.
+Terrain: HiRISE DEM of Jezero; sun: Mars24; the scientist's close-up: Perseverance WATSON "Kenmore", sol 1526 (PIA26576); the LOCATION screen: PIA23976; power curve: Opportunity 2018 storm (JPL). Suppliers, prices, budget, crew names: SIMULATED/fictional. The agents: a model proposes, deterministic controls decide, rules are the floor; 30-seed eval 30/30 on every promised outcome; 4% of decisions fell back to rules.
