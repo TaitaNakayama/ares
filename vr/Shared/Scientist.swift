@@ -236,7 +236,7 @@ final class Scientist {
     radial = simd_length(radial) > 0.01 ? simd_normalize(radial) : SIMD3(0, 0, -1)
     let right = SIMD3<Float>(-radial.z, 0, radial.x)
     let w = Float(SpeechBubble.w)
-    let c = home - right * (w / 2 + 1.2) - radial * 0.1 + SIMD3(0, 1.15, 0)
+    let c = home - right * (w / 2 + 1.2) - radial * 0.1 + SIMD3(0, 1.7, 0) // the bubble grows upward from its lower edge: lift it clear of the boulder
     bubble.node.simdPosition = c
     let tu = user - c
     bubble.node.simdEulerAngles = SIMD3(0, atan2(tu.x, tu.z), 0)

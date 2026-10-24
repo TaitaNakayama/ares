@@ -242,7 +242,9 @@ final class DecisionCardView: NSView {
       let labelSize = max(15, ch * 0.2)
       NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : isGazed ? SpectatorPalette.amber : NSColor(white: 0.95, alpha: 1)])
         .draw(with: NSRect(x: r.minX + 22, y: r.minY + 16, width: r.width - 44, height: labelSize * 2.6), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-      var detailTop = r.minY + 16 + labelSize * 2.7
+      // Cards without a proposer put the detail right under the label so a long line gets two lines at full size.
+      let labelH0 = min(ceil(NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy)]).boundingRect(with: NSSize(width: r.width - 44, height: 1000), options: [.usesLineFragmentOrigin]).height), labelSize * 2.6)
+      var detailTop = r.minY + 16 + labelH0 + 8
       if let by = o.proposedBy, !by.isEmpty {
         let c = RobotCrew.color(forAgent: by) ?? Palette.violet
         let labelH = min(ceil(NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy)]).boundingRect(with: NSSize(width: r.width - 44, height: 1000), options: [.usesLineFragmentOrigin]).height), labelSize * 2.6)

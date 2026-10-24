@@ -274,7 +274,7 @@ final class BaseScene {
       }
       guard let robot = robots[role] else { continue }
       robot.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
-      director.outdoorRobots[role]?.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
+      director.outdoorRobots[role]?.hear(text: r.text ?? r.short ?? "", /* outdoors: the full line, never the server's clipped `short` */ mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
       if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
     }
     if let n = newest, let seq = n.r.seq, seq != captionSeq { showCaption(role: n.role, r: n.r, seq: seq) }
