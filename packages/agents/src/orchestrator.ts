@@ -9,6 +9,8 @@ export interface Narration {
   role: string;
   name: string;
   text: string;
+  /** Headline for small displays. */
+  short?: string;
   mood: Mood;
   outcome: "said" | "allow" | "deny" | "hold" | "escalate";
   proposalId?: string;
@@ -159,7 +161,7 @@ export class Orchestrator {
       const { escalationId, optionId } = input.params as { escalationId: string; optionId: string };
       text = `Decision: ${this.engine.escalations.get(escalationId)?.options.find((o) => o.id === optionId)?.label ?? optionId}`;
     }
-    if (actor) this.narrate(actor.id, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : text, res.decision.verdict === "deny" ? "attentive" : "calm", res);
+    if (actor) this.narrate(actor.id, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : text, res.decision.verdict === "deny" ? "attentive" : "calm", res, text);
     await this.drain();
     return res;
   }
@@ -171,12 +173,12 @@ export class Orchestrator {
     }
     if (event.type === "narration") {
       const actor = [...this.engine.actors.values()].find((a) => a.role === event.agentRole);
-      if (actor) this.narrate(actor.id, event.text, event.mood ?? "calm");
+      if (actor) this.narrate(actor.id, event.text, event.mood ?? "calm", undefined, event.short);
       return;
     }
     if (event.type === "external") {
       const res = this.engine.submit({ actorId: event.actorId, type: event.action, params: event.params, source: "human", credential: this.#creds.get(event.actorId) });
-      this.narrate(event.actorId, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : event.summary, "calm", res);
+      this.narrate(event.actorId, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : event.summary, "calm", res, event.short);
       return;
     }
     if (event.type === "document") {
@@ -212,7 +214,7 @@ export class Orchestrator {
 
   private async act(actorId: string, brain: Brain, it: Intent): Promise<void> {
     if (it.type === "__say") {
-      if (it.say) this.narrate(actorId, it.say, it.mood ?? "calm");
+      if (it.say) this.narrate(actorId, it.say, it.mood ?? "calm", undefined, it.short);
       await this.pace();
       return;
     }
@@ -220,14 +222,14 @@ export class Orchestrator {
     const v = res.decision.verdict;
     if (v === "deny") {
       const failed = res.decision.rules.filter((r) => !r.ok).map((r) => r.detail).join("; ");
-      this.narrate(actorId, `Policy refused my ${it.type.replace(/_/g, " ")}: ${failed}`, "attentive", res);
+      this.narrate(actorId, `Policy refused my ${it.type.replace(/_/g, " ")}: ${failed}`, "attentive", res, `Policy refused my ${it.type.replace(/_/g, " ")}.`);
     } else if (it.say) {
-      this.narrate(actorId, it.say, it.mood ?? (v === "allow" ? "calm" : "attentive"), res);
+      this.narrate(actorId, it.say, it.mood ?? (v === "allow" ? "calm" : "attentive"), res, it.short);
     }
     await this.pace();
   }
 
-  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult): void {
+  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult, short?: string): void {
     const actor = this.engine.actors.get(actorId);
     const n: Narration = {
       seq: ++this.narrSeq,
@@ -236,6 +238,7 @@ export class Orchestrator {
       role: actor?.role ?? "system",
       name: actor?.displayName ?? actorId,
       text,
+      short: short ?? (text.length > 70 ? `${text.slice(0, 67)}...` : text),
       mood,
       outcome: res ? res.decision.verdict : "said",
       proposalId: res?.proposal?.id,

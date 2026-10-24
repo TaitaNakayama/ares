@@ -1,0 +1,284 @@
+import SceneKit
+import UIKit
+import simd
+
+/// One floating helper robot: an original silhouette per role, a dark screen face with two
+/// expressive eyes, a glow halo in the role colour, and a speech bubble that faces the user.
+final class Robot {
+  let role: String
+  let name: String
+  let color: UIColor
+  let node = SCNNode()
+  private let body = SCNNode()
+  private let face = SCNNode()
+  private let eyeL = SCNNode()
+  private let eyeR = SCNNode()
+  private let eyeMat = SCNMaterial()
+  private let faceMat = SCNMaterial()
+  private let haloMat = SCNMaterial()
+  private let bubble: TextPanel
+  private let home: SCNVector3
+  private let homeYaw: Float
+  private var mood = "calm"
+  private var lastSeq = -1
+  private var spokeAt: TimeInterval = -100
+  private var text = ""
+  private var outcome = "said"
+  private var nextBlink: TimeInterval = 2
+  private let phase: Float
+
+  init(role: String, name: String, color: UIColor, at pos: SCNVector3, faceYaw: Float) {
+    self.role = role
+    self.name = name
+    self.color = color
+    home = pos
+    homeYaw = faceYaw
+    phase = Float(abs(role.hashValue % 100)) / 100 * 6.28
+    bubble = TextPanel(width: 1.25, height: 0.52, pixelsPerMeter: 820)
+    node.position = pos
+    node.eulerAngles.y = faceYaw
+    node.addChildNode(body)
+    buildBody()
+    buildFace()
+    // Halo ring under the body: cheap glow instead of bloom.
+    haloMat.lightingModel = .constant
+    haloMat.diffuse.contents = color.withAlphaComponent(0.8)
+    haloMat.blendMode = .add
+    haloMat.writesToDepthBuffer = false
+    let halo = SCNNode(geometry: SCNTorus(ringRadius: 0.2, pipeRadius: 0.012))
+    halo.geometry?.materials = [haloMat]
+    halo.position = SCNVector3(0, -0.32, 0)
+    node.addChildNode(halo)
+    // Bubble floats above, always facing the camera.
+    bubble.node.position = SCNVector3(pos.x, pos.y + 0.55, pos.z)
+    bubble.node.constraints = [SCNBillboardConstraint()]
+    bubble.node.renderingOrder = 50
+    setMood("calm", force: true)
+    drawBubble(active: false)
+  }
+
+  var bubbleNode: SCNNode { bubble.node }
+
+  private func shell() -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .blinn
+    m.diffuse.contents = UIColor(white: 0.92, alpha: 1)
+    m.specular.contents = UIColor(white: 0.6, alpha: 1)
+    m.shininess = 0.6
+    return m
+  }
+
+  private func accent() -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .blinn
+    m.diffuse.contents = color
+    m.emission.contents = color.withAlphaComponent(0.25)
+    return m
+  }
+
+  private func buildBody() {
+    let s = shell()
+    let a = accent()
+    switch role {
+    case "requester": // Engineer: rounded cube with an antenna
+      let b = SCNNode(geometry: SCNBox(width: 0.36, height: 0.34, length: 0.32, chamferRadius: 0.09))
+      b.geometry?.materials = [s]
+      body.addChildNode(b)
+      let stem = SCNNode(geometry: SCNCylinder(radius: 0.012, height: 0.16))
+      stem.geometry?.materials = [a]
+      stem.position = SCNVector3(0.08, 0.25, 0)
+      body.addChildNode(stem)
+      let dish = SCNNode(geometry: SCNCone(topRadius: 0.06, bottomRadius: 0.01, height: 0.05))
+      dish.geometry?.materials = [a]
+      dish.position = SCNVector3(0.08, 0.34, 0)
+      body.addChildNode(dish)
+      let ear = SCNNode(geometry: SCNBox(width: 0.04, height: 0.12, length: 0.14, chamferRadius: 0.02))
+      ear.geometry?.materials = [a]
+      ear.position = SCNVector3(-0.2, 0, 0)
+      body.addChildNode(ear)
+    case "receiver": // Cargo Keeper: wide capsule with a cargo-bay belt
+      let b = SCNNode(geometry: SCNCapsule(capRadius: 0.16, height: 0.52))
+      b.geometry?.materials = [s]
+      b.eulerAngles.z = .pi / 2
+      body.addChildNode(b)
+      let belt = SCNNode(geometry: SCNTorus(ringRadius: 0.163, pipeRadius: 0.02))
+      belt.geometry?.materials = [a]
+      belt.eulerAngles.z = .pi / 2
+      body.addChildNode(belt)
+      for x in [-0.27, 0.27] as [Float] {
+        let pod = SCNNode(geometry: SCNSphere(radius: 0.05))
+        pod.geometry?.materials = [a]
+        pod.position = SCNVector3(x, 0, 0)
+        body.addChildNode(pod)
+      }
+    case "ap": // Bill Checker: tall slim pill with a scanner visor
+      let b = SCNNode(geometry: SCNCapsule(capRadius: 0.13, height: 0.5))
+      b.geometry?.materials = [s]
+      body.addChildNode(b)
+      let band = SCNNode(geometry: SCNTorus(ringRadius: 0.132, pipeRadius: 0.012))
+      band.geometry?.materials = [a]
+      band.position = SCNVector3(0, -0.12, 0)
+      body.addChildNode(band)
+    case "treasury": // Money Keeper: a coin on edge with a rim
+      let b = SCNNode(geometry: SCNCylinder(radius: 0.21, height: 0.09))
+      b.geometry?.materials = [s]
+      b.eulerAngles.x = .pi / 2
+      body.addChildNode(b)
+      let rim = SCNNode(geometry: SCNTorus(ringRadius: 0.21, pipeRadius: 0.022))
+      rim.geometry?.materials = [a]
+      rim.eulerAngles.x = .pi / 2
+      body.addChildNode(rim)
+    default: // controller, Rule Keeper: hexagonal prism with a crown band
+      let hex = SCNCylinder(radius: 0.2, height: 0.42)
+      hex.radialSegmentCount = 6
+      let b = SCNNode(geometry: hex)
+      b.geometry?.materials = [s]
+      body.addChildNode(b)
+      let cap = SCNCylinder(radius: 0.205, height: 0.05)
+      cap.radialSegmentCount = 6
+      let c = SCNNode(geometry: cap)
+      c.geometry?.materials = [a]
+      c.position = SCNVector3(0, 0.2, 0)
+      body.addChildNode(c)
+    }
+  }
+
+  private func buildFace() {
+    faceMat.lightingModel = .constant
+    faceMat.diffuse.contents = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
+    let plate = SCNPlane(width: 0.24, height: 0.15)
+    plate.cornerRadius = 0.05
+    plate.materials = [faceMat]
+    face.geometry = plate
+    let z: Float
+    switch role {
+    case "receiver": z = 0.165
+    case "treasury": z = 0.05
+    case "ap": z = 0.135
+    case "requester": z = 0.165
+    default: z = 0.18
+    }
+    face.position = SCNVector3(0, role == "ap" ? 0.08 : 0.02, z)
+    body.addChildNode(face)
+    eyeMat.lightingModel = .constant
+    eyeMat.diffuse.contents = UIColor.white
+    for (e, x) in [(eyeL, Float(-0.05)), (eyeR, Float(0.05))] {
+      let g = SCNPlane(width: 0.045, height: 0.07)
+      g.cornerRadius = 0.0225
+      g.materials = [eyeMat]
+      e.geometry = g
+      e.position = SCNVector3(x, 0, 0.002)
+      face.addChildNode(e)
+    }
+  }
+
+  func setMood(_ m: String, force: Bool = false) {
+    guard force || m != mood else { return }
+    mood = m
+    SCNTransaction.begin()
+    SCNTransaction.animationDuration = 0.25
+    var eyeColor = UIColor.white
+    var sy: Float = 1, rotL: Float = 0, rotR: Float = 0, dy: Float = 0
+    var faceGlow = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
+    var halo = color.withAlphaComponent(0.8)
+    switch m {
+    case "worried":
+      eyeColor = UIColor(red: 1.0, green: 0.82, blue: 0.55, alpha: 1); sy = 0.85; rotL = -0.35; rotR = 0.35; dy = 0.006
+    case "suspicious":
+      eyeColor = UIColor(red: 1.0, green: 0.30, blue: 0.25, alpha: 1); sy = 0.32; rotL = 0.18; rotR = -0.18
+      faceGlow = UIColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = UIColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.9)
+    case "attentive":
+      eyeColor = UIColor(red: 0.75, green: 0.95, blue: 1.0, alpha: 1); sy = 1.18
+    case "happy":
+      eyeColor = UIColor(red: 0.55, green: 1.0, blue: 0.70, alpha: 1); sy = 0.42; dy = 0.01
+    default:
+      break
+    }
+    eyeMat.diffuse.contents = eyeColor
+    faceMat.diffuse.contents = faceGlow
+    haloMat.diffuse.contents = halo
+    eyeL.scale = SCNVector3(1, sy, 1)
+    eyeR.scale = SCNVector3(1, sy, 1)
+    eyeL.eulerAngles.z = rotL
+    eyeR.eulerAngles.z = rotR
+    eyeL.position.y = dy
+    eyeR.position.y = dy
+    SCNTransaction.commit()
+  }
+
+  func hear(text: String, mood: String, outcome: String, seq: Int, now: TimeInterval) {
+    guard seq != lastSeq else { return }
+    lastSeq = seq
+    self.text = text
+    self.outcome = outcome
+    spokeAt = now
+    setMood(outcome == "deny" ? "attentive" : mood)
+    drawBubble(active: true)
+    body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
+  }
+
+  private func drawBubble(active: Bool) {
+    let t = text
+    let accentColor = color
+    let deny = outcome == "deny"
+    bubble.update(key: "\(active)|\(t)|\(outcome)") { ctx, size in
+      let r = CGRect(origin: .zero, size: size)
+      Draw.fill(ctx, r, UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1), radius: 0)
+      Draw.fill(ctx, CGRect(x: 0, y: 0, width: 14, height: size.height), accentColor)
+      _ = Draw.text(self.name.uppercased(), at: CGPoint(x: 40, y: 22), size: 44, weight: .heavy, color: accentColor)
+      if deny { _ = Draw.text("REFUSED BY POLICY", at: CGPoint(x: size.width - 470, y: 26), size: 36, weight: .heavy, color: Palette.red) }
+      if active {
+        _ = Draw.text(t, at: CGPoint(x: 40, y: 92), size: 62, weight: .bold, color: Palette.text, width: size.width - 80, maxLines: 4)
+      }
+    }
+    bubble.node.opacity = active ? 1 : 0.55
+  }
+
+  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool) {
+    let t = Float(now)
+    node.position = SCNVector3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
+    // Turn toward the user while speaking or when a decision is waiting; otherwise face the work.
+    let speaking = now - spokeAt < 9
+    let toUser = user - SIMD3(node.position.x, node.position.y, node.position.z)
+    let yawUser = atan2(toUser.x, toUser.z)
+    let target = speaking || needsCommander ? yawUser : homeYaw
+    var dyaw = target - node.eulerAngles.y
+    while dyaw > .pi { dyaw -= 2 * .pi }
+    while dyaw < -.pi { dyaw += 2 * .pi }
+    node.eulerAngles.y += dyaw * 0.08
+    if !speaking && bubble.node.opacity > 0.9 { drawBubble(active: false); if mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") } }
+    if now > nextBlink {
+      nextBlink = now + 2.5 + Double((sin(t * 7.1 + phase) + 1) * 2)
+      let s = eyeL.scale.y
+      let blink = SCNAction.sequence([.customAction(duration: 0.07) { n, _ in n.scale.y = s * 0.1 }, .wait(duration: 0.07), .customAction(duration: 0.01) { n, _ in n.scale.y = s }])
+      eyeL.runAction(blink)
+      eyeR.runAction(blink)
+    }
+  }
+}
+
+enum RobotCrew {
+  /// Angle (deg, 0 = straight ahead), distance and height for each role.
+  static let layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] = [
+    ("requester", "Engineer", -56, 2.45, 1.32),
+    ("receiver", "Cargo Keeper", -30, 2.75, 1.02),
+    ("controller", "Rule Keeper", 0, 2.55, 2.02),
+    ("ap", "Bill Checker", 30, 2.75, 1.08),
+    ("treasury", "Money Keeper", 56, 2.45, 1.32),
+  ]
+
+  static func build(into root: SCNNode) -> [String: Robot] {
+    var out: [String: Robot] = [:]
+    for l in layout {
+      let pos = Room.ring(l.deg, r: l.r, y: l.y)
+      // Face slightly outward toward the window/screens when idle.
+      // Idle: turned ~40 degrees toward its work; it turns to the user when it speaks.
+      let yaw = atan2(-pos.x, -pos.z) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
+      let r = Robot(role: l.role, name: l.name, color: Palette.role(l.role), at: pos, faceYaw: yaw)
+      root.addChildNode(r.node)
+      root.addChildNode(r.bubbleNode)
+      out[l.role] = r
+    }
+    return out
+  }
+}

@@ -458,7 +458,7 @@ export class MarsWorld implements World {
         const v = d.verification as unknown as { id: string; claimedBank: BankAccount; sentAt: Time };
         const legit = this.bankTruth.get(v.claimedBank.account) ?? false;
         const at = (d.expectedReplyAt as unknown as number) ?? v.sentAt + 2 * engine.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
-        out.push({ at, event: { type: "external", actorId: "cfo", action: "answer_verification", params: { verificationId: v.id, confirmed: legit, answer: legit ? "Supplier confirmed the new account on a call-back to the number on file." : "Supplier says it never changed its bank details. The request was fraudulent." }, summary: legit ? "Earth: call-back confirms the new bank account." : "Earth: the bank change was fake. The real supplier never sent it." } });
+        out.push({ at, event: { type: "external", actorId: "cfo", action: "answer_verification", params: { verificationId: v.id, confirmed: legit, answer: legit ? "Supplier confirmed the new account on a call-back to the number on file." : "Supplier says it never changed its bank details. The request was fraudulent." }, summary: legit ? "Earth: call-back confirms the new bank account." : "Earth: the bank change was fake. The real supplier never sent it.", short: legit ? "Earth: the new bank account is genuine." : "Earth: the bank change was FAKE." } });
         break;
       }
       case "escalation_delivered": {
@@ -485,7 +485,7 @@ export class MarsWorld implements World {
         if ((d.leverId as unknown as string) === "drill_off") {
           this.power.drillOn = false;
           const st = this.power.state(this.tauAt(e.at));
-          out.push({ at: e.at, event: { type: "narration", agentRole: "requester", text: `Ice drill powered down. Load is now ${Math.round(st.loadKWhPerSol)} kWh per sol; reserve ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, mood: "calm" } });
+          out.push({ at: e.at, event: { type: "narration", agentRole: "requester", text: `Ice drill powered down. Load is now ${Math.round(st.loadKWhPerSol)} kWh per sol; reserve ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, short: `Drill off. Reserve now ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, mood: "calm" } });
           out.push({ at: e.at, event: { type: "telemetry", data: this.telemetry(e.at, engine) } });
         }
         break;
@@ -610,7 +610,7 @@ export class MarsWorld implements World {
     const st = this.power.state(4.6);
     engine.setLevers([this.drillLeverAt(4.6)]);
     const reason = `Dust storm: tau ${(4.6).toFixed(1)}. Solar is down to ${Math.round(st.solarKWhPerSol)} kWh per sol against ${Math.round(st.loadKWhPerSol)} used; batteries last about ${st.solsLeft.toFixed(1)} sols. We need more storage before the next storm, and the cargo manifest for the November launch window closes in 90 minutes.`;
-    return [{ at: t + rampMs, event: { type: "need", sku: "BAT-10", qty: 40, orderBy: t + rampMs + 90 * MIN, reason, context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
+    return [{ at: t + rampMs, event: { type: "need", sku: "BAT-10", qty: 40, orderBy: t + rampMs + 90 * MIN, reason, short: `Dust storm! Batteries last ${st.solsLeft.toFixed(1)} sols. Need 40 more.`, context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
   }
 
   private drillLeverAt(tau: number): Lever {

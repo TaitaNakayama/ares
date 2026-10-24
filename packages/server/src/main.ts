@@ -80,7 +80,7 @@ function wire(s: Session): () => void {
 }
 
 const VR_TYPES = new Set(["vr_state", "capture", "reset"]);
-function broadcast(msg: { type: string }): void {
+function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
     if (c.readyState !== 1) continue;
@@ -132,7 +132,7 @@ function vrState() {
     },
     waiting,
     earth: pendingVer.map((v) => ({ id: v.id, vendor: e.vendors.get(v.vendorId)?.name, replyEtaText: s.world.fmtTime(e.expectedVerificationReply(v)), replyInMin: Math.max(0, Math.round((e.expectedVerificationReply(v) - e.now) / 60_000)) })),
-    robots: Object.fromEntries(Object.entries(robots).map(([role, n]) => [role, n && { name: n.name, text: n.text, mood: n.mood, outcome: n.outcome, seq: n.seq }])),
+    robots: Object.fromEntries(Object.entries(robots).map(([role, n]) => [role, n && { name: n.name, text: n.text, short: n.short, mood: n.mood, outcome: n.outcome, seq: n.seq }])),
   };
 }
 

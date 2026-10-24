@@ -9,3 +9,4 @@ vr/Vendor/Cardboard/lib/
 vr/AresVR.xcodeproj/
 vr/build/
 terrain/.venv/
+terrain/out-scenekit/

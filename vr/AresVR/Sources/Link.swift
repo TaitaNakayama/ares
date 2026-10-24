@@ -8,7 +8,7 @@ struct VRState: Decodable {
   struct Option: Decodable { var id: String; var label: String; var detail: String? }
   struct Waiting: Decodable { var id: String; var reason: String?; var decideByText: String?; var options: [Option] }
   struct Earth: Decodable { var id: String; var vendor: String?; var replyEtaText: String?; var replyInMin: Int? }
-  struct Robot: Decodable { var name: String?; var text: String?; var mood: String?; var outcome: String?; var seq: Int? }
+  struct Robot: Decodable { var name: String?; var text: String?; var short: String?; var mood: String?; var outcome: String?; var seq: Int? }
   struct Sun: Decodable { var elevation: Double?; var azimuth: Double? }
   var seed: String?
   var policyVersion: Int?

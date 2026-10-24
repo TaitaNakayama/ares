@@ -28,15 +28,15 @@ export interface DocumentFields {
 }
 
 export type WorldEvent =
-  | { type: "need"; sku: string; qty: number; orderBy: Time; reason: string; context?: Record<string, string | number> }
+  | { type: "need"; sku: string; qty: number; orderBy: Time; reason: string; short?: string; context?: Record<string, string | number> }
   /** A document arrives (quote or invoice). `text` is what a person would read; `fields` is what is printed on it. */
   | { type: "document"; doc: { id: string; kind: "quote" | "invoice"; from: string; text: string; fields: DocumentFields } }
   | { type: "delivery"; poId: string; lines: ReceiptLine[]; note: string; docId?: string }
   | { type: "rfq_closed"; requisitionId: string }
   /** Simulated outside party acting through the engine (e.g. remote authority answering). */
-  | { type: "external"; actorId: string; action: string; params: unknown; summary: string }
+  | { type: "external"; actorId: string; action: string; params: unknown; summary: string; short?: string }
   | { type: "telemetry"; data: Record<string, unknown> }
-  | { type: "narration"; agentRole: string; text: string; mood?: Mood };
+  | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood };
 
 export type Mood = "calm" | "worried" | "suspicious" | "attentive" | "happy";
 
