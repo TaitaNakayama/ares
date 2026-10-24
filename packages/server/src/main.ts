@@ -3,7 +3,7 @@ import http from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { defaultRuleBrains, Orchestrator, type Narration, type OrchestratorMessage } from "@ares/agents";
+import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type Escalation } from "@ares/engine";
 import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
@@ -12,6 +12,9 @@ const PORT = Number(process.env.PORT ?? 8787);
 const PACE_MS = Number(process.env.ARES_PACE_MS ?? 2200);
 const BASE_SPEED = Number(process.env.ARES_SPEED ?? 120);
 const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
+const LLM = providerFromEnv(new URL("../../../.cache/llm/", import.meta.url).pathname);
+console.log(LLM ? `LLM: ${LLM.name} (${LLM.model})` : "LLM: none (rules brains + deterministic document parser)");
+const brains = () => [new RequesterRules(), new ReceiverRules(), new ApWithReader(LLM), new TreasuryRules(), new ControllerRules(), new EscalationDrafter(LLM)];
 
 /** One running scenario: a world, its engine and agents, and a real-time clock. */
 class Session {
@@ -32,7 +35,7 @@ class Session {
     this.seed = seed;
     this.paceMs = paceMs;
     this.world = new MarsWorld({ seed, mode: "demo" });
-    this.orch = new Orchestrator({ world: this.world, brains: defaultRuleBrains(), fmtTime: this.world.fmtTime, paceMs: 0 });
+    this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0 });
     this.simNow = this.world.start - 32 * 86_400_000;
   }
 
@@ -184,7 +187,8 @@ async function reset(seed?: string): Promise<void> {
 // ---------------------------------------------------------------- injection (judge-invented events)
 
 interface InjectBody {
-  kind: "invoice" | "quote" | "need" | "storm" | "delivery";
+  kind: "invoice" | "quote" | "need" | "storm" | "delivery" | "text";
+  text?: string;
   vendorId?: string;
   poId?: string;
   requisitionId?: string;
@@ -239,6 +243,12 @@ function inject(b: InjectBody): string {
     if (!po) throw new Error("no open PO");
     s.orch.schedule(at, { type: "delivery", poId: po.id, lines: [{ sku: po.lines[0]!.sku, qtyReceived: b.qtyReceived ?? po.lines[0]!.qty, qtyRejected: b.qtyRejected ?? 0 }], note: "console" });
     return `injected delivery for ${po.id}`;
+  }
+  if (b.kind === "text") {
+    // A judge pastes any invoice text; the AP agent reads it (LLM or parser) and the controls take over.
+    if (!b.text?.trim()) throw new Error("paste the invoice text");
+    s.orch.schedule(at, { type: "document", doc: { id: `DOC-TXT-${Date.now()}`, kind: "invoice", from: "pasted", text: b.text, fields: {} } });
+    return `document queued for the Bill Checker (${LLM ? "LLM reader" : "deterministic parser"})`;
   }
   if (b.kind === "storm") {
     s.world.tau = b.tau ?? 4.6;

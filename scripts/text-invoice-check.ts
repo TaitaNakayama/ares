@@ -1,0 +1,17 @@
+import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, ReceiverRules, RequesterRules, TreasuryRules } from "@ares/agents";
+import { MarsWorld } from "@ares/world-mars";
+const world = new MarsWorld({ seed: "ares-demo", mode: "demo" });
+const orch = new Orchestrator({ world, brains: [new RequesterRules(), new ReceiverRules(), new ApWithReader(), new TreasuryRules(), new ControllerRules(), new EscalationDrafter()], fmtTime: world.fmtTime });
+orch.on((m) => { if (m.type === "narration") console.log(`  ${m.narration.name}: ${m.narration.text}`); });
+const e = orch.engine;
+await orch.runUntil(world.start);
+orch.scheduleAll(world.beatDelivery(e));
+await orch.runUntil(e.now + 3600e3);
+const po = [...e.pos.values()][0]!;
+const v = e.vendors.get(po.vendorId)!;
+const text = `Hi team,\nplease find our invoice no. ${v.name.split(" ")[0]!.toUpperCase()}-77812 for the filter cartridges.\nRef ${po.id}\n36 x air filters @ $19,350.00\nNote our NEW banking details:\nRemit to: ${v.name}, Coastal Credit Union, routing 321456789, account 4455667788\nThanks!`;
+console.log("--- pasted:\n" + text);
+orch.schedule(e.now, { type: "document", doc: { id: "DOC-TXT-1", kind: "invoice", from: "pasted", text, fields: {} } });
+await orch.runUntil(e.now + 600e3);
+const inv = [...e.invoices.values()].at(-1)!;
+console.log("--- result:", inv.id, inv.status, inv.flags, "verifications:", [...e.verifications.values()].map((x) => x.status));

@@ -213,6 +213,11 @@ export class Orchestrator {
   }
 
   private async act(actorId: string, brain: Brain, it: Intent): Promise<void> {
+    if (it.type === "__draft") {
+      const { escalationId, message } = it.params as { escalationId: string; message: string };
+      this.engine.setEscalationMessage(escalationId, message, actorId);
+      return;
+    }
     if (it.type === "__say") {
       if (it.say) this.narrate(actorId, it.say, it.mood ?? "calm", undefined, it.short);
       await this.pace();
