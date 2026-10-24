@@ -106,6 +106,9 @@ Every proposal still goes through `Engine.submit`. Statistics, match math, bank 
 - **A less fixed story:** policy still forces the beat-5 escalation, because the fake quote can't pass and 15 batteries exceed the Rule Keeper's limit.
 - **The scorecard:** it measures the rules brains; hundreds of LLM seeds are slow and cost money.
 
+## What is scripted vs produced at runtime (for the pitch)
+See [docs/scripted-vs-runtime.md](docs/scripted-vs-runtime.md), checked Sat 2026-10-24 after the agents were made real.
+
 ## Decisions (Sat 2026-10-24)
 
 1. **Spectator view first**, agents later: "keep going with the spectator view on Mac". The agent changes in section 5 are not started.

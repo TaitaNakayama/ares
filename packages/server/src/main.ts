@@ -81,6 +81,9 @@ class Session {
   lastTelemetry: Record<string, unknown> = {};
   /** Roles whose LLM brain is deciding right now (shown as "thinking" in the headset and spectator). */
   readonly thinking = new Set<string>();
+  /** Part 1 pacing: `free` = the judge picks stations (the headset sends `vr_station`); `auto` = the director's fixed order. */
+  roam: "free" | "auto" | undefined;
+  roamStartedAt = 0;
   readonly startedAt = Date.now();
   /** Real time at which to drop out of a time-lapse. */
   private timelapseUntilAnswer = false;
@@ -245,7 +248,7 @@ function vrState() {
     thinking: [...s.thinking],
     agentMode: router.mode,
     /** Two-part demo: where the judge is and which outdoor station the story is at; the scientist's real reference image. */
-    scene: { part: s.world.part, station: s.world.station ?? null, science: SCIENCE_REF },
+    scene: { part: s.world.part, station: s.world.station ?? null, mode: s.roam ?? null, visited: [...s.world.visited], science: SCIENCE_REF },
     timelapse: s.isTimelapse,
     time: s.world.fmtTime(e.now),
     sol: t.sol,
@@ -297,12 +300,57 @@ function fullState() {
 
 // ---------------------------------------------------------------- director
 
-/** Part 1 outside: pad (beat 1) -> science -> solar (beat 2 starts) -> door -> inside. Part 2 continues with the agents and the commander. */
+/** Free roam: the judge looked at a station marker and pressed. Content runs once per station; the storm interrupts later. */
+const ROAM_STORM_AFTER_MS = Number(process.env.ARES_ROAM_STORM_MS ?? 45_000);
+async function roamTo(station: string, by: string): Promise<string> {
+  const s = session;
+  const w = s.world;
+  if (w.part !== "outside") return "already inside";
+  if (s.roam === "auto") return "the director is driving part 1; stations follow its order";
+  if (!(["pad", "science", "solar", "rover"] as const).some((x) => x === station)) return `unknown station ${station}`;
+  if (w.station === "door") return "the storm is here: go to the door";
+  const st = station as "pad" | "science" | "solar" | "rover";
+  if (!s.roam) {
+    s.roam = "free";
+    s.roamStartedAt = Date.now();
+    autoplayTimer.push(setTimeout(() => { if (session === s) void stormInterrupt("timer"); }, ROAM_STORM_AFTER_MS));
+  }
+  s.orch.scheduleAll(w.visit(st, s.orch.engine));
+  broadcast({ type: "scene", part: "outside", station: st, by });
+  scheduleVrState();
+  console.log(`[scene] station ${st} (${by})`);
+  // Seen enough: the three content stations visited, so the storm comes now rather than at the timer.
+  if (["pad", "science", "solar"].every((x) => w.visited.has(x))) autoplayTimer.push(setTimeout(() => { if (session === s) void stormInterrupt("seen enough"); }, 6_000));
+  return `station ${st}`;
+}
+
+/** The storm warning cuts part 1 short wherever the judge is; beat 1 runs in the background if the pad was never visited. */
+async function stormInterrupt(by: string): Promise<void> {
+  const s = session;
+  const w = s.world;
+  const e = s.orch.engine;
+  if (w.part !== "outside" || w.station === "door") return;
+  if (!w.visited.has("pad")) { w.visited.add("pad"); s.orch.scheduleAll(w.beatDelivery(e)); }
+  s.orch.scheduleAll(w.beatStormWarning(e));
+  s.orch.scheduleAll(w.beatDoor());
+  autoplayTimer.push(setTimeout(() => { if (session === s && s.world.part === "outside") void enterBase("auto"); }, 30_000));
+  broadcast({ type: "scene", part: "outside", station: "door", by });
+  scheduleVrState();
+  console.log(`[scene] storm interrupt (${by}) -> door`);
+}
+
+/** Part 1 outside on the director's fixed order: pad (beat 1) -> science -> solar (beat 2 starts) -> door -> inside. Part 2 continues with the agents and the commander. */
 async function directorNext(): Promise<string> {
   const s = session;
   const e = s.orch.engine;
   const w = s.world;
   if (w.part === "outside") {
+    if (!s.roam) s.roam = "auto";
+    if (s.roam === "free") {
+      // The judge is choosing stations; "next" from the console means: bring the storm now.
+      await stormInterrupt("director");
+      return "free roam: storm warning now, then the door";
+    }
     if (!w.station) {
       s.orch.scheduleAll(w.beatPad(e));
       return "part 1, landing pad: the cargo lander (beat 1: short delivery)";
@@ -642,6 +690,10 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
     if (path === "/api/director/next" && req.method === "POST") return send(res, 200, { ok: true, message: await directorNext() });
     if (path === "/api/director/enter" && req.method === "POST") return send(res, 200, { ok: true, message: await enterBase("console") });
+    if (path === "/api/director/station" && req.method === "POST") {
+      const b = await readJson(req);
+      return send(res, 200, { ok: true, message: await roamTo(String(b.station ?? ""), "console") });
+    }
     if (path === "/api/director/autoplay" && req.method === "POST") {
       const b = await readJson(req);
       await autoplay(typeof b.choice === "string" ? b.choice : undefined, Number(b.decideAfterMs ?? 25_000));
@@ -713,7 +765,7 @@ wss.on("connection", (ws, req) => {
   ws.on("message", async (raw) => {
     try {
       const text = String(raw);
-      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string; role?: string; question?: string };
+      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string; role?: string; question?: string; station?: string };
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
       // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
       if (m.type === "vr_pose") {
@@ -729,6 +781,10 @@ wss.on("connection", (ws, req) => {
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
       if (m.type === "vr_enter" && (headset || local)) {
         void enterBase("headset");
+        return;
+      }
+      if (m.type === "vr_station" && typeof m.station === "string" && (headset || local)) {
+        void roamTo(m.station, "headset");
         return;
       }
       if (m.type === "vr_ask" && typeof m.role === "string" && (headset || local)) {

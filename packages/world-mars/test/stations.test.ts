@@ -35,3 +35,28 @@ describe("outdoor stations", () => {
     expect(e.requisitions.size).toBe(2); // the battery need arrived with the storm
   });
 });
+
+describe("free roam", () => {
+  it("runs each station's content once in the judge's order; the storm warning runs once; the pad can be skipped", async () => {
+    const world = new MarsWorld({ seed: "roam", mode: "demo" });
+    const orch = new Orchestrator({ world, brains: defaultRuleBrains(), fmtTime: world.fmtTime });
+    const e = orch.engine;
+    await orch.runUntil(world.start);
+    orch.scheduleAll(world.visit("solar", e));
+    await orch.runUntil(e.now + 60_000);
+    expect(world.station).toBe("solar");
+    expect(world.beat).toBe(0); // the panel check alone starts no storm
+    orch.scheduleAll(world.visit("science", e));
+    orch.scheduleAll(world.visit("science", e)); // a second visit adds nothing
+    await orch.runUntil(e.now + 5 * 60_000);
+    expect(orch.narration.filter((n) => n.role === "scientist").length).toBe(2);
+    orch.scheduleAll(world.visit("rover", e));
+    expect(world.station).toBe("rover");
+    orch.scheduleAll(world.beatStormWarning(e));
+    orch.scheduleAll(world.beatStormWarning(e)); // once only
+    await orch.runUntil(e.now + 3 * 60_000);
+    expect(world.beat).toBe(2);
+    expect(orch.narration.filter((n) => n.text.includes("get inside")).length).toBe(1);
+    expect(world.visited.has("pad")).toBe(false); // the server runs beat 1 itself at the interrupt
+  });
+});

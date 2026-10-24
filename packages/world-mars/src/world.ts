@@ -157,7 +157,10 @@ export class MarsWorld implements World {
   // Demo state
   /** Two-part demo: the judge starts outside (landing pad -> science site -> solar field -> door), then goes inside. */
   part: "outside" | "inside" = "outside";
-  station: "pad" | "science" | "solar" | "door" | undefined;
+  station: "pad" | "science" | "solar" | "rover" | "door" | undefined;
+  /** Stations whose content has run (free roam runs each once, in the judge's order). */
+  readonly visited = new Set<string>();
+  private stormWarned = false;
   tau = 0.6;
   private stormFrom?: { t: Time; tau0: number; tau1: number; durMs: number };
   beat = 0;
@@ -636,16 +639,48 @@ export class MarsWorld implements World {
 
   /** Part 1, station 3: the Engineer checks the solar field, then sees the storm rising over the rim (beat 2 starts). */
   beatSolar(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
+    const check = this.beatSolarCheck(engine);
+    const warning = this.beatStormWarning(engine, rampMs, 2 * MIN);
+    return [...check, ...warning];
+  }
+
+  /** The Engineer's panel check at the solar field (no storm yet). */
+  beatSolarCheck(engine: Engine): ScheduledWorldEvent[] {
     this.station = "solar";
     const t = engine.now;
     const before = this.power.state(this.tauAt(t));
+    return [
+      { at: t, event: { type: "narration", agentRole: "requester", text: `Panels read ${Math.round(before.solarKWhPerSol)} kWh per sol at tau ${this.tauAt(t).toFixed(1)}; load is ${Math.round(before.loadKWhPerSol)}. Dust coating is light.`, short: `Solar ${Math.round(before.solarKWhPerSol)} kWh/sol. Panels fine.`, mood: "calm" } },
+    ];
+  }
+
+  /** The storm warning (beat 2 starts): wherever the judge is, the Engineer tells them to get inside. Runs once. */
+  beatStormWarning(engine: Engine, rampMs = 20 * MIN, delayMs = 0): ScheduledWorldEvent[] {
+    if (this.stormWarned) return [];
+    this.stormWarned = true;
+    const t = engine.now;
     const storm = this.beatStorm(engine, rampMs);
     const after = this.power.state(4.6);
     return [
-      { at: t, event: { type: "narration", agentRole: "requester", text: `Panels read ${Math.round(before.solarKWhPerSol)} kWh per sol at tau ${this.tauAt(t).toFixed(1)}; load is ${Math.round(before.loadKWhPerSol)}. Dust coating is light.`, short: `Solar ${Math.round(before.solarKWhPerSol)} kWh/sol. Panels fine.`, mood: "calm" } },
-      { at: t + 2 * MIN, event: { type: "narration", agentRole: "requester", text: `Dust storm rising over the crater rim: tau climbing toward 4.6. Solar will drop to about ${Math.round(after.solarKWhPerSol)} kWh per sol. Commander, get inside.`, short: "Dust storm coming. Commander, get inside!", mood: "worried" } },
+      { at: t + delayMs, event: { type: "narration", agentRole: "requester", text: `Dust storm rising over the crater rim: tau climbing toward 4.6. Solar will drop to about ${Math.round(after.solarKWhPerSol)} kWh per sol. Commander, get inside.`, short: "Dust storm coming. Commander, get inside!", mood: "worried" } },
       ...storm,
     ];
+  }
+
+  /**
+   * Free roam: the judge chose a station. Its content runs the first time it is visited (the pad is beat 1,
+   * the science site is the scientist, the solar field is the panel check); the rover has no story content.
+   */
+  visit(station: "pad" | "science" | "solar" | "rover", engine: Engine): ScheduledWorldEvent[] {
+    this.station = station;
+    if (this.visited.has(station)) return [];
+    this.visited.add(station);
+    switch (station) {
+      case "pad": return this.beatDelivery(engine);
+      case "science": return this.beatScience(engine);
+      case "solar": return this.beatSolarCheck(engine);
+      case "rover": return [];
+    }
   }
 
   /** Part 1, station 4: the judge is at the door; `enter()` when they tap it (or the director auto-enters). */
