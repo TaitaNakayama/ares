@@ -9,6 +9,10 @@ import { formatCents, RULE_LABELS, type Escalation, type Policy } from "@ares/en
 import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
 
+// Optional repo-root .env (e.g. OPENAI_API_KEY); real environment variables win.
+const ENV_FILE = new URL("../../../.env", import.meta.url).pathname;
+if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+
 const PORT = Number(process.env.PORT ?? 8787);
 
 /**

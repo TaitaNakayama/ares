@@ -1,6 +1,6 @@
 # STATUS
 
-_Updated Fri 2026-10-23 22:35 PT_
+_Updated Fri 2026-10-23 23:10 PT_
 
 ## Works
 - **Engine** (world-agnostic): double-entry ledger, policy engine, three-way match, escalations, verifications, audit trail, trace-to-source, per-actor credentials.
@@ -21,16 +21,13 @@ _Updated Fri 2026-10-23 22:35 PT_
 - **Native VR app (AresVR):** stereo through the Cardboard distortion at 60 fps on the iPhone 16 Pro, gaze reticle, tap handling, live link, offline replay.
   - Soak test on the charger: 20 min at 59.9-60.1 fps, thermal "fair".
 
-## Blocked right now
-- **The phone isn't reachable.** The Mac moved to the 10.20.50.x Wi-Fi, and devicectl shows the phone as "unavailable".
-  - The app currently on the phone predates the headset token, so the server will refuse it off loopback.
-  - The new build is compiled and ready. It tries the Mac's current IP, its `.local` name and the whole hotspot range 172.20.10.2-14.
+- **Headset link with the token, verified on the device** (23:00): live over the venue Wi-Fi (10.20.50.20) and over the USB cable, 60 fps, thermal nominal. It reconnects by itself after a server restart.
+  - Bug found and fixed on the way: the app never appended its token, because "client=vr" already contains "t=".
+- **Public repo:** https://github.com/TaitaNakayama/ares. Checked before pushing: no secrets or headset token in history, no Claude attribution, largest file 28 MB.
 
 ## Needs you
-- Put the phone and the Mac on the same network (same Wi-Fi, or the Mac back on the iPhone hotspot). Keep the phone unlocked so I can reinstall it.
 - Viewer checklist (in the terminal).
-- Yes or no on a public GitHub repo.
-- Optional: `OPENAI_API_KEY` in `.env`.
+- Optional: `OPENAI_API_KEY` in `.env` (the server now loads `.env` at start).
 
 ## Cut
 - Second real dataset (BPI Challenge 2019): 4TU.ResearchData was unreachable on both networks.

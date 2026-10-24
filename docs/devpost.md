@@ -1,6 +1,8 @@
 # Ares: an AI finance team you can put your hand on the controls of
 
 > Draft for Devpost. Numbers are from `docs/evidence/` and the claims register; regenerate before submitting.
+>
+> Code: https://github.com/TaitaNakayama/ares
 
 ## Inspiration
 
