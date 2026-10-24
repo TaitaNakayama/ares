@@ -67,6 +67,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   override func viewDidLoad() {
     super.viewDidLoad()
     world.showsReticle = false // the overlay draws the judge's gaze instead
+    world.showsSpeakerArrow = false // the spectator camera is wider than the head pose; an edge arrow would point the wrong way
     Sound.shared.muted = true // the headset makes the sounds; no echo from the Mac
     let c = SCNCamera()
     c.zNear = 0.05

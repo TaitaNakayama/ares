@@ -38,8 +38,10 @@ final class BaseScene {
   private let screens: WallScreens
   private var robots: [String: Robot] = [:]
   private let debug = TextPanel(width: 1.6, height: 0.6, pixelsPerMeter: 600)
-  /// Subtitle bar: the latest robot line, in one comfortable place low in the view.
-  private let caption = TextPanel(width: 1.9, height: 0.34, pixelsPerMeter: 1000)
+  /// Head-locked arrow toward a speaking robot that is outside the view. The spectator camera is wider than the head pose, so it turns this off.
+  var showsSpeakerArrow = true
+  private let arrow = OffscreenArrow()
+  private var arrowRole = ""
   private var captionSeq = -1
   private var captionAt: TimeInterval = -100
   private var captionRole: String?
@@ -81,11 +83,8 @@ final class BaseScene {
     robots = RobotCrew.build(into: scene.rootNode)
     buildReticle()
     buildCards()
-    caption.node.position = SCNVector3(0, 1.33, -2.25)
-    caption.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
-    caption.node.opacity = 0
-    caption.node.renderingOrder = 60
-    scene.rootNode.addChildNode(caption.node)
+    arrow.node.renderingOrder = 9_000
+    scene.rootNode.addChildNode(arrow.node)
     debug.node.position = Room.ring(180, r: Room.radius - 0.1, y: 1.6)
     debug.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
     scene.rootNode.addChildNode(debug.node)
@@ -156,13 +155,26 @@ final class BaseScene {
     setHover(hitNode)
     let needs = !(latest?.waiting ?? []).isEmpty
     if needs && !cardsVisible && now >= hideUntil { refreshCards(latest) }
-    for r in robots.values { r.update(now: time, user: origin, needsCommander: needs) }
+    // One bubble at a time: the newest speaker's.
+    let speaker = now - captionAt < 9 ? captionRole : nil
+    for r in robots.values { r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker) }
+    updateArrow(worldFromHead: worldFromHead)
     screens.update(latest, now: time, linkText: link.statusText)
-    // Captions sit low; when choices are up they move above the cards.
-    let capY: Float = cardsVisible ? 2.28 : 1.33
-    if abs(caption.node.simdPosition.y - capY) > 0.01 { caption.node.simdPosition.y += (capY - caption.node.simdPosition.y) * 0.15 }
-    if now - captionAt > 9, caption.node.opacity > 0.99, !caption.node.hasActions { caption.node.runAction(.fadeOpacity(to: 0.0, duration: 0.6)) }
     updateDebug(link: link, fps: fps)
+  }
+
+  /// Head-locked arrow at the edge of the view toward the newest speaker, only while that robot is out of view.
+  private func updateArrow(worldFromHead: simd_float4x4) {
+    guard showsSpeakerArrow, let role = captionRole, now - captionAt < 9, let robot = robots[role], robot.isSpeaking(now: now) else { arrow.node.isHidden = true; return }
+    let wp = robot.worldPosition
+    let local4 = (worldFromHead.inverse) * SIMD4(wp.x, wp.y + 0.1, wp.z, 1)
+    guard let place = OffscreenArrow.place(local: SIMD3(local4.x, local4.y, local4.z)) else { arrow.node.isHidden = true; return }
+    if arrowRole != role { arrowRole = role; arrow.setColor(robot.color, key: role) }
+    let t = simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(place.pos.x, place.pos.y, place.pos.z, 1)))
+    let c = cos(place.angle), s = sin(place.angle)
+    let r = simd_float4x4(columns: (SIMD4(c, s, 0, 0), SIMD4(-s, c, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1)))
+    arrow.node.simdWorldTransform = worldFromHead * t * r
+    arrow.node.isHidden = false
   }
 
   private func applyState(_ st: VRState?) {
@@ -172,7 +184,7 @@ final class BaseScene {
       lastSaved = saved
     }
     outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
-    outside.setDrill(on: st.power?.drillOn ?? true)
+    outside.show(Consequence.active(in: st))
     Sound.shared.setStorm(tau: st.tau ?? 0.6)
     var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
@@ -188,19 +200,8 @@ final class BaseScene {
     captionSeq = seq
     captionAt = now
     captionRole = role
-    let color = Palette.role(role)
-    let name = (r.name ?? role).uppercased()
-    let text = r.short ?? r.text ?? ""
+    // The speech bubble beside the speaker (Robot) shows the text; this only keeps the sound cue.
     let deny = r.outcome == "deny"
-    caption.update(key: "\(seq)") { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1))
-      Draw.fill(ctx, CGRect(x: 0, y: 0, width: 16, height: size.height), color)
-      _ = Draw.text(name, at: CGPoint(x: 44, y: 22), size: 44, weight: .heavy, color: color)
-      if deny { _ = Draw.text("REFUSED BY POLICY", at: CGPoint(x: size.width - 480, y: 26), size: 38, weight: .heavy, color: Palette.red) }
-      _ = Draw.text(text, at: CGPoint(x: 44, y: 92), size: 72, weight: .bold, color: Palette.text, width: size.width - 88, maxLines: 3)
-    }
-    caption.node.removeAllActions()
-    caption.node.runAction(.fadeOpacity(to: 1, duration: 0.2))
     if deny || r.mood == "suspicious" { Sound.shared.play("alert", volume: 0.6) } else { Sound.shared.play("blip", volume: 0.5) }
   }
 

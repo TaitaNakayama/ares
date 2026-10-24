@@ -30,6 +30,11 @@ final class Robot {
   private var nextBlink: TimeInterval = 2
   private let phase: Float
   private let nametag: Nametag
+  /// Speech bubble: lives in the scene root (not under the robot) so the robot's yaw does not turn it.
+  let bubble = SpeechBubble()
+  private var bubbleVisible = false
+  private var bubbleTailLeft: Bool?
+  private var shownText = ""
 
   init(role: String, name: String, color: PlatformColor, at pos: SCNVector3, faceYaw: Float) {
     self.role = role
@@ -207,6 +212,11 @@ final class Robot {
     SCNTransaction.commit()
   }
 
+  /// Speaking window: the same 9 s the robot turns to the user for.
+  func isSpeaking(now: TimeInterval) -> Bool { now - spokeAt < 9 && !text.isEmpty }
+  /// Where the robot hovers, in scene coordinates.
+  var worldPosition: SIMD3<Float> { node.simdPosition }
+
   func hear(text: String, mood: String, outcome: String, seq: Int, now: TimeInterval) {
     guard seq != lastSeq else { return }
     lastSeq = seq
@@ -218,7 +228,40 @@ final class Robot {
     body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
   }
 
-  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool) {
+  /// The bubble floats beside the robot, toward the middle of the room so it stays in view,
+  /// turned to face the viewer, with its tail pointing back at the robot.
+  private func updateBubble(now: TimeInterval, user: SIMD3<Float>, speaking: Bool) {
+    if speaking != bubbleVisible {
+      bubbleVisible = speaking
+      bubble.node.removeAllActions()
+      if speaking {
+        bubble.node.isHidden = false
+        bubble.node.runAction(.fadeIn(duration: 0.2))
+      } else {
+        bubble.node.runAction(.sequence([.fadeOut(duration: 0.4), .hide()]))
+      }
+    }
+    guard speaking else { return }
+    let p = node.simdPosition
+    var radial = SIMD3(p.x - user.x, 0, p.z - user.z)
+    radial = simd_length(radial) > 0.01 ? simd_normalize(radial) : SIMD3(0, 0, -1)
+    let right = SIMD3<Float>(-radial.z, 0, radial.x)
+    let bubbleToRight = p.x < 0 // robots on the left put the bubble to their right, and vice versa
+    let side: Float = bubbleToRight ? 1 : -1
+    let w = Float(SpeechBubble.w)
+    let c = p + right * side * (w / 2 + 0.28) - radial * 0.15 + SIMD3(0, 0.2, 0)
+    bubble.node.simdPosition = c
+    let toUser = user - c
+    bubble.node.simdEulerAngles = SIMD3(0, atan2(toUser.x, toUser.z), 0)
+    let tailLeft = bubbleToRight
+    if bubbleTailLeft != tailLeft || shownText != text {
+      bubbleTailLeft = tailLeft
+      shownText = text
+      bubble.set(text: text, name: name, color: color, deny: outcome == "deny", tailLeft: tailLeft, key: "\(text)|\(outcome)")
+    }
+  }
+
+  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool, bubbleWanted: Bool = true) {
     let t = Float(now)
     node.simdPosition = SIMD3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
     // Turn toward the user while speaking or when a decision is waiting; otherwise face the work.
@@ -230,6 +273,7 @@ final class Robot {
     while dyaw > .pi { dyaw -= 2 * .pi }
     while dyaw < -.pi { dyaw += 2 * .pi }
     node.simdEulerAngles.y += dyaw * 0.08
+    updateBubble(now: now, user: user, speaking: speaking && !text.isEmpty && bubbleWanted)
     // Nametag billboard: always faces the viewer, upright (the parent yaw is undone).
     nametag.node.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
     if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
@@ -262,6 +306,7 @@ enum RobotCrew {
       let yaw = atan2(Float(-pos.x), Float(-pos.z)) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
       let r = Robot(role: l.role, name: l.name, color: Palette.role(l.role), at: pos, faceYaw: yaw)
       root.addChildNode(r.node)
+      root.addChildNode(r.bubble.node)
       out[l.role] = r
     }
     return out

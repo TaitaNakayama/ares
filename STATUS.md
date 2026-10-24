@@ -74,6 +74,14 @@ _Updated Sat 2026-10-24 04:25 PT_
 
 **Not pushed:** the commits since 93da083 are local. They include AUDIT.md, which says plainly that the agents are rules. Push when you're happy for that to be public.
 
+### Scene features (Tier 2)
+Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), so the headset and the Mac spectator both get them.
+- **Nametags**: "Rule Keeper · Controller" etc. above every agent, in the agent's colour on a dark rounded backing, turned to face the viewer each frame (upright yaw billboard). Seen on the spectator and the headset.
+- **Speech bubbles**: the newest speaker's line floats beside that agent (toward the middle of the room), tail pointing at it, agent colour, same 64 px text. One bubble at a time. They replace the old centred in-scene subtitle bar; the spectator's own overlay subtitles are unchanged. When the speaker is outside the view, a head-locked arrow sits at the edge of the view toward them (headset only; the spectator turns it off because its camera is wider than the head pose).
+- **Ice drill powered down**: driven by the existing `power.drillOn` (no server change). Spins down, lights (beacon and three tower lamps) go dark, a sign beside the tower changes ONLINE to OFFLINE. `Consequence` (Annotations.swift) is the hook for showing later consequences in the world. The recorded tape carries `drillOn:false` in the `lever-drill_off` branch (91 frames), so REPLAY uses the same path.
+- Caveats: the OFFLINE state was verified on the spectator with a temporary forced toggle (since removed), not by choosing the card, because the card needs a gaze plus button press. The arrow was only seen in captures taken with a forced head yaw, which does not move the head the arrow follows, so its in-view/out-of-view switching is untested with a real head turn. The drill is about 50 m away and small; the sign is what reads, and a window pillar crosses it.
+- Check on device: nametags readable at 2.5 m; a bubble beside each speaker; turn away while a robot talks (arrow appears, then vanishes when you face it); choose "Shut down the ice drill" and look out the window.
+
 ## Needs you
 - Viewer checklist (in the terminal).
 - Spectator on-screen check: put the phone in the viewer, run `scripts/build-spectator.sh`, swipe to its Space. Turn your head left and right: does the Mac view turn the same way, smoothly? Is it readable from across a table, and is 110° too wide? Then quit the phone app and confirm REPLAY appears.

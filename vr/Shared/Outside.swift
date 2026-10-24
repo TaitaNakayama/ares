@@ -18,6 +18,8 @@ final class Outside {
   private weak var scene: SCNScene?
   private let drillHead = SCNNode()
   private let beacon = SCNNode()
+  private var lamps: [SCNNode] = []
+  private let drillSign = SpritePanel(width: 22, height: 4.8, pixelsPerMeter: 51)
   private let dust = SCNParticleSystem()
   private var lastSkyKey = ""
   private var skyBusy = false
@@ -217,11 +219,30 @@ final class Outside {
     beacon.geometry = SCNSphere(radius: 0.25)
     beacon.geometry?.materials = [bm]
     beacon.position = SCNVector3(0, h + 0.4, 0)
-    beacon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.25, duration: 0.6), .fadeOpacity(to: 1, duration: 0.6)])))
+    beacon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.25, duration: 0.6), .fadeOpacity(to: 1, duration: 0.6)])), forKey: "pulse")
     rig.addChildNode(beacon)
+    // Work lamps up the tower: lit while the drill runs, dark when it is powered down.
+    for (i, (dx, dz)) in [(-1, -1), (1, 1), (-1, 1)].enumerated() {
+      let lm = SCNMaterial()
+      lm.lightingModel = .constant
+      lm.diffuse.contents = Self.lampOn
+      let lamp = SCNNode(geometry: SCNSphere(radius: 0.22))
+      lamp.geometry?.materials = [lm]
+      lamp.position = SCNVector3(Float(dx) * 1.0, 3.0 + Float(i) * 2.6, Float(dz) * 1.0)
+      rig.addChildNode(lamp)
+      lamps.append(lamp)
+    }
     rig.position = ground(az: 322, dist: 48)
     rig.name = "drill"
     root.addChildNode(rig)
+    // Status sign beside the tower (toward the middle of the window: the controller robot hovers in front of the tower itself),
+    // in world space, turned toward the commander's seat (yaw only).
+    let rigWorld = rig.worldPosition
+    let signPos = SCNVector3(rigWorld.x - 21, rigWorld.y + 5, rigWorld.z)
+    drillSign.node.position = signPos
+    scene?.rootNode.addChildNode(drillSign.node)
+    drillSign.node.look(at: SCNVector3(0, signPos.y, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
+    drawSign(online: true)
   }
 
   private func buildDust() {
@@ -259,15 +280,48 @@ final class Outside {
 
   // ---------------------------------------------------------------- state
 
-  func setDrill(on: Bool) {
+  private static let lampOn = PlatformColor(red: 1.0, green: 0.85, blue: 0.45, alpha: 1)
+  private static let lampOff = PlatformColor(red: 0.10, green: 0.10, blue: 0.11, alpha: 1)
+
+  private func drawSign(online: Bool) {
+    drillSign.update(key: online ? "on" : "off") { ctx, size in
+      let accent = online ? Palette.green : Palette.red
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.94), radius: 40)
+      ctx.setStrokeColor(accent.cgColor)
+      ctx.setLineWidth(8)
+      ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 5, dy: 5), cornerWidth: 36, cornerHeight: 36, transform: nil))
+      ctx.strokePath()
+      _ = Draw.text("ICE DRILL", at: CGPoint(x: 0, y: 24), size: 56, weight: .heavy, color: Palette.dim, width: size.width, align: .center)
+      _ = Draw.text(online ? "ONLINE" : "OFFLINE", at: CGPoint(x: 0, y: 96), size: 128, weight: .heavy, color: accent, width: size.width, align: .center)
+    }
+  }
+
+  /// Consequences of the commander's choices that show up out in the world.
+  func show(_ consequences: Set<Consequence>) {
+    setDrill(on: !consequences.contains(.iceDrillOffline))
+  }
+
+  private func setDrill(on: Bool) {
     guard on != drillOn else { return }
     drillOn = on
+    drawSign(online: on)
+    let bm = beacon.geometry?.firstMaterial
     if on {
+      drillHead.removeAllActions()
       drillHead.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 2.0)), forKey: "spin")
-      (beacon.geometry?.firstMaterial)?.diffuse.contents = PlatformColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
+      bm?.diffuse.contents = PlatformColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
+      beacon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.25, duration: 0.6), .fadeOpacity(to: 1, duration: 0.6)])), forKey: "pulse")
+      for l in lamps { l.geometry?.firstMaterial?.diffuse.contents = Self.lampOn }
     } else {
+      // Spin down (ease out), then stand still; lights go dark.
       drillHead.removeAction(forKey: "spin")
-      (beacon.geometry?.firstMaterial)?.diffuse.contents = PlatformColor(red: 1.0, green: 0.25, blue: 0.2, alpha: 1)
+      let down = SCNAction.rotateBy(x: 0, y: .pi * 0.8, z: 0, duration: 1.4)
+      down.timingMode = .easeOut
+      drillHead.runAction(down, forKey: "spin")
+      beacon.removeAction(forKey: "pulse")
+      beacon.opacity = 1
+      bm?.diffuse.contents = Self.lampOff
+      for l in lamps { l.geometry?.firstMaterial?.diffuse.contents = Self.lampOff }
     }
   }
 

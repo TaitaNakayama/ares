@@ -155,14 +155,14 @@ final class OffscreenArrow {
   /// `v` is the target direction in head space (x right, y up, -z forward).
   /// Returns head-space position and in-plane angle for the arrow, or nil when the target is in view.
   static func place(local v: SIMD3<Float>) -> (pos: SIMD3<Float>, angle: Float)? {
-    let tx: Float = tan(30 * .pi / 180), ty: Float = tan(24 * .pi / 180)
-    if v.z < -0.1, abs(v.x / -v.z) < tx * 0.92, abs(v.y / -v.z) < ty * 0.92 { return nil }
+    let tx: Float = tan(40 * .pi / 180), ty: Float = tan(30 * .pi / 180)
+    if v.z < -0.1, abs(v.x / -v.z) < tx, abs(v.y / -v.z) < ty { return nil }
     var dx = v.x, dy = v.y
     if hypot(dx, dy) < 0.001 { dx = 1; dy = 0 }
     let n = simd_normalize(SIMD2(dx, dy))
     let d: Float = 1.2
     // Keep the arrow inside the view: scale the direction onto a rounded rectangle.
-    let hx = d * tx * 0.78, hy = d * ty * 0.72
+    let hx = d * 0.80, hy = d * 0.55
     let s = min(hx / max(abs(n.x), 0.001), hy / max(abs(n.y), 0.001))
     return (SIMD3(n.x * s, n.y * s, -d), atan2(n.y, n.x))
   }
