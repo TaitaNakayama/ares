@@ -173,7 +173,7 @@ export class LlmBrain implements Brain {
         },
         // Escalations with options and reports are long answers: give them the report deadline, and the cloud a little more.
         (() => {
-          const long = isReport || tools.includes("escalate") || tools.includes("report_issue");
+          const long = isReport || tools.includes("escalate");
           return { prefer: isReport ? "cloud" as const : undefined, localTimeoutMs: long ? this.reportTimeoutMs : this.actionTimeoutMs, cloudTimeoutMs: long ? this.reportTimeoutMs + 5_000 : this.actionTimeoutMs + 4_000 };
         })(),
       );
