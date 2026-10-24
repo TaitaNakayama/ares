@@ -225,16 +225,111 @@ enum Tex {
     }
   }
 
-  /// Soft dark blob (contact shadow): black with a smooth alpha falloff, drawn as an ellipse that fills the square.
+  /// Soft contact shadow: a dark core that fills the footprint (about 80% of the square) and a wide soft falloff
+  /// to the edge, drawn as nested rounded rectangles so boxes get box-shaped shadows.
   static func blob() -> PlatformImage {
     let size = CGSize(width: 128, height: 128)
     return Bitmap.image(size: size, scale: 1) { c in
+      let layers = 30
+      for i in 0..<layers {
+        let inset = 3 + CGFloat(i) * 0.42
+        let r = CGRect(x: inset, y: inset, width: 128 - inset * 2, height: 128 - inset * 2)
+        c.setFillColor(PlatformColor(red: 0.015, green: 0.01, blue: 0.008, alpha: 0.115).cgColor)
+        c.addPath(CGPath(roundedRect: r, cornerWidth: 26, cornerHeight: 26, transform: nil))
+        c.fillPath()
+      }
+    }
+  }
+
+  /// Round floor drain grille: rim, dark bowl, radial slats, bolts. 512 px.
+  static func drain() -> PlatformImage {
+    let size = CGSize(width: 512, height: 512)
+    return Bitmap.image(size: size, scale: 1) { c in
+      let ctr = CGPoint(x: 256, y: 256)
+      c.setFillColor(PlatformColor(white: 0.0, alpha: 0.35).cgColor)
+      c.fillEllipse(in: CGRect(x: 6, y: 6, width: 500, height: 500))
+      c.setFillColor(PlatformColor(red: 0.40, green: 0.39, blue: 0.37, alpha: 1).cgColor)
+      c.fillEllipse(in: CGRect(x: 36, y: 36, width: 440, height: 440))
+      c.setFillColor(PlatformColor(red: 0.27, green: 0.26, blue: 0.25, alpha: 1).cgColor)
+      c.fillEllipse(in: CGRect(x: 52, y: 52, width: 408, height: 408))
+      c.setFillColor(PlatformColor(white: 0.03, alpha: 1).cgColor)
+      c.fillEllipse(in: CGRect(x: 76, y: 76, width: 360, height: 360))
+      // grille bars
+      c.setStrokeColor(PlatformColor(red: 0.43, green: 0.42, blue: 0.40, alpha: 1).cgColor)
+      c.setLineWidth(14)
+      c.saveGState()
+      c.addEllipse(in: CGRect(x: 76, y: 76, width: 360, height: 360)); c.clip()
+      for i in 0..<9 { let y = 76 + CGFloat(i) * 45; c.move(to: CGPoint(x: 70, y: y)); c.addLine(to: CGPoint(x: 442, y: y)); c.strokePath() }
+      c.setLineWidth(10)
+      c.move(to: CGPoint(x: 256, y: 70)); c.addLine(to: CGPoint(x: 256, y: 442)); c.strokePath()
+      c.restoreGState()
+      // rim highlight and bolts
+      c.setStrokeColor(PlatformColor(white: 0.62, alpha: 0.5).cgColor); c.setLineWidth(4)
+      c.strokeEllipse(in: CGRect(x: 40, y: 40, width: 432, height: 432))
+      c.setFillColor(PlatformColor(white: 0.12, alpha: 1).cgColor)
+      for k in 0..<8 {
+        let a = CGFloat(k) * .pi / 4 + .pi / 8
+        c.fillEllipse(in: CGRect(x: ctr.x + cos(a) * 196 - 8, y: ctr.y + sin(a) * 196 - 8, width: 16, height: 16))
+      }
+    }
+  }
+
+  /// A worn walking path (kind 0 of this function): a soft light strip along +x with scuff streaks, 512x128.
+  static func pathWear() -> PlatformImage {
+    let size = CGSize(width: 512, height: 128)
+    return Bitmap.image(size: size, scale: 1) { c in
+      var rng = RNG(s: 4242)
       let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-      let cols = [PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0.85).cgColor,
-                  PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0.55).cgColor,
-                  PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0).cgColor]
-      if let grad = CGGradient(colorsSpace: cs, colors: cols as CFArray, locations: [0, 0.55, 1]) {
-        c.drawRadialGradient(grad, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 64, options: [])
+      let cols = [PlatformColor(white: 0.88, alpha: 0.0).cgColor, PlatformColor(white: 0.88, alpha: 0.22).cgColor, PlatformColor(white: 0.88, alpha: 0.0).cgColor]
+      if let g = CGGradient(colorsSpace: cs, colors: cols as CFArray, locations: [0, 0.5, 1]) {
+        c.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: 128), options: [])
+      }
+      // fade the two ends
+      c.setBlendMode(.destinationIn)
+      let ends = [PlatformColor(white: 0, alpha: 0).cgColor, PlatformColor(white: 0, alpha: 1).cgColor, PlatformColor(white: 0, alpha: 1).cgColor, PlatformColor(white: 0, alpha: 0).cgColor]
+      if let g = CGGradient(colorsSpace: cs, colors: ends as CFArray, locations: [0, 0.18, 0.82, 1]) {
+        c.drawLinearGradient(g, start: .zero, end: CGPoint(x: 512, y: 0), options: [])
+      }
+      c.setBlendMode(.normal)
+      c.setLineCap(.round)
+      for _ in 0..<30 {
+        let x = rng.next() * 420 + 30, y = 30 + rng.next() * 68
+        c.setStrokeColor(PlatformColor(white: rng.next() > 0.4 ? 0.9 : 0.0, alpha: 0.08 + rng.next() * 0.1).cgColor)
+        c.setLineWidth(1.5 + rng.next() * 3)
+        c.move(to: CGPoint(x: x, y: y)); c.addLine(to: CGPoint(x: x + 20 + rng.next() * 70, y: y + rng.next() * 6 - 3)); c.strokePath()
+      }
+    }
+  }
+
+  /// Scuffed matte screen bezel, front face: dark grey-blue paint, edge wear, scratches and four screws.
+  /// `border` is the visible frame width as a fraction of the shorter side (the centre is hidden by the screen).
+  static func bezel(size: CGSize) -> PlatformImage {
+    Bitmap.image(size: size, scale: 1, opaque: true) { c in
+      var rng = RNG(s: 909)
+      c.setFillColor(PlatformColor(red: 0.20, green: 0.215, blue: 0.23, alpha: 1).cgColor)
+      c.fill(CGRect(origin: .zero, size: size))
+      if let img = cg("metal_plate_02_diff_1k") {
+        c.setAlpha(0.22); c.setBlendMode(.overlay)
+        Tex.draw(c, img, in: CGRect(origin: .zero, size: size))
+        c.setAlpha(1); c.setBlendMode(.normal)
+      }
+      c.setLineCap(.round)
+      for _ in 0..<70 {
+        let x = rng.next() * size.width, y = rng.next() * size.height
+        let l = 8 + rng.next() * 40
+        c.setStrokeColor(PlatformColor(white: rng.next() > 0.45 ? 0.75 : 0.02, alpha: 0.10 + rng.next() * 0.16).cgColor)
+        c.setLineWidth(1 + rng.next() * 2.2)
+        let a = rng.next() * .pi
+        c.move(to: CGPoint(x: x, y: y)); c.addLine(to: CGPoint(x: x + cos(a) * l, y: y + sin(a) * l)); c.strokePath()
+      }
+      // worn edges
+      c.setStrokeColor(PlatformColor(white: 0.62, alpha: 0.35).cgColor); c.setLineWidth(3)
+      c.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2))
+      c.setStrokeColor(PlatformColor(white: 0, alpha: 0.35).cgColor); c.setLineWidth(5)
+      c.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 14, dy: 14))
+      for (x, y) in [(CGFloat(18), CGFloat(18)), (size.width - 18, 18), (18, size.height - 18), (size.width - 18, size.height - 18)] {
+        c.setFillColor(PlatformColor(white: 0.07, alpha: 1).cgColor); c.fillEllipse(in: CGRect(x: x - 8, y: y - 8, width: 16, height: 16))
+        c.setFillColor(PlatformColor(white: 0.5, alpha: 0.7).cgColor); c.fillEllipse(in: CGRect(x: x - 6, y: y - 6, width: 6, height: 6))
       }
     }
   }

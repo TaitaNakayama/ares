@@ -10,19 +10,21 @@ import UIKit
 /// (30 px for credit lines). Everything draws into a top-left-origin CGContext (the Bitmap convention).
 enum Kit {
   enum Size {
-    static let credit: CGFloat = 30   // citations and "SIMULATED" notes
-    static let label: CGFloat = 38    // card labels, list rows
-    static let value: CGFloat = 58    // secondary numbers, headings
-    static let hero: CGFloat = 120    // the one big number on a screen
+    static let credit: CGFloat = 40   // citations and "SIMULATED" notes (one line each)
+    static let label: CGFloat = 56    // card labels, list rows
+    static let value: CGFloat = 64    // secondary numbers, headings
+    static let hero: CGFloat = 100    // the one big number on a screen
   }
+  /// The palette's screen fill (#9FB7C9): the one blue the screens use, in place of a saturated blue.
+  static let screenBlue = PlatformColor(red: 0.624, green: 0.718, blue: 0.788, alpha: 1)
   static let pad: CGFloat = 24
   static let gap: CGFloat = 20
 
   /// Dark glass: vertical gradient, faint grid and scanlines, thin accent bezel.
   static func chrome(_ ctx: CGContext, _ size: CGSize, accent: PlatformColor) {
     let space = CGColorSpaceCreateDeviceRGB()
-    let top = PlatformColor(red: 0.07, green: 0.085, blue: 0.11, alpha: 1).cgColor
-    let bot = PlatformColor(red: 0.035, green: 0.04, blue: 0.055, alpha: 1).cgColor
+    let top = PlatformColor(red: 0.075, green: 0.085, blue: 0.10, alpha: 1).cgColor
+    let bot = PlatformColor(red: 0.04, green: 0.045, blue: 0.055, alpha: 1).cgColor
     if let g = CGGradient(colorsSpace: space, colors: [top, bot] as CFArray, locations: [0, 1]) {
       ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: 0, y: size.height), options: [])
     } else {
@@ -66,7 +68,7 @@ enum Kit {
   /// Header: icon + title on the left, a clock/link readout on the right.
   static func header(_ ctx: CGContext, _ size: CGSize, title: String, color: PlatformColor, icon: Icon.Fn, right: String?, rightIcon: Icon.Fn? = nil, rightColor: PlatformColor = Palette.dim) {
     icon(ctx, CGRect(x: 28, y: 28, width: 52, height: 52), color)
-    _ = Draw.text(title, at: CGPoint(x: 96, y: 26), size: 54, weight: .heavy, color: color)
+    _ = Draw.text(title, at: CGPoint(x: 96, y: 26), size: 58, weight: .heavy, color: color)
     if let right {
       textRight(right, right: size.width - 32, y: 34, size: Size.label, color: rightColor, width: 560)
       if let rightIcon {
@@ -189,6 +191,17 @@ enum Icon {
     ctx.addPath(p); ctx.setStrokeColor(c.cgColor); ctx.setLineWidth(4); ctx.setLineJoin(.round); ctx.strokePath()
     Draw.fill(ctx, CGRect(x: r.midX - 2.5, y: r.minY + r.height * 0.34, width: 5, height: r.height * 0.30), c, radius: 2)
     Draw.fill(ctx, CGRect(x: r.midX - 3, y: r.minY + r.height * 0.72, width: 6, height: 6), c, radius: 3)
+  }
+
+  static let pin: Fn = { ctx, r, c in
+    let cx = r.midX, top = r.minY + 2, rad = r.width * 0.34
+    ctx.setFillColor(c.cgColor)
+    ctx.addEllipse(in: CGRect(x: cx - rad, y: top, width: rad * 2, height: rad * 2)); ctx.fillPath()
+    let p = CGMutablePath()
+    p.move(to: CGPoint(x: cx - rad * 0.9, y: top + rad * 1.5)); p.addLine(to: CGPoint(x: cx, y: r.maxY - 2)); p.addLine(to: CGPoint(x: cx + rad * 0.9, y: top + rad * 1.5)); p.closeSubpath()
+    ctx.addPath(p); ctx.fillPath()
+    ctx.setFillColor(PlatformColor(white: 0.06, alpha: 1).cgColor)
+    ctx.addEllipse(in: CGRect(x: cx - rad * 0.4, y: top + rad * 0.6, width: rad * 0.8, height: rad * 0.8)); ctx.fillPath()
   }
 
   static let check: Fn = { ctx, r, c in
