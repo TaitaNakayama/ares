@@ -26,6 +26,8 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   var flipV = false
   private(set) var link: Link!
   private var captureRequested = false
+  private var poseOverride: simd_float4x4?
+  private var overrideFrames = 0
   private var frameCount = 0
   private var lastFpsTime = CACurrentMediaTime()
   private(set) var fps: Double = 0
@@ -63,7 +65,17 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     scnRenderer.isJitteringEnabled = false
     link = Link(world: world)
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
-    link.onCaptureRequest = { [weak self] in self?.captureRequested = true }
+    link.onCaptureRequest = { [weak self] yaw, pitch in
+      guard let self else { return }
+      if let yaw {
+        // World-to-head view for a head turned `yaw` degrees right and `pitch` up.
+        let y = Float(-yaw * .pi / 180), p = Float(pitch ?? 0) * .pi / 180
+        let rot = simd_quatf(angle: y, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: p, axis: SIMD3(1, 0, 0))
+        self.poseOverride = simd_float4x4(rot).inverse
+        self.overrideFrames = 3
+      }
+      self.captureRequested = true
+    }
     link.start()
   }
 
@@ -110,7 +122,11 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     configureIfNeeded(view)
     guard configured, let cmd = queue.makeCommandBuffer() else { return }
     let now = CACurrentMediaTime() - startTime
-    let headView = cardboard.headView()
+    var headView = cardboard.headView()
+    if overrideFrames > 0, let o = poseOverride {
+      headView = o
+      overrideFrames -= 1
+    }
     world.update(time: now, headView: headView, fps: fps, link: link)
 
     for eye in 0..<2 {
@@ -139,8 +155,9 @@ final class VRViewController: UIViewController, MTKViewDelegate {
       cardboard.renderToDisplay(encoder: enc, left: eyeColor[0], right: eyeColor[1], flipV: flipV)
       enc.endEncoding()
     }
-    let capture = captureRequested
-    captureRequested = false
+    // With a forced pose, capture on the last overridden frame so scene updates have settled.
+    let capture = captureRequested && overrideFrames == 0
+    if capture { captureRequested = false; poseOverride = nil }
     let tex = drawable.texture
     if capture {
       cmd.addCompletedHandler { [weak self] _ in self?.sendCapture(tex) }

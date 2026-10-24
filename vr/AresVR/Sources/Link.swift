@@ -34,7 +34,8 @@ final class Link: NSObject, @unchecked Sendable {
   private(set) var state: VRState?
   private(set) var stateVersion = 0
   private(set) var lastDecision: String?
-  var onCaptureRequest: (() -> Void)?
+  /// Debug: capture with an optional forced head direction (yaw/pitch in degrees).
+  var onCaptureRequest: ((Double?, Double?) -> Void)?
   private weak var world: BaseScene?
   private var task: URLSessionWebSocketTask?
   private var session: URLSession!
@@ -196,7 +197,9 @@ final class Link: NSObject, @unchecked Sendable {
     case "decided":
       lastDecision = obj["summary"] as? String
     case "capture":
-      DispatchQueue.main.async { self.onCaptureRequest?() }
+      let yaw = obj["yaw"] as? Double
+      let pitch = obj["pitch"] as? Double
+      DispatchQueue.main.async { self.onCaptureRequest?(yaw, pitch) }
     default:
       break
     }

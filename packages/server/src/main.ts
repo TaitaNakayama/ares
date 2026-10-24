@@ -312,7 +312,9 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, name });
     }
     if (path === "/api/capture/request" && req.method === "POST") {
-      broadcast({ type: "capture" });
+      const yaw = url.searchParams.get("yaw");
+      const pitch = url.searchParams.get("pitch");
+      broadcast({ type: "capture", ...(yaw !== null ? { yaw: Number(yaw), pitch: Number(pitch ?? 0) } : {}) });
       return send(res, 200, { ok: true, clients: clients.size });
     }
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
