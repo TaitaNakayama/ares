@@ -28,6 +28,8 @@ export interface LlmResponse {
   toolCalls: { name: string; args: unknown }[];
   cached: boolean;
   model: string;
+  /** Token accounting when the provider reports it (Ollama): prompt tokens actually evaluated (not served from the prefix cache) and generated tokens, with their times. */
+  usage?: { promptTokens: number; promptMs: number; evalTokens: number; evalMs: number };
 }
 
 export interface LlmProvider {

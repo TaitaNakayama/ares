@@ -14,7 +14,7 @@ export type AgentMode = "auto" | "local" | "cloud" | "rules";
 export interface RouteOptions {
   /** Which layer to try first in `auto` mode. Default local. */
   prefer?: "local" | "cloud";
-  /** Per-call deadline for the local model. Default 12 s. */
+  /** Per-call deadline for the local model. Default 12 s (ARES_LOCAL_TIMEOUT_MS). */
   localTimeoutMs?: number;
   /** Per-call deadline for the cloud model. Default 15 s. */
   cloudTimeoutMs?: number;
@@ -33,6 +33,9 @@ export interface LayerStats {
 const stat = (): LayerStats => ({ calls: 0, ok: 0, errors: 0, timeouts: 0, msTotal: 0 });
 
 export class RouterUnavailable extends Error {}
+
+/** Default local deadline. The reviewer's 8 s holds for a warm prompt prefix; a cold ~900-token prompt needs ~7 s just to be read on this Mac. */
+export const LOCAL_TIMEOUT_MS = Number(process.env.ARES_LOCAL_TIMEOUT_MS ?? 8_000);
 
 export class ModelRouter implements LlmProvider {
   mode: AgentMode = "auto";
@@ -80,7 +83,7 @@ export class ModelRouter implements LlmProvider {
     let lastErr: Error | undefined;
     for (const layer of layers) {
       const provider = layer === "local" ? this.local! : this.cloud!;
-      const timeoutMs = layer === "local" ? (opts.localTimeoutMs ?? 12_000) : (opts.cloudTimeoutMs ?? 15_000);
+      const timeoutMs = layer === "local" ? (opts.localTimeoutMs ?? LOCAL_TIMEOUT_MS) : (opts.cloudTimeoutMs ?? 15_000);
       const s = this.stats[layer];
       const t0 = performance.now();
       s.calls++;
@@ -138,7 +141,7 @@ export class OllamaProvider implements LlmProvider {
   readonly host: string;
   private readonly timeoutMs: number;
 
-  constructor(model = process.env.ARES_LOCAL_MODEL ?? "qwen3.5:9b", host = process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434", timeoutMs = 30_000) {
+  constructor(model = process.env.ARES_LOCAL_MODEL ?? "qwen3.5:9b", host = process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434", timeoutMs = 60_000) {
     this.model = model;
     this.host = host.replace(/\/$/, "");
     this.timeoutMs = timeoutMs;
@@ -172,9 +175,10 @@ export class OllamaProvider implements LlmProvider {
       tools: (req.tools ?? []).map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
     };
     const r = await fetch(`${this.host}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
-    const j = (await r.json()) as { error?: string; message?: { content?: string; tool_calls?: { function: { name: string; arguments: unknown } }[] } };
+    const j = (await r.json()) as { error?: string; message?: { content?: string; tool_calls?: { function: { name: string; arguments: unknown } }[] }; prompt_eval_count?: number; prompt_eval_duration?: number; eval_count?: number; eval_duration?: number };
     if (!r.ok || j.error) throw new Error(`Ollama ${r.status}: ${j.error ?? "error"}`);
     const toolCalls = (j.message?.tool_calls ?? []).map((c) => ({ name: c.function.name, args: repairArgs(c.function.arguments) }));
-    return { text: j.message?.content ?? "", toolCalls, cached: false, model: this.model };
+    const usage = { promptTokens: j.prompt_eval_count ?? 0, promptMs: (j.prompt_eval_duration ?? 0) / 1e6, evalTokens: j.eval_count ?? 0, evalMs: (j.eval_duration ?? 0) / 1e6 };
+    return { text: j.message?.content ?? "", toolCalls, cached: false, model: this.model, usage };
   }
 }

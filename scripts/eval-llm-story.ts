@@ -67,6 +67,7 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
   const e = orch.engine;
   const beats: number[] = [];
   const mark = () => { const b = world.storyBeat(e); if (beats.at(-1) !== b) beats.push(b); };
+  orch.on(() => mark()); // sample the beat after every event, so skipped or reordered beats show
   // Prologue (pre-story history) on rules, as the server does.
   const mode = router.mode;
   router.mode = "rules";

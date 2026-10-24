@@ -1,5 +1,6 @@
 import { Engine, type AgentRole, type EngineEvent, type ProposalInput, type SubmitResult, type Time } from "@ares/engine";
 import type { AgentInput, Brain, BrainContext, Intent } from "./brains.ts";
+import { statusLine } from "./llm-agent.ts";
 import { keywordRoute } from "./routing.ts";
 import type { Mood, ScheduledWorldEvent, World, WorldEvent } from "./world.ts";
 
@@ -78,6 +79,11 @@ export class Orchestrator {
       this.emit({ type: "engine", event: e });
     });
     this.scheduleAll(this.world.initialEvents(this.engine));
+  }
+
+  /** The brains in play (read-only), e.g. for diagnostics of what the models did. */
+  get brainList(): readonly Brain[] {
+    return this.brains;
   }
 
   on(fn: (m: OrchestratorMessage) => void): () => void {
@@ -171,6 +177,28 @@ export class Orchestrator {
     if (actor) this.narrate(actor.id, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : text, res.decision.verdict === "deny" ? "attentive" : "calm", res, text);
     await this.drain();
     return res;
+  }
+
+  /** The commander asks an agent what's going on; it answers live from the current state. */
+  async ask(role: AgentRole, question?: string): Promise<string> {
+    const brain = this.brains.find((b) => b.role === role && b.kind === "llm") ?? this.brains.find((b) => b.role === role);
+    const self = [...this.engine.actors.values()].find((a) => a.role === role);
+    if (!brain || !self) throw new Error(`no agent for ${role}`);
+    const ctx: BrainContext = { engine: this.engine, self, fmtTime: this.fmtTime, itemName: (sku) => this.engine.items.get(sku)?.name ?? sku };
+    const llm = brain as { answer?: (c: BrainContext, q?: string) => Promise<{ text: string; via: string }> };
+    let text: string;
+    if (llm.answer) {
+      this.emit({ type: "thinking", actorId: self.id, role, on: true, at: this.engine.now });
+      try {
+        text = (await llm.answer(ctx, question)).text;
+      } finally {
+        this.emit({ type: "thinking", actorId: self.id, role, on: false, at: this.engine.now });
+      }
+    } else {
+      text = statusLine(role, ctx);
+    }
+    this.narrate(self.id, text, "attentive");
+    return text;
   }
 
   private async dispatchWorld(event: WorldEvent): Promise<void> {

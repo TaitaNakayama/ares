@@ -2,7 +2,7 @@ import { ACTION_DESCRIPTIONS, ACTION_SCHEMAS, formatCents, type AgentRole, type 
 import { z } from "zod";
 import { compact, type AgentInput, type Brain, type BrainContext, type Intent } from "./brains.ts";
 import type { ToolDef } from "./llm.ts";
-import type { ModelRouter } from "./router.ts";
+import { LOCAL_TIMEOUT_MS, type ModelRouter } from "./router.ts";
 import type { Mood, WorldEvent } from "./world.ts";
 
 /**
@@ -78,6 +78,8 @@ export interface LlmOutcome {
   ms?: number;
   result: "llm" | "fallback";
   reason?: string;
+  /** Ollama only: prompt tokens read on this call (small = the prefix cache worked) and tokens generated. */
+  usage?: { promptTokens: number; promptMs: number; evalTokens: number; evalMs: number };
 }
 
 const sayTool: ToolDef = {
@@ -86,9 +88,11 @@ const sayTool: ToolDef = {
   parameters: { type: "object", required: ["text"], properties: { text: { type: "string" } } },
 };
 
+/** The action's own schema plus a `say` field, so one tool call carries both the decision and the line. The engine's schema strips `say`. */
 function actionTool(name: keyof typeof ACTION_SCHEMAS): ToolDef {
-  const p = z.toJSONSchema(ACTION_SCHEMAS[name]) as Record<string, unknown>;
+  const p = z.toJSONSchema(ACTION_SCHEMAS[name]) as Record<string, unknown> & { properties?: Record<string, unknown> };
   delete p.$schema;
+  p.properties = { ...p.properties, say: { type: "string", description: "One short line to the crew about this action, under 140 characters, plain, in character." } };
   return { name, description: ACTION_DESCRIPTIONS[name], parameters: p };
 }
 
@@ -114,7 +118,7 @@ export class LlmBrain implements Brain {
     this.rules = opts.rules;
     this.router = opts.router;
     this.points = new Set(opts.points ?? Object.keys(DECISION_POINTS[opts.role]));
-    this.actionTimeoutMs = opts.actionTimeoutMs ?? 8_000;
+    this.actionTimeoutMs = opts.actionTimeoutMs ?? LOCAL_TIMEOUT_MS;
     this.reportTimeoutMs = opts.reportTimeoutMs ?? 15_000;
   }
 
@@ -153,10 +157,11 @@ export class LlmBrain implements Brain {
     const isReport = point === "world:report";
     let res;
     try {
+      // Stable text first (persona, catalog, vendors), changing text last: the model server reuses the common prefix.
       res = await this.router.complete(
         {
           system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`,
-          user: `EVENT:\n${facts}\n\nSTATE:\n${summary}`,
+          user: `STATE:\n${summary}\n\nEVENT:\n${facts}`,
           tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))),
           maxOutputTokens: isReport ? 300 : 160,
         },
@@ -182,6 +187,8 @@ export class LlmBrain implements Brain {
         continue;
       }
       const name = call.name as keyof typeof ACTION_SCHEMAS;
+      const said = (call.args as { say?: unknown } | undefined)?.say;
+      if (!line && typeof said === "string" && said.trim()) line = said.trim();
       const normalized = normalize(name, call.args, ctx.engine);
       const parsed = ACTION_SCHEMAS[name].safeParse(normalized.args);
       if (!parsed.success) {
@@ -215,7 +222,7 @@ export class LlmBrain implements Brain {
     const ruleLine = ruleIntents.find((i) => (actions[0] ? i.type === actions[0].type : i.say))?.say ?? ruleIntents.find((i) => i.say)?.say;
     const mood = ruleIntents.find((i) => i.mood)?.mood ?? moodFor(actions[0]?.type);
     const spoken = verdict === "ok" ? line! : ruleLine ?? (actions[0] ? `Proposing: ${actions[0].type.replace(/_/g, " ")}.` : undefined);
-    this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
+    this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, usage: res.usage, result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
     this.note(true);
 
     if (actions.length === 0) {
@@ -229,6 +236,38 @@ export class LlmBrain implements Brain {
     if (verdict !== "ok") it.rationale += ` [line by rules: ${verdict}]`;
     this.lastLlmIntents.add(it);
     return [it];
+  }
+
+  /**
+   * The commander looked at this agent and asked what's going on (or typed a question).
+   * Answered live from the current state: a validated line, or the deterministic status line.
+   */
+  async answer(ctx: BrainContext, question?: string): Promise<{ text: string; via: "llm" | "rules" }> {
+    this.selfId = ctx.self.id;
+    const summary = stateSummary(this.role, ctx);
+    const fallback = statusLine(this.role, ctx);
+    if (this.router.mode === "rules" || Date.now() < this.breakerUntil) return { text: fallback, via: "rules" };
+    try {
+      const res = await this.router.complete(
+        {
+          system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`,
+          user: `STATE:\n${summary}\n\nThe commander ${question ? `asks: "${question.slice(0, 300)}"` : "looks at you and asks what's going on"}. Answer in one line (under 140 characters) with the facts above: what you are doing or watching right now, and what you need from them, if anything.`,
+          tools: [sayTool],
+          maxOutputTokens: 120,
+        },
+        { localTimeoutMs: this.actionTimeoutMs, cloudTimeoutMs: this.actionTimeoutMs },
+      );
+      const said = (res.toolCalls.find((c) => c.name === "say")?.args as { text?: string } | undefined)?.text ?? res.text.trim().split("\n")[0];
+      const line = said?.trim();
+      if (line && checkLine(line, `${summary}\n${question ?? ""}`) === "ok") {
+        this.history.push({ at: Date.now(), point: "ask", layer: res.layer, ms: res.ms, result: "llm" });
+        return { text: line, via: "llm" };
+      }
+      this.history.push({ at: Date.now(), point: "ask", layer: res.layer, ms: res.ms, result: "fallback", reason: line ? `line replaced: ${checkLine(line, summary)}` : "no line" });
+    } catch (err) {
+      this.history.push({ at: Date.now(), point: "ask", result: "fallback", reason: (err as Error).message });
+    }
+    return { text: fallback, via: "rules" };
   }
 
   /** Called by the orchestrator with the engine's verdict on one of our intents. */
@@ -387,7 +426,7 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
         return `Delivery for ${ev.poId}${po ? ` (ordered ${po.lines.map((l) => `${l.qty} x ${l.sku}`).join(", ")} from ${e.vendors.get(po.vendorId)?.name})` : ""}. Counted: ${ev.lines.map((l) => `${l.qtyReceived} x ${l.sku} received, ${l.qtyRejected} rejected`).join("; ")}. Note: "${ev.note}"`;
       }
       case "rfq_closed":
-        return `Quotes are in for requisition ${ev.requisitionId}; decide how to source it.`;
+        return `Quotes are in for requisition ${ev.requisitionId}; decide how to source it. Standing procedure: buy the cheapest quote that passed every policy check and covers the full quantity; a quote whose bank details differ from the vendor master is never approved or rejected on the spot, you request_verification (Earth calls the supplier back) and escalate what you cannot approve within your limit; a partial clean quote may be approved for its available quantity.`;
       case "report":
         return `Report from ${ev.from}: "${ev.text.slice(0, 1500)}"`;
       default:
@@ -439,12 +478,35 @@ function invoiceLine(inv: Invoice, ctx: BrainContext): string {
   return `${inv.vendorInvoiceNo} from ${e.vendors.get(inv.vendorId)?.name} (${inv.vendorId})${inv.poId ? ` against ${inv.poId}` : ""}: bills ${inv.lines.map((l) => `${l.qty} x ${l.sku} @ ${l.unitPrice}`).join(", ")}, total ${inv.total} cents (${formatCents(inv.total)}). Match: ${m.lines.map((l) => `${l.sku} billed ${l.billedQty}, payable ${l.payQty}${l.alreadyBilled ? `, ${l.alreadyBilled} already paid earlier` : ""}`).join("; ")}; payable total ${m.payable} cents (${formatCents(m.payable)}); ${m.ok ? "match passed" : `issues: ${m.rules.filter((r) => !r.ok).map((r) => r.detail).join("; ")}`}`;
 }
 
+/** What an agent says about its work when asked, written by code from engine state. */
+export function statusLine(role: AgentRole, ctx: BrainContext): string {
+  const e = ctx.engine;
+  const open = [...e.requisitions.values()].filter((r) => r.status === "open" || r.status === "escalated");
+  const vers = [...e.verifications.values()].filter((v) => v.status === "pending");
+  const escs = [...e.escalations.values()].filter((x) => x.status === "awaiting_decision" && x.to === "local_authority");
+  const inv = [...e.invoices.values()].filter((i) => i.status === "received" || i.status === "held" || i.status === "submitted");
+  const sched = [...e.payments.values()].filter((p) => p.status === "scheduled");
+  switch (role) {
+    case "requester":
+      return open.length ? `${open.length} open request${open.length > 1 ? "s" : ""}: ${open.map((r) => `${r.qty} ${ctx.itemName(r.sku)}`).join(", ")}. Watching the base's needs.` : "No open requests. Watching the base's needs.";
+    case "receiver":
+      return `${e.receipts.size} deliveries counted so far. ${[...e.pos.values()].filter((p) => p.status === "open" || p.status === "partially_received").length} orders still to arrive.`;
+    case "ap":
+      return inv.length ? `${inv.length} invoice${inv.length > 1 ? "s" : ""} in checking (${inv.map((i) => i.status).join(", ")}). Every one is matched to order and receipt.` : "No invoices waiting. Everything matched so far.";
+    case "treasury":
+      return `Cash ${compact(e.ledger.balance("cash"))}, runway ${Math.floor(e.runwayDays())} days${sched.length ? `, ${sched.length} payment${sched.length > 1 ? "s" : ""} scheduled` : ""}. Only verified accounts get paid.`;
+    case "controller":
+      return escs.length ? `Waiting on your decision: ${escs.length} escalation${escs.length > 1 ? "s" : ""}. ${vers.length ? `${vers.length} bank check${vers.length > 1 ? "s" : ""} out to Earth.` : ""}`.trim() : vers.length ? `${vers.length} bank verification${vers.length > 1 ? "s" : ""} pending with Earth. Nothing moves until they answer.` : `${e.prevented.length ? `${compact(e.prevented.reduce((s, x) => s + x.amount, 0))} kept from going out so far. ` : ""}Checking every approval against policy.`;
+  }
+}
+
 export function stateSummary(role: AgentRole, ctx: BrainContext): string {
   const e = ctx.engine;
   const lines: string[] = [];
-  lines.push(`Time ${e.now} (${ctx.fmtTime(e.now)}). Cash ${e.ledger.balance("cash")} cents (${formatCents(e.ledger.balance("cash"))}), open commitments ${formatCents(e.openCommitments())}, runway ${Math.floor(e.runwayDays())} days. Your approval limit: ${e.limitFor(role)} cents (${formatCents(e.limitFor(role))}).`);
   lines.push(`Catalog: ${[...e.items.values()].map((i) => `${i.sku}=${i.name}`).join("; ")}.`);
   lines.push(`Vendors: ${[...e.vendors.values()].map((v) => `${v.id}=${v.name} (${v.status})`).join("; ")}.`);
+  lines.push(`Your approval limit: ${e.limitFor(role)} cents (${formatCents(e.limitFor(role))}).`);
+  lines.push(`Time ${e.now} (${ctx.fmtTime(e.now)}). Cash ${e.ledger.balance("cash")} cents (${formatCents(e.ledger.balance("cash"))}), open commitments ${formatCents(e.openCommitments())}, runway ${Math.floor(e.runwayDays())} days.`);
   const reqs = [...e.requisitions.values()].filter((r) => r.status === "open" || r.status === "escalated").slice(-4);
   if (reqs.length) {
     lines.push("Open requisitions:");

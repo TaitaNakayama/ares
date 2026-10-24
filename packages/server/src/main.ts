@@ -461,7 +461,20 @@ const server = http.createServer(async (req, res) => {
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
     }
     if (path === "/api/policy" && req.method === "GET") return send(res, 200, session.orch.engine.policy);
+    if (path === "/api/ask" && req.method === "POST") {
+      const b = await readJson(req);
+      const role = (["requester", "receiver", "ap", "treasury", "controller"] as AgentRole[]).find((r) => r === b.role);
+      if (!role) return send(res, 400, { error: "role must be one of the five agents" });
+      const text = await session.orch.ask(role, typeof b.question === "string" ? b.question.slice(0, 300) : undefined);
+      scheduleVrState();
+      return send(res, 200, { ok: true, text, message: text });
+    }
     if (path === "/api/agents/mode" && req.method === "GET") return send(res, 200, router.status());
+    if (path === "/api/agents/history" && req.method === "GET") {
+      // What each model-backed agent did: which layer answered, how long, token counts, and why it fell back.
+      const rows = session.orch.brainList.flatMap((b) => (b instanceof LlmBrain ? b.history.map((h) => ({ role: b.role, ...h })) : []));
+      return send(res, 200, { ...router.status(), history: rows.slice(-200) });
+    }
     if (path === "/api/agents/mode" && req.method === "POST") {
       // Safe mode = "rules": every agent is on its rules brain instantly, mid-run, no reset.
       const b = await readJson(req);
@@ -647,7 +660,7 @@ wss.on("connection", (ws, req) => {
   ws.on("message", async (raw) => {
     try {
       const text = String(raw);
-      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string };
+      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string; role?: string; question?: string };
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
       // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
       if (m.type === "vr_pose") {
@@ -661,6 +674,11 @@ wss.on("connection", (ws, req) => {
         if (process.env.ARES_LOG_VR) console.log("[vr]", JSON.stringify(m));
       }
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
+      if (m.type === "vr_ask" && typeof m.role === "string" && (headset || local)) {
+        // The commander looked at an agent and tapped: it explains itself live from the current state.
+        if ((["requester", "receiver", "ap", "treasury", "controller"] as string[]).includes(m.role)) void session.orch.ask(m.role as AgentRole, typeof m.question === "string" ? m.question.slice(0, 300) : undefined).catch((e: Error) => console.log(`[ask] ${e.message}`));
+        return;
+      }
       if (m.type === "decide" && m.escalationId && m.optionId && (headset || local)) {
         const r = await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: m.escalationId, optionId: m.optionId }, source: "human" });
         if (r.executed && session.world.beat >= 2) session.timelapse();
