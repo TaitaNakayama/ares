@@ -10,14 +10,14 @@ Setup before each judge:
 ## 0:00-0:30 Part 1, outside (judge puts the headset on; about 30 s of speaking over the ~40 s walk)
 "You're the commander of a Mars base, standing on the real Jezero terrain. Nobody here handles money. The finance team, the bank and the suppliers are on Earth, 25 light-minutes away. Five AI agents run purchasing and payments for you. A model proposes, deterministic controls decide, and plain rules are the floor. They have to be *more* trustworthy than a person, not less."
 
-"A cargo lander just arrived. The Cargo Keeper, the green one, counted the boxes: 34 air filters, two short. The invoice bills 36. Bill Checker matches it against the order and the receipt and pays for 34. No human needed. Walk on: the crew scientist is sampling the delta rock. Look at her and tap, and you get a real Perseverance close-up with its NASA credit. Then the Engineer at the solar field warns the storm is rising. Look at the base door and tap to go inside."
+"A cargo lander just arrived. Cargo, the green one, counted the boxes: 34 air filters, two short. The invoice bills 36. Bills matches it against the order and the receipt and pays for 34. No human needed. Walk on: the crew scientist is sampling the delta rock. Look at her and tap, and you get a real Perseverance close-up with its NASA credit. Then the Engineer at the solar field warns the storm is rising. Look at the base door and tap to go inside."
 
 (Beat 1 happens here, at the pad. Part 1 runs on autoplay in about 40 s; if the judge is slower, let them. Press **Next beat** when they are inside.)
 
 ## 0:30-1:20 Beats 2-5 (press **Next beat**): the storm and the fraud
 "A dust storm, the one you saw rising outside. Look out the window: real Jezero terrain from NASA. Solar power drops on Opportunity's real 2018 curve. The Engineer, in orange, needs 40 batteries before the cargo manifest closes."
 
-"Here's the trap. The usual supplier's quote is three times their price history and asks for payment to a new bank account. That's business email compromise, and it hit 74% of companies last year. Bill Checker flags both, using statistics, not the model's opinion. Rule Keeper, in purple, reasons about it, asks Earth to verify by call-back and blocks it. Earth can't answer before the deadline, so it comes to you."
+"Here's the trap. The usual supplier's quote is three times their price history and asks for payment to a new bank account. That's business email compromise, and it hit 74% of companies last year. Bills flags both, using statistics, not the model's opinion. Rules, in purple, reasons about it, asks Earth to verify by call-back and blocks it. Earth can't answer before the deadline, so it comes to you."
 
 ## 1:20-1:50 Beat 6: the judge decides
 "Look at a card and press the button. Every option was checked against policy for you before it was shown, including ones the agent proposed itself: buy 15 from a supplier we've verified, wait, or shut the ice drill."
@@ -30,7 +30,7 @@ A0. **Look around the room**: the control room is textured and lived-in (lockers
 A. **Ask an agent**: look at a robot, press the button. It answers live from current state. A "thinking" face shows while a model decides.
 B. **Invent an event** (console → Inject → Report, after the story): type anything, or use a preset (broken water pump, crew injury needing medicine, supplier bankruptcy). The agent routes it to the commander with a recommendation.
 C. **SAFE MODE** (console): every agent drops to the deterministic rules instantly. The story still runs.
-0. **Rogue agent** (console → **Rogue Rule Keeper**, then Autoplay): "Now I've replaced the Rule Keeper's brain with a malicious one. It approves the fraudster, pays without approval, and confirms the fake bank itself." The headset shows "REFUSED BY POLICY" on each attempt. "The agent's intent doesn't matter, only what the policy lets through." Turn it off afterwards.
+0. **Rogue agent** (console → **Rogue Rules**, then Autoplay): "Now I've replaced Rules' brain with a malicious one. It approves the fraudster, pays without approval, and confirms the fake bank itself." The headset shows "REFUSED BY POLICY" on each attempt. "The agent's intent doesn't matter, only what the policy lets through." Turn it off afterwards.
 1. **Trace** (console → Ledger → click the last payment): the request, quote, PO, payment, every rule that passed, who proposed and who approved, and the hash chain.
 2. **Policy changes behavior** (Policy tab):
    - Lower the Commander's emergency limit from $12M to $5M and apply. Reset and replay: the option becomes "Buy 6".

@@ -3,7 +3,7 @@ import QuartzCore
 import simd
 
 /// Part 1 of the demo, outside. Owns the outdoor set, the judge's walk between the four stations, the
-/// outdoor robots (Cargo Keeper at the pad, Engineer at the solar field), the scientist and his close-up,
+/// outdoor robots (Cargo at the pad, Engineer at the solar field), the scientist and his close-up,
 /// the pressure door, and the switch inside (approach, 0.5 s fade to black, fade back in).
 /// `BaseScene` calls into it from `update` / `applyState` / `tap`; everything it draws is hidden while inside.
 final class OutdoorDirector {
@@ -16,7 +16,7 @@ final class OutdoorDirector {
   let set: OutdoorSet
   let scientist: Scientist
   let closeUp = CloseUpPanel()
-  /// Cargo Keeper and Engineer, standing at their stations (second copies of the indoor robots).
+  /// Cargo and Engineer, standing at their stations (second copies of the indoor robots).
   private(set) var outdoorRobots: [String: Robot] = [:]
   private let outside: Outside
   private var indoorNodes: [SCNNode] = []
@@ -49,7 +49,7 @@ final class OutdoorDirector {
     scene.rootNode.addChildNode(scientist.node)
     scene.rootNode.addChildNode(scientist.bubble.node)
     scene.rootNode.addChildNode(closeUp.node)
-    for (role, name, p, look) in [("receiver", "Cargo Keeper", Spots.cargoKeeper, Spots.crates), ("requester", "Engineer", Spots.engineer, Spots.fieldCenter)] {
+    for (role, name, p, look) in [("receiver", "Cargo", Spots.cargoKeeper, Spots.crates), ("requester", "Engineer", Spots.engineer, Spots.fieldCenter)] {
       let y = outside.groundY(p.x, p.y) + (role == "receiver" ? 1.3 : 1.45)
       let r = Robot(role: role, name: name, color: Palette.role(role), at: SCNVector3(p.x, y, p.y), faceYaw: atan2(look.x - p.x, look.y - p.y))
       scene.rootNode.addChildNode(r.node)

@@ -121,10 +121,10 @@ function PasteDoc({ state, post, goLive }: { state: AppState; post: (b: Record<s
   const value = text ?? example;
   return (
     <Card title="Paste a document" className="span2">
-      <p className="big">The Bill Checker reads it (LLM if configured, otherwise a deterministic parser); the controls decide.</p>
+      <p className="big">Bills reads it (LLM if configured, otherwise a deterministic parser); the controls decide.</p>
       <textarea className="json-edit paste" value={value} onChange={(e) => setText(e.target.value)} spellCheck={false} />
       <div className="row-gap apply">
-        <button className="btn primary" disabled={!value.trim()} onClick={async () => { const ok = await post({ kind: "text", text: value }); if (ok) goLive(); }}>Send to the Bill Checker</button>
+        <button className="btn primary" disabled={!value.trim()} onClick={async () => { const ok = await post({ kind: "text", text: value }); if (ok) goLive(); }}>Send to Bills</button>
         <button className="btn" onClick={() => setText(null)}>Reset example</button>
       </div>
     </Card>

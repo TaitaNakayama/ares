@@ -30,10 +30,10 @@ const BASE_EPOCH = Date.UTC(2025, 8, 1);
 
 export const MARS_ACTORS: Actor[] = [
   { id: "engineer", role: "requester", displayName: "Engineer" },
-  { id: "cargo", role: "receiver", displayName: "Cargo Keeper" },
-  { id: "bills", role: "ap", displayName: "Bill Checker" },
-  { id: "money", role: "treasury", displayName: "Money Keeper" },
-  { id: "rules", role: "controller", displayName: "Rule Keeper" },
+  { id: "cargo", role: "receiver", displayName: "Cargo" },
+  { id: "bills", role: "ap", displayName: "Bills" },
+  { id: "money", role: "treasury", displayName: "Money" },
+  { id: "rules", role: "controller", displayName: "Rules" },
   { id: "commander", role: "local_authority", displayName: "Commander" },
   { id: "cfo", role: "remote_authority", displayName: "Earth CFO" },
 ];
