@@ -12,7 +12,12 @@ final class GroundSpike {
     let rocks: Int
     let detail: Bool
     let batched: Bool
-    var label: String { "r\(rocks)-\(detail ? "detail" : "plain")-\(batched ? "batched" : "loose")" }
+    var hideRoom = false
+    var storm = false
+    var faceHab = false
+    var label: String {
+      "r\(rocks)-\(detail ? "detail" : "plain")-\(batched ? "batched" : "loose")" + (hideRoom ? "-noroom" : "") + (storm ? "-storm" : "") + (faceHab ? "-facehab" : "")
+    }
   }
 
   static let configs: [Config] = [
@@ -20,6 +25,10 @@ final class GroundSpike {
     Config(rocks: 150, detail: false, batched: true), Config(rocks: 150, detail: true, batched: true),
     Config(rocks: 400, detail: false, batched: true), Config(rocks: 400, detail: true, batched: true),
     Config(rocks: 400, detail: true, batched: false),
+    Config(rocks: 400, detail: true, batched: true, hideRoom: true),
+    Config(rocks: 400, detail: true, batched: true, storm: true),
+    Config(rocks: 400, detail: true, batched: true, hideRoom: true, storm: true),
+    Config(rocks: 400, detail: true, batched: true, faceHab: true),
   ]
 
   static var enabled: Bool {
@@ -77,19 +86,37 @@ final class GroundSpike {
   }
 
   private func placeJudge() {
-    // 40 m from the habitat, on compass azimuth 250 (terrain frame), looking back at it.
-    let az: Float = 250 * .pi / 180
+    // 40 m from the habitat, on compass azimuth 305 (centre of the terrain wedge, which only covers az 223-387).
+    // Default facing is outward (-Z: the wedge); the faceHab config turns the judge to look back at the habitat.
+    let az: Float = 305 * .pi / 180
     let local = SCNVector3(sin(az) * 40, 0, -cos(az) * 40)
     let w = world.outside.root.convertPosition(local, to: nil)
     let gy = ground(x: Float(w.x), z: Float(w.z)) ?? 0
     groundY = gy
     judge = SIMD3(Float(w.x), gy + 1.6, Float(w.z))
-    let dx = -judge.x, dz = -judge.z
-    let yaw = atan2(-dx, -dz)
+    face(hab: false)
+    print("[ground] judge at", judge, "ground", gy)
+  }
+
+  private func face(hab: Bool) {
+    let yaw: Float = hab ? atan2(judge.x, judge.z) : 0 // forward = -Z (out) or toward the origin
     var t = matrix_identity_float4x4
     t.columns.3 = SIMD4(-judge.x, -judge.y, -judge.z, 1)
     world.viewOffset = simd_float4x4(simd_quatf(angle: -yaw, axis: SIMD3(0, 1, 0))) * t
-    print("[ground] judge at", judge, "ground", gy, "yaw", yaw * 180 / .pi)
+  }
+
+  /// Everything indoors: scene children other than the head, terrain/props, lights, particles and this spike's nodes.
+  private func setRoomHidden(_ hidden: Bool) {
+    let keep: [SCNNode] = [world.head, world.outside.root, world.outside.sunNode, world.outside.ambientNode, node]
+    if hidden {
+      for n in world.scene.rootNode.childNodes where !n.isHidden && !keep.contains(where: { $0 === n }) && n.particleSystems?.isEmpty != false {
+        n.isHidden = true
+        hiddenByUs.append(n)
+      }
+    } else {
+      for n in hiddenByUs { n.isHidden = false }
+      hiddenByUs = []
+    }
   }
 
   // ---------------------------------------------------------------- rocks
@@ -221,6 +248,10 @@ final class GroundSpike {
       s.extra.isHidden = !(c.batched && c.rocks >= 400)
     }
     loose.isHidden = c.batched || c.rocks == 0
+    face(hab: c.faceHab)
+    setRoomHidden(c.hideRoom)
+    stormOn = c.storm
+    world.outside.apply(tau: c.storm ? 4.6 : 0.6, sunAzimuth: 120, sunElevation: 45)
     if let m = terrainMat {
       if c.detail {
         m.multiply.contents = detailImage
@@ -238,6 +269,7 @@ final class GroundSpike {
       }
     }
     samples = []
+    frames = 0; over20 = 0; over33 = 0
   }
 
   /// Called every frame with the app's one-second fps estimate.
@@ -256,17 +288,31 @@ final class GroundSpike {
     // Skip the first 10 s of a window (shader compile / texture upload hitches); take each new one-second value once.
     if inWindow > 10 && fps != lastFps { samples.append(fps) }
     lastFps = fps
+    let dt = time - prevT
+    prevT = time
+    if inWindow > 10 && dt < 1 { frames += 1; if dt > 0.020 { over20 += 1 }; if dt > 0.0334 { over33 += 1 } }
+    // The server's state updates reset tau; hold the storm for the storm configs.
+    if stormOn && Int(time) % 3 == 0 { world.outside.apply(tau: 4.6, sunAzimuth: 120, sunElevation: 45) }
   }
   private var last = 0
+  private var stormOn = false
+  private var hiddenByUs: [SCNNode] = []
+  private var prevT = 0.0
+  private var frames = 0, over20 = 0, over33 = 0
+
+  /// [avg fps, min fps, seconds sampled, frames, frames over 20 ms, frames over 33 ms]
+  private func summary() -> [Double] {
+    [samples.reduce(0, +) / Double(samples.count), samples.min()!, Double(samples.count), Double(frames), Double(over20), Double(over33)]
+  }
 
   private func flush() {
     guard samples.count >= 5 else { return }
-    results[label] = [samples.reduce(0, +) / Double(samples.count), samples.min()!, Double(samples.count)]
+    results[label] = summary()
   }
 
   var stats: [String: Any] {
     var live = results
-    if samples.count >= 3 { live[label] = [samples.reduce(0, +) / Double(samples.count), samples.min()!, Double(samples.count)] }
+    if samples.count >= 3 { live[label] = summary() }
     return ["ground": true, "cfg": label, "cfgIndex": current, "cfgAvgFps": live[label]?[0] ?? 0, "cfgMinFps": live[label]?[1] ?? 0, "cfgResults": live]
   }
 }
