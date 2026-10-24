@@ -26,6 +26,8 @@ final class BaseScene {
   var onAsk: ((String) -> Void)?
   /// Roles whose agent is thinking; set from the link every frame.
   private var thinkingRoles = Set<String>()
+  private var lastDecisionHeard: String?
+  private var decisionPrimed = false
   private var hoveredRobot: String?
   private var lastAsk: [String: TimeInterval] = [:]
   /// The spectator view draws its own gaze dot.
@@ -176,7 +178,14 @@ final class BaseScene {
     if needs && !cardsVisible && now >= hideUntil { refreshCards(latest) }
     // One bubble at a time: the newest speaker's.
     let speaker = now - captionAt < 9 ? captionRole : nil
-    thinkingRoles = link.thinkingRoles
+    let nowThinking = link.thinkingRoles
+    if !nowThinking.subtracting(thinkingRoles).isEmpty { Sound.shared.thinkingStarted() }
+    thinkingRoles = nowThinking
+    if link.lastDecision != lastDecisionHeard {
+      if decisionPrimed { Sound.shared.decided() }
+      lastDecisionHeard = link.lastDecision
+    }
+    decisionPrimed = true
     for r in robots.values {
       r.hovered = r.role == hoveredRobot
       r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker, thinking: thinkingRoles.contains(r.role))
@@ -225,7 +234,7 @@ final class BaseScene {
     captionRole = role
     // The speech bubble beside the speaker (Robot) shows the text; this only keeps the sound cue.
     let deny = r.outcome == "deny"
-    if deny || r.mood == "suspicious" { Sound.shared.play("alert", volume: 0.6) } else { Sound.shared.play("blip", volume: 0.5) }
+    if deny || r.mood == "suspicious" { Sound.shared.play("alert", volume: 0.6) } else if r.outcome == "decided" { Sound.shared.decided() } else { Sound.shared.speak(role: role) }
   }
 
   private func setHover(_ node: SCNNode?) {
