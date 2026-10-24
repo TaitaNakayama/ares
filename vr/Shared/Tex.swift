@@ -210,6 +210,21 @@ enum Tex {
     }
   }
 
+  /// A bundled colour map pulled toward grey (`amount` 0...1 of the saturation removed) and slightly darkened,
+  /// so saturated props sit in the painted-metal palette while keeping a hint of their colour.
+  static func muted(_ name: String, amount: CGFloat) -> PlatformImage {
+    let size = CGSize(width: 1024, height: 1024)
+    return Bitmap.image(size: size, scale: 1, opaque: true) { c in
+      if let img = cg(name) { Tex.draw(c, img, in: CGRect(origin: .zero, size: size)) }
+      c.setBlendMode(.saturation)
+      c.setFillColor(PlatformColor(white: 0.5, alpha: amount).cgColor)
+      c.fill(CGRect(origin: .zero, size: size))
+      c.setBlendMode(.multiply)
+      c.setFillColor(PlatformColor(red: 0.84, green: 0.82, blue: 0.78, alpha: 1).cgColor)
+      c.fill(CGRect(origin: .zero, size: size))
+    }
+  }
+
   /// Soft dark blob (contact shadow): black with a smooth alpha falloff, drawn as an ellipse that fills the square.
   static func blob() -> PlatformImage {
     let size = CGSize(width: 128, height: 128)

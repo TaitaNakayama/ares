@@ -78,14 +78,18 @@ enum Dressing {
 
   /// A wall sign whose plate is measured from its text, with padding, and pushed off the curved wall
   /// by the chord sagitta so its ends never sink into the panels.
-  private static func wallSign(_ text: String, deg: Float, y: Float, em: CGFloat = 0.08, bg: PlatformColor, fg: PlatformColor) -> SCNNode {
+  private static func plate(_ text: String, em: CGFloat, bg: PlatformColor, fg: PlatformColor) -> (SCNMaterial, CGFloat, CGFloat) {
     let px = em * plateScale
     let wpx = ceil(textWidth(text, px: px) + px * 1.4), hpx = ceil(px * 1.9)
     let m = picture(CGSize(width: wpx, height: hpx)) { c in drawPlate(c, CGRect(x: 0, y: 0, width: wpx, height: hpx), text, size: px, bg: bg, fg: fg) }
-    let wm = wpx / plateScale
+    return (m, wpx / plateScale, hpx / plateScale)
+  }
+
+  private static func wallSign(_ text: String, deg: Float, y: Float, em: CGFloat = 0.08, bg: PlatformColor, fg: PlatformColor) -> SCNNode {
+    let (m, wm, hm) = plate(text, em: em, bg: bg, fg: fg)
     let off = Float(wm * wm / (8 * CGFloat(Room.radius))) + 0.012
     let h = holder(deg, r: Room.radius - off, y: y)
-    h.addChildNode(flat(m, w: wm, h: hpx / plateScale, at: .init(0, 0, 0)))
+    h.addChildNode(flat(m, w: wm, h: hm, at: .init(0, 0, 0)))
     return h
   }
 
@@ -95,19 +99,20 @@ enum Dressing {
   private static var propMats: [String: SCNMaterial] = [:]
 
   /// A Poly Haven .usdc prop (Z-up in the file) standing on y = 0 with its diffuse JPG; geometry is shared between clones.
-  private static func prop(_ id: String, diffuse: String, scale: Float = 1) -> SCNNode? {
-    if templates[id] == nil {
+  private static func prop(_ id: String, diffuse: String, scale: Float = 1, mute: CGFloat? = nil) -> SCNNode? {
+    if templates[id + (mute == nil ? "" : "-m")] == nil {
       guard let url = Bundle.main.url(forResource: id + "_1k", withExtension: "usdc"),
             let scene = try? SCNScene(url: url, options: nil) else { return nil }
       let merged = scene.rootNode.flattenedClone()
-      if propMats[diffuse] == nil { propMats[diffuse] = Tex.material(Tex.cg(diffuse)) }
-      merged.enumerateHierarchy { n, _ in n.geometry?.materials = [propMats[diffuse]!] }
+      let key = diffuse + (mute == nil ? "" : "-muted")
+      if propMats[key] == nil { propMats[key] = Tex.material(mute == nil ? Tex.cg(diffuse) : Tex.muted(diffuse, amount: mute!)) }
+      merged.enumerateHierarchy { n, _ in n.geometry?.materials = [propMats[key]!] }
       let upright = SCNNode()
       upright.eulerAngles.x = -.pi / 2
       upright.addChildNode(merged)
-      templates[id] = upright
+      templates[id + (mute == nil ? "" : "-m")] = upright
     }
-    let n = templates[id]!.clone()
+    let n = templates[id + (mute == nil ? "" : "-m")]!.clone()
     n.scale = SCNVector3(scale, scale, scale)
     return n
   }
@@ -348,7 +353,7 @@ enum Dressing {
         ridge.addLine(to: CGPoint(x: 160, y: 110)); ridge.addLine(to: CGPoint(x: 250, y: 190)); ridge.addLine(to: CGPoint(x: 250, y: 250)); ridge.addLine(to: CGPoint(x: 10, y: 250))
         c.addPath(ridge); c.fillPath()
         c.restoreGState()
-        _ = Draw.text("CREW", at: CGPoint(x: 0, y: 196), size: 50, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
+        _ = Draw.text("CREW", at: CGPoint(x: 0, y: 178), size: 50, weight: .heavy, color: PlatformColor(white: 0.96, alpha: 1), width: 256, align: .center)
         _ = ctr
       }
     }
@@ -363,15 +368,17 @@ enum Dressing {
   }
 
   private static func lockers(_ out: SCNNode) {
-    let body = solid(PlatformColor(red: 0.28, green: 0.34, blue: 0.38, alpha: 1))
+    let body = solid(PlatformColor(red: 0.30, green: 0.32, blue: 0.33, alpha: 1))
     let names = ["T. VASQUEZ", "M. LINDQVIST"]
-    let tints = [PlatformColor(red: 0.26, green: 0.45, blue: 0.50, alpha: 1), PlatformColor(red: 0.55, green: 0.30, blue: 0.24, alpha: 1)]
+    let tints = [PlatformColor(red: 0.38, green: 0.47, blue: 0.47, alpha: 1), PlatformColor(red: 0.50, green: 0.40, blue: 0.36, alpha: 1)]
     for (i, deg) in [Float(-92.5), Float(-100.5)].enumerated() {
       let h = holder(deg, r: 3.66)
       h.addChildNode(box(0.50, 1.95, 0.46, body, at: SCNVector3(0, 0.975, 0)))
       let door = picture(CGSize(width: 256, height: 1024)) { c in
         c.setFillColor(tints[i].cgColor)
         c.fill(CGRect(x: 0, y: 0, width: 256, height: 1024))
+        c.setFillColor(PlatformColor(white: 1, alpha: 0.06).cgColor) // paint sheen, left edge
+        c.fill(CGRect(x: 0, y: 0, width: 70, height: 1024))
         c.setFillColor(PlatformColor(white: 0, alpha: 0.25).cgColor)
         c.fill(CGRect(x: 0, y: 0, width: 256, height: 8))
         c.fill(CGRect(x: 0, y: 1016, width: 256, height: 8))
@@ -474,7 +481,7 @@ enum Dressing {
     out.addChildNode(h)
     // Barrels beside the rack.
     for (deg, ry) in [(Float(-153.5), Float(0)), (Float(-157), Float(1))] {
-      if let b = prop("Barrel_01", diffuse: "Barrel_01_explosive_diff_1k", scale: 0.8) {
+      if let b = prop("Barrel_01", diffuse: "Barrel_01_explosive_diff_1k", scale: 0.8, mute: 0.62) {
         let bh = holder(deg, r: 3.58)
         b.simdEulerAngles.y = ry
         bh.addChildNode(b)
@@ -486,6 +493,40 @@ enum Dressing {
 
   // ---------------------------------------------------------------- equipment with stencilled labels
 
+  /// A gauge with depth: dark bezel, light inner ring, dial face with ticks, needle and a soft glass highlight.
+  private static func dial(_ c: CGContext, _ ctr: CGPoint, r: CGFloat, needle: CGFloat) {
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    c.setFillColor(PlatformColor(white: 0.07, alpha: 1).cgColor)
+    c.fillEllipse(in: CGRect(x: ctr.x - r - 9, y: ctr.y - r - 9, width: 2 * r + 18, height: 2 * r + 18))
+    c.setStrokeColor(PlatformColor(white: 0.55, alpha: 1).cgColor)
+    c.setLineWidth(3)
+    c.strokeEllipse(in: CGRect(x: ctr.x - r - 6, y: ctr.y - r - 6, width: 2 * r + 12, height: 2 * r + 12))
+    c.setFillColor(PlatformColor(red: 0.86, green: 0.85, blue: 0.80, alpha: 1).cgColor)
+    c.fillEllipse(in: CGRect(x: ctr.x - r, y: ctr.y - r, width: 2 * r, height: 2 * r))
+    c.setStrokeColor(PlatformColor(white: 0.15, alpha: 1).cgColor)
+    c.setLineWidth(2)
+    for i in 0...8 {
+      let a = -CGFloat.pi * 1.25 + CGFloat(i) * CGFloat.pi * 1.5 / 8
+      c.move(to: CGPoint(x: ctr.x + cos(a) * r * 0.74, y: ctr.y + sin(a) * r * 0.74))
+      c.addLine(to: CGPoint(x: ctr.x + cos(a) * r * 0.92, y: ctr.y + sin(a) * r * 0.92))
+    }
+    c.strokePath()
+    let na = -CGFloat.pi / 2 + needle
+    c.setStrokeColor(PlatformColor(red: 0.8, green: 0.15, blue: 0.1, alpha: 1).cgColor)
+    c.setLineWidth(4)
+    c.move(to: ctr); c.addLine(to: CGPoint(x: ctr.x + cos(na) * r * 0.78, y: ctr.y + sin(na) * r * 0.78)); c.strokePath()
+    c.setFillColor(PlatformColor(white: 0.12, alpha: 1).cgColor)
+    c.fillEllipse(in: CGRect(x: ctr.x - 5, y: ctr.y - 5, width: 10, height: 10))
+    c.saveGState()
+    c.addEllipse(in: CGRect(x: ctr.x - r, y: ctr.y - r, width: 2 * r, height: 2 * r))
+    c.clip()
+    if let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(white: 1, alpha: 0.55).cgColor, PlatformColor(white: 1, alpha: 0).cgColor] as CFArray, locations: [0, 1]) {
+      let hc = CGPoint(x: ctr.x - r * 0.35, y: ctr.y - r * 0.45)
+      c.drawRadialGradient(g, startCenter: hc, startRadius: 0, endCenter: hc, endRadius: r * 0.95, options: [])
+    }
+    c.restoreGState()
+  }
+
   private static func equipmentFront(_ title: String, size: CGSize, accent: PlatformColor) -> SCNMaterial {
     picture(size) { c in
       let w = size.width, h = size.height
@@ -496,18 +537,9 @@ enum Dressing {
       c.fill(CGRect(x: 0, y: h - 6, width: w, height: 6))
       // stencil title on a dark plate
       drawPlate(c, CGRect(x: 20, y: 24, width: w - 40, height: 74), title, size: 46, bg: PlatformColor(white: 0.10, alpha: 1), fg: accent)
-      // gauges
+      // gauges: bezel ring, tick marks, needle and a glass highlight
       for k in 0..<2 {
-        let cx = w * (0.30 + CGFloat(k) * 0.40), cy: CGFloat = 190
-        c.setFillColor(PlatformColor(white: 0.9, alpha: 1).cgColor)
-        c.fillEllipse(in: CGRect(x: cx - 42, y: cy - 42, width: 84, height: 84))
-        c.setStrokeColor(PlatformColor(white: 0.1, alpha: 1).cgColor)
-        c.setLineWidth(5)
-        c.strokeEllipse(in: CGRect(x: cx - 42, y: cy - 42, width: 84, height: 84))
-        c.setStrokeColor(PlatformColor(red: 0.8, green: 0.15, blue: 0.1, alpha: 1).cgColor)
-        c.setLineWidth(4)
-        c.move(to: CGPoint(x: cx, y: cy)); c.addLine(to: CGPoint(x: cx + 26 * (k == 0 ? 1 : -0.6), y: cy - 24))
-        c.strokePath()
+        dial(c, CGPoint(x: w * (0.30 + CGFloat(k) * 0.40), y: 190), r: 42, needle: k == 0 ? -0.9 : 0.7)
       }
       // status LEDs and button row
       for k in 0..<4 {
@@ -549,12 +581,14 @@ enum Dressing {
     let w = holder(-166.5, r: 3.62)
     w.addChildNode(box(0.8, 1.3, 0.55, steel, at: SCNVector3(0, 0.65, 0), chamfer: 0.015))
     w.addChildNode(flat(equipmentFront("WATER RECYCLER", size: CGSize(width: 512, height: 512), accent: PlatformColor(red: 0.55, green: 0.85, blue: 1.0, alpha: 1)), w: 0.76, h: 1.26, at: SCNVector3(0, 0.65, 0.277)))
-    let tank = solid(PlatformColor(red: 0.30, green: 0.46, blue: 0.62, alpha: 1))
+    let tank = solid(PlatformColor(red: 0.45, green: 0.50, blue: 0.53, alpha: 1))
     let tankGeo = SCNCylinder(radius: 0.2, height: 1.9); tankGeo.radialSegmentCount = 16
     let t = SCNNode(geometry: tankGeo)
     t.geometry?.materials = [tank]
     t.position = SCNVector3(0.1, 0.95, -0.2)
     w.addChildNode(t)
+    let (nm, nw, nh) = plate("N2", em: 0.09, bg: PlatformColor(white: 0.10, alpha: 1), fg: PlatformColor(red: 0.55, green: 0.85, blue: 1.0, alpha: 1))
+    w.addChildNode(flat(nm, w: nw, h: nh, at: SCNVector3(0.1, 1.6, 0.006)))
     out.addChildNode(w)
   }
 
