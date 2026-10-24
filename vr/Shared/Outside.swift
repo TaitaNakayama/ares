@@ -466,7 +466,7 @@ final class Outside {
 
   /// Rises from a low brown haze bank to a wall a few hundred metres high, darkening toward #5A3A2A as tau climbs.
   private func applyStormWall(t: Float) {
-    let hgt = 22 + 190 * t * t + 40 * t
+    let hgt = 30 + 330 * pow(t, 1.5) + 40 * t
     stormWall.simdScale = SIMD3(1500, hgt * 1.0, 1)
     stormWall.simdPosition = SIMD3(-290, hgt / 2 - 12, -345)
     let c = Self.mix(SIMD3(0.84, 0.64, 0.46), SIMD3(0.353, 0.227, 0.165), t: min(1, t * 1.4))
@@ -527,7 +527,7 @@ final class Outside {
     let t = min(1, max(0, (tau - 0.4) / 4.5))
     let up = max(0, d.y)
     let zenith = mix(SIMD3<Float>(0.55, 0.42, 0.31), SIMD3<Float>(0.24, 0.14, 0.09), t: t)
-    let horizon = mix(SIMD3<Float>(0.86, 0.70, 0.53), SIMD3<Float>(0.42, 0.26, 0.16), t: t)
+    let horizon = mix(SIMD3<Float>(0.86, 0.70, 0.53), SIMD3<Float>(0.60, 0.37, 0.23), t: t) // lighter than the storm wall (#5A3A2A) so the front reads against it
     var c = mix(horizon, zenith, t: pow(up, 0.55))
     if d.y < 0 { c = horizon * (1 - min(1, -d.y * 2) * 0.35) }
     let cosA = max(0, simd_dot(d, sun))

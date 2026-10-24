@@ -41,7 +41,7 @@ final class Scientist {
     tagNode.addChildNode(tag.node)
     tagNode.position = SCNVector3(0, 1.72, 0)
     tag.node.scale = SCNVector3(1.5, 1.5, 1.5) // already 1.9 m wide: 1.5x reads from 5 m outdoors
-    bubble.enlarge(2.0, tailLeft: true)
+    bubble.enlarge(1.5, tailLeft: false) // he is 4 m away: 1.5x, placed on the judge's left (he stands at the right of the view)
     node.addChildNode(tagNode)
     redrawTag()
   }
@@ -236,13 +236,13 @@ final class Scientist {
     radial = simd_length(radial) > 0.01 ? simd_normalize(radial) : SIMD3(0, 0, -1)
     let right = SIMD3<Float>(-radial.z, 0, radial.x)
     let w = Float(SpeechBubble.w)
-    let c = home + right * (w / 2 + 0.55) - radial * 0.1 + SIMD3(0, 1.15, 0)
+    let c = home - right * (w / 2 + 1.2) - radial * 0.1 + SIMD3(0, 1.15, 0)
     bubble.node.simdPosition = c
     let tu = user - c
     bubble.node.simdEulerAngles = SIMD3(0, atan2(tu.x, tu.z), 0)
     if shownText != text {
       shownText = text
-      bubble.set(text: text, name: name, color: Scientist.tagColor, deny: false, tailLeft: true, key: "sci|\(text)")
+      bubble.set(text: text, name: name, color: Scientist.tagColor, deny: false, tailLeft: false, key: "sci|\(text)")
     }
   }
 }
