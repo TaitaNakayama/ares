@@ -31,6 +31,9 @@ final class Outside {
   private var lastTau: Double = 0.6
   private var lastSun: (Double, Double) = (120, 45)
   private var terrainMat: SCNMaterial?
+  /// (sun direction in world space, elevation deg, beam strength 0...1), called whenever the sun or the dust changes.
+  var onSun: ((SIMD3<Float>, Float, Float) -> Void)?
+  private(set) var sunInfo: (SIMD3<Float>, Float, Float) = (SIMD3(0, 0.7, -0.7), 45, 0.8)
   private var baseDiffuseIntensity: CGFloat = 1
   /// World rotation that puts compass azimuth `viewAzimuth` straight ahead (-Z).
   static let viewAzimuth: Float = 305
@@ -121,8 +124,8 @@ final class Outside {
       m.multiply.minificationFilter = .linear
       m.multiply.magnificationFilter = .linear
       m.multiply.maxAnisotropy = 8
-      m.multiply.contentsTransform = SCNMatrix4MakeScale(4700, 4700, 1)
-      m.diffuse.intensity = baseDiffuseIntensity / 0.86
+      m.multiply.contentsTransform = SCNMatrix4MakeScale(3000, 3000, 1)
+      m.diffuse.intensity = baseDiffuseIntensity / CGFloat(DetailTexture.mean)
     } else {
       m.multiply.contents = nil
       m.diffuse.intensity = baseDiffuseIntensity
@@ -178,19 +181,6 @@ final class Outside {
       n.position = SCNVector3(t.x, groundY(w.x, w.y), t.y)
       root.addChildNode(n)
     }
-    // Landed cargo rocket: base + fuel + sides + nose, stacked.
-    let rocket = SCNNode()
-    var y: Float = 0
-    for (part, h) in [("rocket_baseA", Float(1.6)), ("rocket_fuelA", 0.5), ("rocket_sidesA", 1.0), ("rocket_sidesA", 1.0), ("rocket_topA", 0.8)] {
-      guard let n = loadProp(part) else { continue }
-      n.position = SCNVector3(0, y, 0)
-      rocket.addChildNode(n)
-      y += h
-    }
-    rocket.scale = SCNVector3(7, 7, 7)
-    rocket.position = ground(az: 297, dist: 140, y: groundHeight(az: 297, dist: 140))
-    rocket.name = "cargo-rocket"
-    root.addChildNode(rocket)
   }
 
   func loadProp(_ name: String) -> SCNNode? {
@@ -523,6 +513,8 @@ final class Outside {
     let transmit = exp(-tau / max(sin(el), 0.08))
     let daylight = min(1, max(0, (Float(sunElevation) + 4) / 12))
     sunNode.light?.intensity = CGFloat(1400 * transmit * daylight)
+    sunInfo = (sunWorld, Float(sunElevation), min(1, transmit * daylight * 1.4))
+    onSun?(sunInfo.0, sunInfo.1, sunInfo.2)
     let red = min(1, tau / 5)
     sunNode.light?.color = PlatformColor(red: 1.0, green: CGFloat(0.93 - 0.2 * red), blue: CGFloat(0.84 - 0.32 * red), alpha: 1)
     sunNode.simdPosition = sunWorld * 100

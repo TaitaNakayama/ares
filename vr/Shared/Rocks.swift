@@ -83,6 +83,7 @@ enum RockField {
     var rng = SplitMix(seed)
     let holder = SCNNode()
     var placed = 0, tries = 0
+    var shadows: [Blob.Item] = []
     while placed < count && tries < count * 6 {
       tries += 1
       let r = 1.2 + (radius - 1.2) * Float(pow(rng.unit(), 1.5)), a = Float(rng.unit()) * 2 * .pi
@@ -95,17 +96,77 @@ enum RockField {
       rock.simdEulerAngles = SIMD3(Float(rng.unit()) * 0.3 - 0.15, Float(rng.unit()) * 2 * .pi, Float(rng.unit()) * 0.3 - 0.15)
       rock.simdScale = SIMD3(s, s * Float(0.8 + 0.4 * rng.unit()), s * Float(0.8 + 0.4 * rng.unit()))
       holder.addChildNode(rock)
+      shadows.append(Blob.Item(center: p, rx: 1.5 * s, rz: 1.35 * s, yaw: Float(rng.unit()) * .pi))
       placed += 1
     }
     let merged = holder.flattenedClone()
     merged.name = "rocks"
+    if !shadows.isEmpty { merged.addChildNode(Blob.node(shadows, height: height)) }
     return merged
   }
 }
 
-/// Tileable grayscale grit for the near terrain's `multiply` channel (mean about 0.86), one tile per ~1.2 m.
+/// Tileable regolith detail for the near terrain's `multiply` channel: Poly Haven `red_sand` (ripples, grain) layered with
+/// `dry_ground_rocks` (pebbles, sampled at twice the frequency so the tiling does not line up), both 1k, as luminance
+/// normalised to a known mean. Falls back to code-made grit if the maps are missing. `mean` lets the terrain compensate its brightness.
 enum DetailTexture {
-  static let image: PlatformImage? = {
+  static var image: PlatformImage? { built.0 }
+  static var mean: Float { built.1 }
+
+  private static let built: (PlatformImage?, Float) = {
+    let n = 1024
+    if let a = lum("red_sand_diff_1k"), let b = lum("dry_ground_rocks_diff_1k") {
+      var px = [UInt8](repeating: 255, count: n * n * 4)
+      var vals = [Float](repeating: 0, count: n * n)
+      var sum: Float = 0
+      for y in 0..<n {
+        for x in 0..<n {
+          let c = 1 + 0.6 * (a[y * n + x] - 1) + 0.4 * (b[((2 * y) % n) * n + (2 * x) % n] - 1)
+          let v = min(1, max(0.42, 0.88 * c))
+          vals[y * n + x] = v
+          sum += v
+          let g = UInt8(v * 255)
+          let i = (y * n + x) * 4
+          px[i] = g; px[i + 1] = g; px[i + 2] = g
+        }
+      }
+      if let img = gray(&px, n) { return (img, sum / Float(n * n)) }
+    }
+    return noise()
+  }()
+
+  private static func gray(_ px: inout [UInt8], _ n: Int) -> PlatformImage? {
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    return px.withUnsafeMutableBytes { p in
+      CGContext(data: p.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: cs, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue).flatMap { $0.makeImage() }.map { PlatformImage(cgImage: $0) }
+    }
+  }
+
+  /// Luminance of a bundled 1k map, divided by its own mean (so 1 is the average).
+  private static func lum(_ name: String) -> [Float]? {
+    guard let cg = Tex.cg(name) else { return nil }
+    let n = 1024
+    var px = [UInt8](repeating: 0, count: n * n * 4)
+    let ok = px.withUnsafeMutableBytes { p -> Bool in
+      guard let ctx = CGContext(data: p.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+      ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+      return true
+    }
+    guard ok else { return nil }
+    var out = [Float](repeating: 0, count: n * n)
+    var sum: Float = 0
+    for i in 0..<(n * n) {
+      let l = 0.299 * Float(px[i * 4]) + 0.587 * Float(px[i * 4 + 1]) + 0.114 * Float(px[i * 4 + 2])
+      out[i] = l
+      sum += l
+    }
+    let m = max(sum / Float(n * n), 1)
+    for i in 0..<(n * n) { out[i] /= m }
+    return out
+  }
+
+  /// The earlier code-made grit (mean about 0.86), the fallback.
+  private static func noise() -> (PlatformImage?, Float) {
     let n = 512
     var rng = SplitMix(7)
     func lattice(_ p: Int) -> [Float] { (0..<(p * p)).map { _ in Float(rng.unit()) } }
@@ -128,11 +189,56 @@ enum DetailTexture {
         px[i] = g; px[i + 1] = g; px[i + 2] = g
       }
     }
-    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-    return px.withUnsafeMutableBytes { p in
-      CGContext(data: p.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: cs, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue).flatMap { $0.makeImage() }.map { PlatformImage(cgImage: $0) }
-    }
+    return (gray(&px, n), 0.86)
+  }
+}
+
+/// Soft dark blob shadows hugging the ground: ONE shared decal (the radial `discShadow`) for every prop and rock.
+/// Contact blobs are batched into a single mesh; long low-sun shadows are stretched ellipses of the same decal.
+enum Blob {
+  static let material: SCNMaterial = {
+    let m = SCNMaterial()
+    m.lightingModel = .constant
+    m.diffuse.contents = Tex.discShadow()
+    m.diffuse.mipFilter = .linear
+    m.diffuse.wrapS = .clamp
+    m.diffuse.wrapT = .clamp
+    m.isDoubleSided = true
+    m.blendMode = .alpha
+    m.writesToDepthBuffer = false
+    return m
   }()
+
+  /// An ellipse on the ground: centre (world x, z), half-sizes along / across `yaw`.
+  struct Item { var center: SIMD2<Float>; var rx: Float; var rz: Float; var yaw: Float }
+
+  /// One quad per blob, corners sampled on the ground. Nil when there is nothing to draw.
+  static func geometry(_ items: [Item], lift: Float = 0.035, height: (Float, Float) -> Float?) -> SCNGeometry? {
+    guard !items.isEmpty else { return nil }
+    var pos: [SCNVector3] = [], nor: [SCNVector3] = [], uv: [CGPoint] = [], idx: [UInt32] = []
+    for it in items {
+      let c = cos(it.yaw), s = sin(it.yaw)
+      let base = UInt32(pos.count)
+      for (u, v) in [(Float(0), Float(0)), (1, 0), (1, 1), (0, 1)] {
+        let lx = (u - 0.5) * 2 * it.rx, lz = (v - 0.5) * 2 * it.rz
+        let x = it.center.x + lx * c + lz * s, z = it.center.y - lx * s + lz * c
+        pos.append(SCNVector3(x, (height(x, z) ?? height(it.center.x, it.center.y) ?? 0) + lift, z))
+        nor.append(SCNVector3(0, 1, 0))
+        uv.append(CGPoint(x: CGFloat(u), y: CGFloat(v)))
+      }
+      idx += [base, base + 2, base + 1, base, base + 3, base + 2]
+    }
+    let g = SCNGeometry(sources: [SCNGeometrySource(vertices: pos), SCNGeometrySource(normals: nor), SCNGeometrySource(textureCoordinates: uv)], elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
+    g.materials = [material]
+    return g
+  }
+
+  static func node(_ items: [Item], height: (Float, Float) -> Float?) -> SCNNode {
+    let n = SCNNode(geometry: geometry(items, height: height))
+    n.renderingOrder = 37
+    n.name = "blobs"
+    return n
+  }
 }
 
 /// Meshes draped on the terrain (scorch, pad markings, footprints, tyre tracks): the grid follows the
@@ -156,6 +262,29 @@ enum Drape {
     for j in 0..<n {
       for i in 0..<n {
         let a = UInt32(j * (n + 1) + i), b = a + 1, d = a + UInt32(n + 1), e = d + 1
+        idx += [a, d, b, b, d, e]
+      }
+    }
+    return SCNGeometry(sources: [SCNGeometrySource(vertices: pos), SCNGeometrySource(normals: nor), SCNGeometrySource(textureCoordinates: uv)], elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
+  }
+
+  /// A rectangle `halfX` x `halfZ` m about `center`, turned by `yaw` about Y (local +X first), UV 0..1, draped on the ground.
+  static func rect(center: SIMD2<Float>, halfX: Float, halfZ: Float, yaw: Float, cell: Float, lift: Float, height: (Float, Float) -> Float?) -> SCNGeometry {
+    let nx = max(2, Int((2 * halfX / cell).rounded())), nz = max(2, Int((2 * halfZ / cell).rounded()))
+    var pos: [SCNVector3] = [], nor: [SCNVector3] = [], uv: [CGPoint] = []
+    let c = cos(yaw), s = sin(yaw)
+    for j in 0...nz {
+      for i in 0...nx {
+        let u = Float(i) / Float(nx), v = Float(j) / Float(nz)
+        let lx = (u - 0.5) * 2 * halfX, lz = (v - 0.5) * 2 * halfZ
+        let x = center.x + lx * c + lz * s, z = center.y - lx * s + lz * c
+        pos.append(SCNVector3(x, (height(x, z) ?? height(center.x, center.y) ?? 0) + lift, z)); nor.append(SCNVector3(0, 1, 0)); uv.append(CGPoint(x: CGFloat(u), y: CGFloat(v)))
+      }
+    }
+    var idx: [UInt32] = []
+    for j in 0..<nz {
+      for i in 0..<nx {
+        let a = UInt32(j * (nx + 1) + i), b = a + 1, d = a + UInt32(nx + 1), e = d + 1
         idx += [a, d, b, b, d, e]
       }
     }

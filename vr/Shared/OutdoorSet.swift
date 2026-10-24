@@ -27,6 +27,10 @@ final class OutdoorSet {
   private let scanLine = SCNNode()
   private let scanCone = SCNNode()
   private weak var outside: Outside?
+  /// Stretched blob shadows for the big props, turned away from the sun (rebuilt when the sun moves a couple of degrees).
+  private var longShadows: [(node: SCNNode, base: SIMD2<Float>, height: Float, half: Float)] = []
+  private var shadowKey = ""
+  private let longShadowMat: SCNMaterial = { let m = Blob.material.copy() as! SCNMaterial; return m }()
   private var h: (Float, Float) -> Float { { [weak self] x, z in self?.outside?.groundY(x, z) ?? 0.4 } }
   private var hOpt: (Float, Float) -> Float? { { [weak self] x, z in self?.outside?.height(x, z) } }
 
@@ -39,6 +43,7 @@ final class OutdoorSet {
     buildTracks()
     buildFlags()
     buildRocks()
+    buildShadows()
     for g in [outdoorOnly, habitat, always] { scene.rootNode.addChildNode(g) }
     habitat.name = "habitat"
   }
@@ -177,23 +182,164 @@ final class OutdoorSet {
     }
   }
 
+  // ---------------------------------------------------------------- the lander
+
+  /// A shared exterior hull texture (panel seams, rivet rows, scuffed bare-metal edges, dust climbing from the ground,
+  /// a service stripe), drawn over the same Poly Haven plate grain the interior panels use. 1024 x 512.
+  static func hullTexture(seed: UInt64 = 77, tint: PlatformColor = PlatformColor(red: 0.80, green: 0.77, blue: 0.72, alpha: 1), stripe: Bool = true) -> PlatformImage {
+    Bitmap.image(size: CGSize(width: 1024, height: 512), scale: 1, opaque: true) { ctx in
+      var rng = Tex.RNG(s: seed)
+      ctx.setFillColor(tint.cgColor)
+      ctx.fill(CGRect(x: 0, y: 0, width: 1024, height: 512))
+      if let grain = Tex.cg("metal_plate_02_diff_1k") {
+        ctx.saveGState()
+        ctx.setBlendMode(.softLight)
+        ctx.setAlpha(0.55)
+        Tex.draw(ctx, grain, in: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+        ctx.restoreGState()
+      }
+      for r in 0..<2 {
+        for c in 0..<4 {
+          let x0 = CGFloat(c) * 256, y0 = CGFloat(r) * 256
+          let t = 0.93 + 0.10 * rng.next()
+          ctx.setFillColor(PlatformColor(white: t > 1 ? 1 : 0, alpha: abs(t - 1) * 0.7).cgColor)
+          ctx.fill(CGRect(x: x0, y: y0, width: 256, height: 256))
+          // Rivet rows with a lit upper edge.
+          for k in 0..<12 {
+            let x = x0 + 14 + CGFloat(k) * 20
+            for y in [y0 + 11, y0 + 241] {
+              ctx.setFillColor(PlatformColor(white: 0.18, alpha: 0.6).cgColor)
+              ctx.fillEllipse(in: CGRect(x: x, y: y, width: 5, height: 5))
+              ctx.setFillColor(PlatformColor(white: 1, alpha: 0.35).cgColor)
+              ctx.fillEllipse(in: CGRect(x: x + 0.5, y: y, width: 3, height: 2.5))
+            }
+          }
+          // Edge wear: bare metal showing along the panel edges.
+          for _ in 0..<26 {
+            let onTop = rng.next() < 0.5
+            let x = x0 + rng.next() * 240, y = onTop ? y0 + 1 + rng.next() * 4 : y0 + 250 - rng.next() * 4
+            ctx.setFillColor(PlatformColor(white: 0.55 + 0.2 * rng.next(), alpha: 0.5).cgColor)
+            ctx.fill(CGRect(x: x, y: y, width: 3 + rng.next() * 14, height: 1.5 + rng.next() * 2))
+          }
+        }
+      }
+      // Seams: dark groove with a light lip.
+      ctx.setFillColor(PlatformColor(white: 0.12, alpha: 0.85).cgColor)
+      for c in 0...4 { ctx.fill(CGRect(x: CGFloat(c) * 256 - 1.5, y: 0, width: 3, height: 512)) }
+      for r in 0...2 { ctx.fill(CGRect(x: 0, y: CGFloat(r) * 256 - 1.5, width: 1024, height: 3)) }
+      ctx.setFillColor(PlatformColor(white: 1, alpha: 0.18).cgColor)
+      for c in 0...4 { ctx.fill(CGRect(x: CGFloat(c) * 256 + 1.5, y: 0, width: 2, height: 512)) }
+      if stripe { Draw.fill(ctx, CGRect(x: 0, y: 372, width: 1024, height: 14), PlatformColor(red: 0.85, green: 0.45, blue: 0.20, alpha: 1)) }
+      // Grime streaks running down from the seams, then regolith dust climbing the lower half.
+      for _ in 0..<70 {
+        ctx.setFillColor(PlatformColor(red: 0.30, green: 0.24, blue: 0.19, alpha: 0.05 + 0.10 * rng.next()).cgColor)
+        ctx.fill(CGRect(x: rng.next() * 1024, y: rng.next() * 380, width: 2 + rng.next() * 7, height: 24 + rng.next() * 110))
+      }
+      for y in 0..<512 {
+        let a = 0.62 * pow(CGFloat(y) / 512, 2.0)
+        ctx.setFillColor(PlatformColor(red: 0.62, green: 0.43, blue: 0.29, alpha: a).cgColor)
+        ctx.fill(CGRect(x: 0, y: CGFloat(y), width: 1024, height: 1))
+      }
+    }
+  }
+
+  /// One cargo lander standing on the pad: squat drum hull on four splayed legs, engine bells, a nose cone, a ring of
+  /// warm windows, and an open cargo hatch with a ramp running down to the pallets (so the crates visibly come off it).
+  private func buildLander(at l: SIMD2<Float>) {
+    let toCrates = Spots.crates - l
+    let yaw = atan2(-toCrates.y, toCrates.x) // local +X points at the crates
+    let y0 = h(l.x, l.y)
+    let rig = SCNNode()
+    let hull = imageMat(Self.hullTexture(), repeatX: 3, repeatY: 1)
+    let cone = imageMat(Self.hullTexture(seed: 91, tint: PlatformColor(red: 0.86, green: 0.83, blue: 0.78, alpha: 1), stripe: false), repeatX: 3, repeatY: 1)
+    let steel = mat(PlatformColor(white: 0.30, alpha: 1), rough: 0.5)
+    let darkM = mat(PlatformColor(red: 0.10, green: 0.09, blue: 0.09, alpha: 1))
+    let glow = mat(PlatformColor(white: 0.1, alpha: 1), emissive: PlatformColor(red: 1.0, green: 0.74, blue: 0.40, alpha: 1))
+    let ramp = mat(PlatformColor(red: 0.26, green: 0.25, blue: 0.25, alpha: 1))
+    let yellow = mat(PlatformColor(red: 0.90, green: 0.68, blue: 0.14, alpha: 1))
+    let R: Float = 2.5, legH: Float = 1.7, bodyH: Float = 5.2
+    func add(_ g: SCNGeometry, _ m: SCNMaterial, _ p: SIMD3<Float>, euler: SIMD3<Float> = .zero) {
+      g.materials = [m]
+      let n = SCNNode(geometry: g)
+      n.simdPosition = p
+      n.simdEulerAngles = euler
+      rig.addChildNode(n)
+    }
+    func strut(_ a: SIMD3<Float>, _ b: SIMD3<Float>, _ radius: CGFloat) {
+      let d = b - a, len = simd_length(d)
+      let c = SCNCylinder(radius: radius, height: CGFloat(len))
+      c.materials = [steel]
+      let n = SCNNode(geometry: c)
+      n.simdPosition = (a + b) / 2
+      n.simdOrientation = simd_quatf(from: SIMD3(0, 1, 0), to: d / len)
+      rig.addChildNode(n)
+    }
+    let body = SCNCylinder(radius: CGFloat(R), height: CGFloat(bodyH))
+    body.radialSegmentCount = 36
+    body.materials = [hull, cone, cone]
+    let bn = SCNNode(geometry: body)
+    bn.simdPosition = SIMD3(0, legH + bodyH / 2, 0)
+    rig.addChildNode(bn)
+    let nose = SCNCone(topRadius: 0.4, bottomRadius: CGFloat(R), height: 3.4)
+    nose.radialSegmentCount = 36
+    add(nose, cone, SIMD3(0, legH + bodyH + 1.7, 0))
+    add(SCNCylinder(radius: 0.05, height: 1.6), steel, SIMD3(0, legH + bodyH + 3.4 + 0.7, 0)) // antenna
+    // Engine cluster under the hull: three dark bells.
+    for k in 0..<3 {
+      let a = Float(k) / 3 * 2 * .pi
+      add(SCNCone(topRadius: 0.35, bottomRadius: 0.75, height: 1.3), darkM, SIMD3(cos(a) * 0.9, legH - 0.45, sin(a) * 0.9))
+    }
+    // Four splayed legs with footpads that follow the ground, each with a second strut from the hull.
+    for k in 0..<4 {
+      let a = (Float(k) + 0.5) / 4 * 2 * .pi
+      let top = SIMD3<Float>(cos(a) * (R - 0.2), legH + 0.8, sin(a) * (R - 0.2))
+      let fx = l.x + (cos(a) * 4.9) * cos(yaw) + (sin(a) * 4.9) * sin(yaw)
+      let fz = l.y - (cos(a) * 4.9) * sin(yaw) + (sin(a) * 4.9) * cos(yaw)
+      let foot = SIMD3<Float>(cos(a) * 4.9, h(fx, fz) - y0 + 0.08, sin(a) * 4.9)
+      strut(top, foot, 0.14)
+      add(SCNCylinder(radius: 0.65, height: 0.18), steel, foot + SIMD3(0, 0.05, 0))
+      strut(SIMD3(cos(a) * (R - 0.1), legH + 2.6, sin(a) * (R - 0.1)), (top + foot) / 2 + SIMD3(0, 0.2, 0), 0.07)
+    }
+    // Windows: a ring of warm strips near the top of the drum, skipping the hatch side.
+    for k in 0..<9 {
+      let a = (Float(k) + 0.5) / 9 * 2 * .pi
+      if abs(atan2(sin(a), cos(a))) < 0.7 { continue }
+      add(SCNBox(width: 0.07, height: 0.34, length: 0.95, chamferRadius: 0.02), glow, SIMD3(cos(a) * (R + 0.03), legH + bodyH - 0.9, sin(a) * (R + 0.03)), euler: SIMD3(0, -a, 0))
+    }
+    // Cargo hatch: a dark frame, a lit bay, and the ramp down to the pallets.
+    let hatchY = legH + 0.9
+    add(SCNBox(width: 0.25, height: 2.7, length: 2.5, chamferRadius: 0.03), darkM, SIMD3(R + 0.02, hatchY + 1.35, 0))
+    add(SCNBox(width: 0.1, height: 2.3, length: 2.1, chamferRadius: 0.03), glow, SIMD3(R + 0.16, hatchY + 1.2, 0))
+    let run: Float = 4.0, rise = hatchY, rl = sqrt(run * run + rise * rise), ang = atan2(rise, run)
+    add(SCNBox(width: CGFloat(rl), height: 0.12, length: 2.1, chamferRadius: 0.01), ramp, SIMD3(R + 0.1 + run / 2, hatchY / 2 + 0.02, 0), euler: SIMD3(0, 0, -ang))
+    for sz in [Float(-1.1), 1.1] {
+      add(SCNBox(width: CGFloat(rl), height: 0.18, length: 0.1, chamferRadius: 0.01), yellow, SIMD3(R + 0.1 + run / 2, hatchY / 2 + 0.12, sz), euler: SIMD3(0, 0, -ang))
+    }
+    for sz in [Float(-1.0), 1.0] {
+      strut(SIMD3(R + 0.1, hatchY + 0.9, sz), SIMD3(R + 0.1 + run * 0.55, hatchY * 0.45, sz), 0.05)
+    }
+    rig.simdPosition = SIMD3(l.x, y0 - 0.06, l.y)
+    rig.simdEulerAngles.y = yaw
+    let baked = Dressing.bake(rig)
+    baked.name = "lander"
+    always.addChildNode(baked)
+    // A faint warm exhaust glow on the ground under the engines (a lit sprite, depth-tested).
+    let g = SCNPlane(width: 10, height: 10)
+    g.materials = [Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.58, blue: 0.22, alpha: 1), strength: 0.28)]
+    let gn = SCNNode(geometry: g)
+    gn.simdPosition = SIMD3(l.x, y0 + 0.2, l.y)
+    gn.simdEulerAngles.x = -.pi / 2
+    gn.renderingOrder = 36
+    always.addChildNode(gn)
+  }
+
   private func buildPad() {
     let l = Spots.lander
     let g = Drape.patch(center: l, half: 9.5, yaw: 0, cell: 0.6, lift: 0.07, height: hOpt)
     always.addChildNode(decal(g, decalMat(Self.padTexture()), order: 30))
-    let s = Drape.patch(center: l + SIMD2(1.5, -1.0), half: 12, yaw: 0.6, cell: 0.8, lift: 0.1, height: hOpt)
+    let s = Drape.patch(center: l, half: 8.5, yaw: 0.6, cell: 0.7, lift: 0.1, height: hOpt)
     always.addChildNode(decal(s, decalMat(Self.scorchTexture()), order: 31))
-    // The cargo lander (Kenney craft_cargoA, CC0), dust-dulled.
-    if let lander = outside?.loadProp("craft_cargoA") {
-      let k: Float = 6
-      lander.simdScale = SIMD3(repeating: k)
-      place(lander, l, yaw: 2.2, lift: 0.0)
-      lander.enumerateHierarchy { n, _ in
-        for m in n.geometry?.materials ?? [] { m.multiply.contents = PlatformColor(red: 0.88, green: 0.80, blue: 0.72, alpha: 1) }
-      }
-      lander.name = "lander"
-      always.addChildNode(lander)
-    }
+    buildLander(at: l)
     // Pad lamp posts (emissive tops: they carry the pad through the storm).
     let post = mat(PlatformColor(white: 0.35, alpha: 1))
     let lampM = mat(PlatformColor(white: 0.1, alpha: 1), emissive: PlatformColor(red: 1.0, green: 0.78, blue: 0.40, alpha: 1))
@@ -649,6 +795,83 @@ final class OutdoorSet {
       ctx.strokePath()
       _ = Draw.text("ENTER THE BASE", at: CGPoint(x: 0, y: 26), size: 100, weight: .heavy, color: accent, width: size.width, align: .center)
       _ = Draw.text("Look at the door and press the button", at: CGPoint(x: 0, y: 144), size: 46, weight: .bold, color: Palette.text, width: size.width, align: .center)
+    }
+  }
+
+  // ---------------------------------------------------------------- shadows
+
+  /// Terrain-frame (azimuth, distance) -> world (x, z), for the props Outside places on the terrain root.
+  private func world(az: Float, dist: Float) -> SIMD2<Float> {
+    guard let root = outside?.root else { return .zero }
+    let a = az * .pi / 180
+    let w = root.convertPosition(SCNVector3(sin(a) * dist, 0, -cos(a) * dist), to: nil)
+    return SIMD2(Float(w.x), Float(w.z))
+  }
+
+  /// A soft dark blob under every prop (one batched mesh, one shared decal), plus long soft shadows for the big props.
+  private func buildShadows() {
+    var items: [Blob.Item] = []
+    func blob(_ p: SIMD2<Float>, _ rx: Float, _ rz: Float, _ yaw: Float = 0) { items.append(Blob.Item(center: p, rx: rx, rz: rz, yaw: yaw)) }
+    let c = Spots.crates
+    blob(c + SIMD2(0.35, 0.1), 1.6, 1.6, 0.2); blob(c + SIMD2(2.25, 0.6), 1.5, 1.5, -0.25); blob(c + SIMD2(-0.05, 2.0), 1.5, 1.5, 0.5)
+    blob(c + SIMD2(3.4, 1.9), 1.2, 1.2, 0.9)
+    for off in [SIMD2<Float>(-2.4, -0.6), SIMD2(-2.9, 0.9), SIMD2(-1.9, 2.2)] { blob(c + off, 1.0, 1.0) }
+    blob(c + SIMD2(4.6, -1.8), 1.8, 1.4, 2.6)
+    let l = Spots.lander
+    for i in 0..<4 { let a = Float(i) / 4 * 2 * .pi + 0.4; blob(l + SIMD2(cos(a), sin(a)) * 9.2, 0.7, 0.7) }
+    blob(l, 3.6, 3.6)
+    let o = Spots.outcrop
+    blob(o, 1.5, 1.3, 0.4); blob(o + SIMD2(-1.3, -0.5), 1.1, 1.0, 2.0); blob(o + SIMD2(1.2, -1.2), 1.3, 1.1, 3.6); blob(o + SIMD2(0.6, 1.6), 0.9, 0.8, 5.0)
+    blob(Spots.scientist, 0.7, 0.7)
+    blob(Spots.fieldCenter, 12.5, 7.0) // the solar field as a whole
+    blob(world(az: 318, dist: 10), 3.4, 3.0, 0.4); blob(world(az: 289, dist: 21), 4.6, 4.0, 0.8); blob(Spots.drill, 2.4, 1.8)
+    blob(world(az: 303, dist: 22), 2.6, 1.8, 1.0)
+    blob(Spots.moduleCenter, 4.2, 4.2)
+    blob(SIMD2(3.6, -8.4), 3.0, 2.2, 0.2)
+    if let g = Blob.geometry(items, height: hOpt) {
+      let n = SCNNode(geometry: g)
+      n.renderingOrder = 37
+      n.name = "prop-blobs"
+      outdoorOnly.addChildNode(n)
+    }
+    // Long shadows (world position of the base, height, half width).
+    let big: [(SIMD2<Float>, Float, Float)] = [
+      (Spots.lander, 10.6, 2.6), (.zero, 5.2, Spots.habRadius), (Spots.moduleCenter, 3.2, 3.0), (world(az: 303, dist: 22), 2.4, 1.3),
+      (SIMD2(-9.5, -6.5), 5.5, 1.6), (Spots.drill, 9.0, 1.0),
+    ]
+    for (base, hgt, half) in big {
+      let n = SCNNode()
+      n.renderingOrder = 36
+      n.name = "long-shadow"
+      outdoorOnly.addChildNode(n)
+      longShadows.append((n, base, hgt, half))
+    }
+    longShadowMat.writesToDepthBuffer = false
+    if let o = outside {
+      let info = o.sunInfo
+      setSun(dir: info.0, elevation: info.1, strength: info.2)
+      o.onSun = { [weak self] d, e, s in self?.setSun(dir: d, elevation: e, strength: s) }
+    }
+  }
+
+  /// The sun moved (or the storm dimmed it): turn every long shadow away from it and stretch it with the low sun.
+  func setSun(dir: SIMD3<Float>, elevation: Float, strength: Float) {
+    longShadowMat.transparency = CGFloat(0.25 + 0.6 * min(1, max(0, strength)))
+    let flat = SIMD2(dir.x, dir.z)
+    guard simd_length(flat) > 0.01 else { return }
+    let away = simd_normalize(-flat)
+    let key = "\(Int((atan2(away.y, away.x) * 180 / .pi) / 2))|\(Int(elevation))"
+    guard key != shadowKey else { return }
+    shadowKey = key
+    let yaw = atan2(-away.y, away.x)
+    let tanE = tan(max(elevation, 7) * .pi / 180)
+    for s in longShadows {
+      let len = min(s.height / tanE, s.height * 4.5)
+      let reach = max(len, s.half * 1.4)
+      let center = s.base + away * (reach / 2 - s.half * 0.5)
+      let g = Drape.rect(center: center, halfX: reach / 2 + s.half * 0.5, halfZ: s.half * 1.15, yaw: yaw, cell: 2.0, lift: 0.03, height: hOpt)
+      g.materials = [longShadowMat]
+      s.node.geometry = g
     }
   }
 
