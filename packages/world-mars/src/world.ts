@@ -12,10 +12,15 @@ const DAY = 24 * HOUR;
  * The real Perseverance close-up the scientist's view shows (credited on screen). Filled from CREDITS.md
  * once the imagery is sourced; until then the lines avoid the specific numbers.
  */
-export const SCIENCE_REF: { scientist: string; instrument: string; sol?: number; target?: string; credit: string; image?: string; source?: string } = {
+export const SCIENCE_REF: { scientist: string; instrument: string; sol?: number; target?: string; credit: string; image?: string; source?: string; caption: string } = {
   scientist: "Science Officer Okonkwo",
   instrument: "the WATSON camera",
+  sol: 1526,
+  target: "Kenmore",
   credit: "NASA/JPL-Caltech/MSSS",
+  image: "perseverance-sol1526-watson-kenmore.jpg",
+  source: "NASA/JPL PIA26576",
+  caption: "Perseverance, SHERLOC WATSON camera: abrasion patch \"Kenmore\", sol 1526 (2025-06-05). Credit NASA/JPL-Caltech/MSSS, PIA26576.",
 };
 
 /** Octavia E. Butler Landing, Jezero crater (research/03). */
