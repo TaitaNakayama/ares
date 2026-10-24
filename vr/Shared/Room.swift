@@ -22,9 +22,22 @@ enum Room {
 
   static func build(into root: SCNNode) {
     let shell = SCNNode()
-    let wall = mat(PlatformColor(red: 0.88, green: 0.86, blue: 0.82, alpha: 1), rough: 0.8)
-    let wallDark = mat(PlatformColor(red: 0.74, green: 0.72, blue: 0.69, alpha: 1), rough: 0.8)
+    // Painted-metal wall panels: three paint variants; the window's sill and header pieces show the
+    // bottom / top slice of the same panel texture so seams and grime line up.
+    let panels = (0..<3).map { Tex.material(Tex.wallPanel(variant: $0)) }
+    func slice(_ m: SCNMaterial, y0: Float, y1: Float) -> SCNMaterial {
+      let c = m.copy() as! SCNMaterial
+      let f = (y1 - y0) / height
+      c.diffuse.contentsTransform = SCNMatrix4MakeScale(1, CGFloat(f), 1)
+      c.diffuse.wrapT = .clamp
+      c.diffuse.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, CGFloat(f), 1), SCNMatrix4MakeTranslation(0, CGFloat(y0 / height), 0))
+      return c
+    }
+    let sillPanels = panels.map { slice($0, y0: 0, y1: sill) }
+    let headPanels = panels.map { slice($0, y0: header, y1: height) }
     let trim = mat(PlatformColor(red: 0.90, green: 0.50, blue: 0.22, alpha: 1), rough: 0.5)
+    let alu = Tex.material(Tex.brushed())
+    let kick = mat(PlatformColor(red: 0.20, green: 0.19, blue: 0.19, alpha: 1), rough: 0.6)
     let frame = mat(PlatformColor(white: 0.25, alpha: 1), rough: 0.4)
     let seg: Float = 5
     let w = CGFloat(2 * radius * sin(seg / 2 * .pi / 180)) + 0.01
@@ -36,7 +49,8 @@ enum Room {
       let pieces: [(Float, Float)] = inWindow ? [(Float(0), sill), (header, height)] : [(Float(0), height)]
       for (y0, y1) in pieces {
         let p = SCNNode(geometry: SCNPlane(width: w, height: CGFloat(y1 - y0)))
-        p.geometry?.materials = [i % 4 == 0 ? wallDark : wall]
+        let v = i % 3
+        p.geometry?.materials = [!inWindow ? panels[v] : (y0 == 0 ? sillPanels[v] : headPanels[v])]
         p.position = ring(c, r: radius, y: (y0 + y1) / 2)
         p.look(at: SCNVector3(0, (y0 + y1) / 2, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
         shell.addChildNode(p)
@@ -44,10 +58,23 @@ enum Room {
       // Waist trim band around the room (skipped across the window).
       if !inWindow {
         let band = SCNNode(geometry: SCNPlane(width: w, height: 0.06))
-        band.geometry?.materials = [trim]
+        band.geometry?.materials = [alu]
         band.position = ring(c, r: radius - 0.01, y: 1.05)
         band.look(at: SCNVector3(0, 1.05, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
         shell.addChildNode(band)
+        let accent = SCNNode(geometry: SCNPlane(width: w, height: 0.018))
+        accent.geometry?.materials = [trim]
+        accent.position = ring(c, r: radius - 0.014, y: 1.095)
+        accent.look(at: SCNVector3(0, 1.095, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
+        shell.addChildNode(accent)
+        // Brushed-aluminium crown trim under the ceiling and a dark kick plate at the floor.
+        for (mm, hh, yy, off) in [(alu, Float(0.10), Float(height - 0.05), Float(0.012)), (kick, Float(0.14), Float(0.07), Float(0.012))] {
+          let t = SCNNode(geometry: SCNPlane(width: w, height: CGFloat(hh)))
+          t.geometry?.materials = [mm]
+          t.position = ring(c, r: radius - off, y: yy)
+          t.look(at: SCNVector3(0, yy, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
+          shell.addChildNode(t)
+        }
       }
       a += seg
       i += 1
@@ -79,7 +106,7 @@ enum Room {
     floor.position = SCNVector3(0, -0.02, 0)
     shell.addChildNode(floor)
     let ceil = SCNNode(geometry: SCNCylinder(radius: CGFloat(radius + 0.05), height: 0.04))
-    ceil.geometry?.materials = [mat(PlatformColor(white: 0.82, alpha: 1), rough: 0.9)]
+    ceil.geometry?.materials = [Tex.material(Tex.ceilingImage())]
     ceil.position = SCNVector3(0, height + 0.02, 0)
     shell.addChildNode(ceil)
     // Consoles: an arc desk under the window.
@@ -122,16 +149,54 @@ enum Room {
       root.addChildNode(led)
       k += 6
     }
-    // Interior light: warm, soft.
+    // Warm ceiling strips: emissive bars plus a soft additive glow sprite on the ceiling (no bloom pass).
+    let strips = SCNNode()
+    let sprites = SCNNode()
+    let stripMat = SCNMaterial()
+    stripMat.lightingModel = .constant
+    stripMat.diffuse.contents = PlatformColor(red: 1.0, green: 0.90, blue: 0.70, alpha: 1)
+    let halo = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.78, blue: 0.5, alpha: 1), strength: 0.55)
+    for k in 0..<8 {
+      let deg = Float(k) * 45 + 22.5
+      let bar = SCNNode(geometry: SCNBox(width: 0.10, height: 0.02, length: 1.5, chamferRadius: 0))
+      bar.geometry?.materials = [stripMat]
+      bar.position = ring(deg, r: 2.9, y: height - 0.03)
+      bar.simdEulerAngles.y = -deg * .pi / 180
+      strips.addChildNode(bar)
+      let s = SCNNode(geometry: SCNPlane(width: 0.9, height: 2.3))
+      s.geometry?.materials = [halo]
+      s.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+      let holder = SCNNode()
+      holder.position = ring(deg, r: 2.9, y: height - 0.045)
+      holder.simdEulerAngles.y = -deg * .pi / 180
+      holder.addChildNode(s)
+      sprites.addChildNode(holder)
+    }
+    root.addChildNode(strips.flattenedClone())
+    let spriteFlat = sprites.flattenedClone()
+    spriteFlat.renderingOrder = 50
+    root.addChildNode(spriteFlat)
+    // Interior light: warm key from the ceiling, plus a cool fill from the screens on each side.
     let lamp = SCNNode()
     lamp.light = SCNLight()
     lamp.light?.type = .omni
-    lamp.light?.intensity = 520
-    lamp.light?.color = PlatformColor(red: 1.0, green: 0.90, blue: 0.78, alpha: 1)
+    lamp.light?.intensity = 620
+    lamp.light?.color = PlatformColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1)
     lamp.light?.attenuationStartDistance = 3
     lamp.light?.attenuationEndDistance = 9
     lamp.position = SCNVector3(0, 2.9, 0.5)
     root.addChildNode(lamp)
+    for side: Float in [-1, 1] {
+      let fill = SCNNode()
+      fill.light = SCNLight()
+      fill.light?.type = .omni
+      fill.light?.intensity = 220
+      fill.light?.color = PlatformColor(red: 0.62, green: 0.74, blue: 0.85, alpha: 1)
+      fill.light?.attenuationStartDistance = 1.5
+      fill.light?.attenuationEndDistance = 5
+      fill.position = SCNVector3(side * 2.7, 1.8, -1.2)
+      root.addChildNode(fill)
+    }
   }
 
   static func mat(_ c: PlatformColor, rough: CGFloat) -> SCNMaterial {
@@ -143,22 +208,6 @@ enum Room {
   }
 
   static func floorMaterial() -> SCNMaterial {
-    let size = CGSize(width: 512, height: 512)
-    let img = Bitmap.image(size: size) { c in
-      c.setFillColor(PlatformColor(red: 0.20, green: 0.21, blue: 0.23, alpha: 1).cgColor)
-      c.fill(CGRect(origin: .zero, size: size))
-      c.setStrokeColor(PlatformColor(white: 1, alpha: 0.08).cgColor)
-      c.setLineWidth(3)
-      for r in stride(from: 40.0, through: 250.0, by: 52.0) {
-        c.strokeEllipse(in: CGRect(x: 256 - r, y: 256 - r, width: 2 * r, height: 2 * r))
-      }
-      c.setStrokeColor(PlatformColor(red: 0.9, green: 0.5, blue: 0.22, alpha: 0.5).cgColor)
-      c.setLineWidth(5)
-      c.strokeEllipse(in: CGRect(x: 256 - 70, y: 256 - 70, width: 140, height: 140))
-    }
-    let m = SCNMaterial()
-    m.lightingModel = .lambert
-    m.diffuse.contents = img
-    return m
+    Tex.material(Tex.floorImage())
   }
 }
