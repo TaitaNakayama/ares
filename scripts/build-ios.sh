@@ -15,8 +15,9 @@ mkdir -p $ROOT/vr/AresVR/Resources
 TOKEN_FILE=$ROOT/.cache/headset-token
 [ -f $TOKEN_FILE ] || { mkdir -p $ROOT/.cache; openssl rand -hex 16 > $TOKEN_FILE; }
 TOKEN=$(cat $TOKEN_FILE)
+GROUND=""; [ -n "$ARES_GROUND" ] && GROUND='"ground": true, '   # spike C-17: ground-level judge
 {
-  echo "{ \"token\": \"$TOKEN\", \"servers\": ["
+  echo "{ \"token\": \"$TOKEN\", ${GROUND}\"servers\": ["
   for ip in ${(f)IPS}; do echo "  \"ws://$ip:8787/?client=vr\","; done
   [ -n "$HOST" ] && echo "  \"ws://$HOST.local:8787/?client=vr\","
   # iPhone Personal Hotspot hands out 172.20.10.2-14; try them all after the known addresses.

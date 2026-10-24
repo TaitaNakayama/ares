@@ -45,6 +45,8 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   private(set) var fps: Double = 0
   private var poseFrame = 0
   private var statsTick = 0
+  /// Spike C-17: ground-level judge outside, near-field detail (only with the --ground flag).
+  private var groundSpike: GroundSpike?
 
   override var prefersStatusBarHidden: Bool { true }
   override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -83,6 +85,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
     scnRenderer.prepare(all, completionHandler: nil)
+    if GroundSpike.enabled { groundSpike = GroundSpike(world: world) }
     _ = Sound.shared // prewarm: the first use costs about 150 ms
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
@@ -183,6 +186,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
       let rot = simd_quatf(angle: -directorYaw * .pi / 180, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: directorPitch * .pi / 180, axis: SIMD3(1, 0, 0))
       headView = simd_float4x4(rot).inverse
     }
+    groundSpike?.update(time: now, fps: fps)
     world.update(time: now, headView: headView, fps: fps, link: link)
 
     // Stream the judge's real head to the Mac spectator at 30 Hz: world-from-head rotation (inverse of the view).
@@ -274,10 +278,12 @@ final class VRViewController: UIViewController, MTKViewDelegate {
       statsTick += 1
       if statsTick % 2 == 0 {
         let e0 = world.eyes[0].simdWorldPosition, e1 = world.eyes[1].simdWorldPosition
-        link.sendStats(["fps": fps, "thermal": ProcessInfo.processInfo.thermalState.rawValue, "flipV": flipV, "w": Int(cardboard.width), "h": Int(cardboard.height), "uptime": t - startTime,
+        var st: [String: Any] = ["fps": fps, "thermal": ProcessInfo.processInfo.thermalState.rawValue, "flipV": flipV, "w": Int(cardboard.width), "h": Int(cardboard.height), "uptime": t - startTime,
                         "eyeFromHeadL": [cardboard.eyeFromHead[0].columns.3.x, cardboard.eyeFromHead[0].columns.3.y, cardboard.eyeFromHead[0].columns.3.z],
                         "eyeFromHeadR": [cardboard.eyeFromHead[1].columns.3.x, cardboard.eyeFromHead[1].columns.3.y, cardboard.eyeFromHead[1].columns.3.z],
-                        "eyeSepWorld": simd_distance(e0, e1), "projL00": cardboard.projection[0].columns.0.x, "projL20": cardboard.projection[0].columns.2.x, "projR20": cardboard.projection[1].columns.2.x])
+                        "eyeSepWorld": simd_distance(e0, e1), "projL00": cardboard.projection[0].columns.0.x, "projL20": cardboard.projection[0].columns.2.x, "projR20": cardboard.projection[1].columns.2.x]
+        if let g = groundSpike { st.merge(g.stats) { $1 } }
+        link.sendStats(st)
       }
     }
   }
