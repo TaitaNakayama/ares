@@ -62,10 +62,25 @@ _Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
 
 ## The headset (vr/)
 
+- Scene code lives in `vr/Shared` (shared with the Mac spectator view); iOS-only code in `vr/AresVR/Sources`.
+
 - `CardboardSession` wraps the Cardboard C API: head pose, eye matrices, lens distortion and the Metal distortion renderer. The V2 viewer profile is the default when no QR has been scanned.
 - `VRViewController` runs the MTKView loop: two SceneKit offscreen passes (one per eye), then the distortion pass, at 60 fps. Touch-down is the button, and long-press rescans the QR.
 - `BaseScene` holds the room (`Room`) and the window view (`Outside`: terrain, a cube-map sky from tau and sun, fog, sun light, panels, drill, dust). It also holds `WallScreens`, the five robots (`Robots`) and the 2×2 decision cards.
 - `Link` is a WebSocket client with several baked addresses, reconnects, stats and frame capture. If no server answers it plays the bundled tape (`tape.json`, recorded from the live server for each choice).
+
+## The spectator view (vr/Spectator, macOS)
+
+- `vr/Shared` holds the scene and link code compiled by both apps. `Platform.swift` maps UIKit/AppKit colour, font and image types and gives one top-left-origin bitmap drawing helper.
+- The headset streams `vr_pose` at 30 Hz: head rotation, gazed card, whether cards are up, eye FOV. The server relays it only from the newest token-authenticated headset to loopback `client=spectator` sockets. Spectators are read-only.
+- `SpectatorController`:
+  - renders the same `BaseScene` through one camera at the head position, smoothed toward the judge's pose (time constant 0.1 s) with the FOV 10° wider than the headset's;
+  - runs `BaseScene.update` with the judge's raw pose, so hover and robots behave as in the headset;
+  - overlays the gaze dot, subtitles from the `narration` stream, the enlarged decision card, the beat and the LIVE/REPLAY badge.
+- **Modes:**
+  - LIVE: the headset is connected and its pose is under 1 s old.
+  - REPLAY: the demo build with no live headset. It plays the bundled tape under a slow drifting camera.
+  - DEBUG: the debug build only, with the live state under a mouse camera while no headset is live. The mouse code is behind `#if DEBUG`, so it doesn't exist in the Release build.
 
 ## Networking
 

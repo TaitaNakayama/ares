@@ -41,6 +41,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # xcode-select
 xcrun devicectl list devices      # phone: B177F8D9-2156-5A6C-8882-05087D03426A
 scripts/build-ios.sh              # XcodeGen -> xcodebuild (signed) -> devicectl install + launch (phone must be unlocked)
 scripts/build-cardboard.sh        # rebuild Cardboard SDK static libs (vr/Vendor, gitignored)
+scripts/build-spectator.sh        # Mac spectator view, full screen (Release; --debug = mouse camera, --windowed)
 curl -X POST localhost:8787/api/capture/request   # headset uploads its current frame to .cache/captures/latest.jpg
 curl localhost:8787/api/vr/stats  # headset fps / thermal / link
 node scripts/record-tape.ts       # re-record the offline replay tape from the live server
