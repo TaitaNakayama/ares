@@ -72,6 +72,9 @@ const clients = new Set<WebSocket>();
 /** Headset sockets get only what the headset needs (small messages, no engine firehose). */
 const vrClients = new WeakSet<WebSocket>();
 let vrStats: Record<string, unknown> = {};
+let recDir: string | undefined;
+let recSeq = 0;
+let recFps = 12;
 let unsubscribe = wire(session);
 
 function wire(s: Session): () => void {
@@ -82,7 +85,7 @@ function wire(s: Session): () => void {
   });
 }
 
-const VR_TYPES = new Set(["vr_state", "capture", "reset"]);
+const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer"]);
 function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
@@ -342,6 +345,40 @@ const server = http.createServer(async (req, res) => {
       writeFileSync(join(dir, "latest.jpg"), Buffer.concat(chunks));
       writeFileSync(join(dir, "latest.json"), JSON.stringify(Object.fromEntries(url.searchParams)));
       return send(res, 200, { ok: true, name });
+    }
+    if (path === "/api/record/start" && req.method === "POST") {
+      const b = await readJson(req);
+      recDir = new URL(`../../../.cache/rec/${Date.now()}/`, import.meta.url).pathname;
+      mkdirSync(recDir, { recursive: true });
+      recSeq = 0;
+      recFps = Number(b.fps ?? 12);
+      broadcast({ type: "record", on: true, fps: recFps, director: b.director !== false });
+      return send(res, 200, { ok: true, dir: recDir });
+    }
+    if (path === "/api/record/frame" && req.method === "POST") {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      if (recDir) writeFileSync(join(recDir, `f_${String(++recSeq).padStart(5, "0")}.jpg`), Buffer.concat(chunks));
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/api/record/stop" && req.method === "POST") {
+      broadcast({ type: "record", on: false });
+      if (!recDir) return send(res, 400, { error: "not recording" });
+      const out = new URL(`../../../docs/demo/ares-vr-${Date.now()}.mp4`, import.meta.url).pathname;
+      mkdirSync(new URL("../../../docs/demo/", import.meta.url).pathname, { recursive: true });
+      const dir = recDir;
+      recDir = undefined;
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(recFps), "-i", join(dir, "f_%05d.jpg"), "-vf", "scale=1312:-2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out]);
+      return send(res, 200, { ok: true, frames: recSeq, out });
+    }
+    if (path === "/api/headset/recenter" && req.method === "POST") {
+      broadcast({ type: "recenter" });
+      return send(res, 200, { ok: true, clients: clients.size });
+    }
+    if (path === "/api/headset/scan" && req.method === "POST") {
+      broadcast({ type: "scan_viewer" });
+      return send(res, 200, { ok: true });
     }
     if (path === "/api/capture/request" && req.method === "POST") {
       const yaw = url.searchParams.get("yaw");

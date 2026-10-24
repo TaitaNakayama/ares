@@ -6,8 +6,9 @@ import simd
 /// five robots, gaze-selectable decision cards and the reticle.
 final class BaseScene {
   let scene = SCNScene()
-  let cameraNode = SCNNode()
-  let camera = SCNCamera()
+  /// Head pose node; each eye is a fixed child (head-from-eye), with its own projection.
+  let head = SCNNode()
+  let eyes = [SCNNode(), SCNNode()]
   /// Eye height: the world is shifted down so the head sits 1.6 m above the floor.
   let viewOffset: simd_float4x4 = {
     var m = matrix_identity_float4x4
@@ -27,6 +28,7 @@ final class BaseScene {
   private let caption = TextPanel(width: 1.9, height: 0.34, pixelsPerMeter: 1000)
   private var captionSeq = -1
   private var captionAt: TimeInterval = -100
+  private var captionRole: String?
   private let cardRoot = SCNNode()
   private var cards: [SCNNode] = []
   private var cardPanels: [TextPanel] = []
@@ -42,10 +44,14 @@ final class BaseScene {
   private var hideUntil: TimeInterval = 0
 
   init() {
-    camera.zNear = 0.05
-    camera.zFar = 60_000
-    cameraNode.camera = camera
-    scene.rootNode.addChildNode(cameraNode)
+    for e in eyes {
+      let c = SCNCamera()
+      c.zNear = 0.05
+      c.zFar = 60_000
+      e.camera = c
+      head.addChildNode(e)
+    }
+    scene.rootNode.addChildNode(head)
     Room.build(into: scene.rootNode)
     outside = Outside(scene: scene)
     screens = WallScreens(root: scene.rootNode)
@@ -153,6 +159,7 @@ final class BaseScene {
   private func showCaption(role: String, r: VRState.Robot, seq: Int) {
     captionSeq = seq
     captionAt = now
+    captionRole = role
     let color = Palette.role(role)
     let name = (r.name ?? role).uppercased()
     let text = r.short ?? r.text ?? ""
@@ -177,21 +184,23 @@ final class BaseScene {
   }
 
   /// The Cardboard button.
+  private var lastTap: TimeInterval = -10
+
   func tap() {
+    // Debounce: the conductive lever can bounce, and a choice must be sent once.
+    guard now - lastTap > 0.35 else { return }
+    lastTap = now
     taps += 1
     guard cardsVisible, let h = hovered, let name = h.name, name.hasPrefix("card:"), let i = Int(name.dropFirst(5)), i < cardTargets.count, !cardTargets[i].esc.isEmpty else {
       lastTapText = "tap"
       return
     }
+    guard now >= hideUntil else { return }
     let t = cardTargets[i]
     lastTapText = "chose: \(t.label)"
     hideUntil = now + 1.5
     onDecide?(t.esc, t.opt)
-    SCNTransaction.begin()
-    SCNTransaction.animationDuration = 0.1
-    h.scale = SCNVector3(0.94, 0.94, 0.94)
-    SCNTransaction.completionBlock = { [weak self] in self?.showCards(false) }
-    SCNTransaction.commit()
+    showCards(false)
   }
 
   private func showCards(_ on: Bool) {
@@ -230,19 +239,37 @@ final class BaseScene {
     }
   }
 
+  /// Where the director camera should look (yaw right-positive, pitch up-positive, degrees).
+  func directorTarget(now: TimeInterval) -> (Float, Float) {
+    if cardsVisible { return (0, -6) }
+    if now - captionAt < 5, let role = captionRole {
+      switch role {
+      case "requester": return (-42, 0)
+      case "receiver": return (-22, -10)
+      case "ap": return (24, -8)
+      case "treasury": return (46, 0)
+      case "controller": return (12, 6)
+      default: return (0, 0)
+      }
+    }
+    return (0, 0)
+  }
+
   static func firstSentence(_ s: String) -> String {
     if let r = s.range(of: ". ") { return String(s[..<r.lowerBound]) + "." }
     return s
   }
 
   private func updateDebug(link: Link, fps: Double) {
-    let key = "\(link.statusText)|\(Int(fps.rounded()))|\(taps)|\(lastTapText)|\(latest?.seed ?? "")"
+    let status = link.statusText, f = Int(fps.rounded()), tapCount = taps, tapText = lastTapText
+    let seed = latest?.seed ?? "-", pv = latest?.policyVersion ?? 0
+    let key = "\(status)|\(f)|\(tapCount)|\(tapText)|\(seed)"
     debug.update(key: key) { ctx, size in
       Draw.fill(ctx, CGRect(origin: .zero, size: size), Palette.bg)
-      _ = Draw.text("ARES · \(link.statusText)", at: CGPoint(x: 30, y: 24), size: 44, weight: .bold, color: link.statusText.hasPrefix("Live") ? Palette.green : Palette.red, width: size.width - 60)
-      _ = Draw.text("\(Int(fps.rounded())) fps · taps \(self.taps) · \(self.lastTapText)", at: CGPoint(x: 30, y: 110), size: 40, weight: .semibold, width: size.width - 60)
-      _ = Draw.text("Seed \(self.latest?.seed ?? "-") · policy v\(self.latest?.policyVersion ?? 0)", at: CGPoint(x: 30, y: 190), size: 36, weight: .medium, color: Palette.dim)
-      _ = Draw.text("Hold the screen 2 s (out of the viewer) to scan your viewer QR", at: CGPoint(x: 30, y: 270), size: 30, weight: .medium, color: Palette.dim, width: size.width - 60)
+      _ = Draw.text("ARES · \(status)", at: CGPoint(x: 30, y: 24), size: 44, weight: .bold, color: status.hasPrefix("Live") ? Palette.green : Palette.red, width: size.width - 60)
+      _ = Draw.text("\(f) fps · taps \(tapCount) · \(tapText)", at: CGPoint(x: 30, y: 110), size: 40, weight: .semibold, width: size.width - 60)
+      _ = Draw.text("Seed \(seed) · policy v\(pv)", at: CGPoint(x: 30, y: 190), size: 36, weight: .medium, color: Palette.dim)
+      _ = Draw.text("Two-finger hold 2 s (out of the viewer) scans your viewer QR", at: CGPoint(x: 30, y: 270), size: 30, weight: .medium, color: Palette.dim, width: size.width - 60)
     }
   }
 }

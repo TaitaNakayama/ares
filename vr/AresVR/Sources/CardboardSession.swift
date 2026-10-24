@@ -46,8 +46,10 @@ final class CardboardSession {
     CardboardQrCode_getSavedDeviceParams(&buf, &size)
     if let b = buf { CardboardQrCode_destroy(b) }
     if size > 0 { return true }
-    let uri = Array(Self.cardboardV2URI.utf8)
-    uri.withUnsafeBufferPointer { CardboardQrCode_saveDeviceParams($0.baseAddress, Int32($0.count)) }
+    // The iOS SDK reads this as a C string, so it must be NUL-terminated.
+    var uri = Array(Self.cardboardV2URI.utf8)
+    uri.append(0)
+    uri.withUnsafeBufferPointer { CardboardQrCode_saveDeviceParams($0.baseAddress, Int32($0.count - 1)) }
     return false
   }
 

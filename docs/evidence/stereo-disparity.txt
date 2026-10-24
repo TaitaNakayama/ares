@@ -1,0 +1,2 @@
+stereo2.jpg: 2622x1206, lens separation 1157 px, left lens centre x=732, textured patches 116
+  histogram of (best shift - lens separation): -28:1 -27:1 -26:2 -24:1 -23:1 -22:1 -21:1 -20:2 -17:3 -16:5 -15:10 -14:5 -13:4 -12:3 -11:8 -10:31 -9:5 -8:7 -7:2 -4:3 -3:1 -2:3 -1:3 0:7 1:4 2:1 3:1

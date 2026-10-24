@@ -36,6 +36,11 @@ final class Link: NSObject, @unchecked Sendable {
   private(set) var lastDecision: String?
   /// Debug: capture with an optional forced head direction (yaw/pitch in degrees).
   var onCaptureRequest: ((Double?, Double?) -> Void)?
+  var onRecenter: (() -> Void)?
+  var onScanViewer: (() -> Void)?
+  /// Recording mode for the demo video: (on, fps, director camera).
+  var onRecord: ((Bool, Int, Bool) -> Void)?
+  private let uploadQueue = DispatchQueue(label: "ares.upload")
   private weak var world: BaseScene?
   private var task: URLSessionWebSocketTask?
   private var session: URLSession!
@@ -180,8 +185,11 @@ final class Link: NSObject, @unchecked Sendable {
   private func handle(_ s: String) {
     everConnected = true
     if isReplay { DispatchQueue.main.async { self.exitReplay() } }
-    if case .connecting = status, let t = task {
-      setStatus(.connected(current?.host ?? ""))
+    let wasConnecting: Bool = { if case .connected = status { return false }; return true }()
+    if wasConnecting, let t = task {
+      lock.lock()
+      status = .connected(current?.host ?? "")
+      lock.unlock()
       keepAlive(t)
     }
     guard let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = obj["type"] as? String else { return }
@@ -196,6 +204,15 @@ final class Link: NSObject, @unchecked Sendable {
       }
     case "decided":
       lastDecision = obj["summary"] as? String
+    case "recenter":
+      DispatchQueue.main.async { self.onRecenter?() }
+    case "scan_viewer":
+      DispatchQueue.main.async { self.onScanViewer?() }
+    case "record":
+      let on = obj["on"] as? Bool ?? false
+      let fps = obj["fps"] as? Int ?? 12
+      let director = obj["director"] as? Bool ?? true
+      DispatchQueue.main.async { self.onRecord?(on, fps, director) }
     case "capture":
       let yaw = obj["yaw"] as? Double
       let pitch = obj["pitch"] as? Double
@@ -231,6 +248,19 @@ final class Link: NSObject, @unchecked Sendable {
     let msg = ["type": "decide", "escalationId": escalationId, "optionId": optionId]
     guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
     task?.send(.string(s)) { _ in }
+  }
+
+  /// Recording: post one video frame (JPEG) to the server.
+  func uploadFrame(_ jpg: Data) {
+    guard let ws = current, var comps = URLComponents(url: ws, resolvingAgainstBaseURL: false) else { return }
+    comps.scheme = ws.scheme == "wss" ? "https" : "http"
+    comps.path = "/api/record/frame"
+    comps.query = nil
+    guard let url = comps.url else { return }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("image/jpeg", forHTTPHeaderField: "content-type")
+    session.uploadTask(with: req, from: jpg).resume()
   }
 
   /// Debug: post a JPEG of the current frame to the server.
