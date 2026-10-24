@@ -182,7 +182,7 @@ export class Engine {
   readonly items = new Map<string, Item>();
   readonly contracts: Contract[];
   readonly priceHistory: PriceObservation[];
-  readonly levers: Lever[];
+  levers: Lever[];
 
   readonly requisitions = new Map<string, Requisition>();
   readonly quotes = new Map<string, Quote & { status: "open" | "held" | "used" | "rejected"; flags: FlagCode[] }>();
@@ -345,6 +345,11 @@ export class Engine {
 
   pendingInbound(): readonly ScheduledInbound[] {
     return this.inbound;
+  }
+
+  /** Worlds refresh lever descriptions as conditions change (e.g. power saved at current dust levels). */
+  setLevers(levers: Lever[]): void {
+    this.levers = levers.map((l) => ({ ...l }));
   }
 
   setRemoteLatency(ms: number): void {

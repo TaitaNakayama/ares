@@ -37,6 +37,7 @@ export interface OrchestratorOptions {
  */
 export class Orchestrator {
   readonly engine: Engine;
+  readonly meta: Record<string, unknown>;
   readonly world: World;
   readonly narration: Narration[] = [];
   private readonly brains: Brain[];
@@ -50,6 +51,8 @@ export class Orchestrator {
   private narrSeq = 0;
   private steps = 0;
   private busy = false;
+  /** Per-actor credentials. Never handed to brains: an agent can only ever act as itself. */
+  readonly #creds = new Map<string, string>();
 
   constructor(opts: OrchestratorOptions) {
     this.world = opts.world;
@@ -58,7 +61,9 @@ export class Orchestrator {
     this.paceMs = opts.paceMs ?? 0;
     this.maxSteps = opts.maxSteps ?? 50_000;
     const setup = this.world.setup();
-    this.engine = new Engine(setup.config);
+    this.meta = setup.meta;
+    this.engine = new Engine({ ...setup.config, requireCredentials: true });
+    for (const a of this.engine.actors.values()) this.#creds.set(a.id, this.engine.issueCredential(a.id));
     this.engine.subscribe((e) => {
       this.queue.push(e);
       this.emit({ type: "engine", event: e });
@@ -129,11 +134,28 @@ export class Orchestrator {
     await this.runUntil(Math.min(limit, Math.max(this.engine.now, limit)));
   }
 
-  /** A human acted (VR decision or console); push it through the same pipeline. */
-  async submitHuman(input: ProposalInput): Promise<SubmitResult> {
-    const res = this.engine.submit({ ...input, source: input.source ?? "human" });
-    const actor = this.engine.actors.get(input.actorId);
-    if (actor) this.narrate(actor.id, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : `${input.type.replace(/_/g, " ")}`, res.decision.verdict === "deny" ? "attentive" : "calm", res);
+  /**
+   * A human acted (VR decision or console). The host decides which human role the
+   * caller is; the credential is attached here, never taken from the caller.
+   */
+  /** Policy edits come from the console acting as the policy owner (remote authority). */
+  setPolicy(policy: unknown): void {
+    const owner = this.roleActor("remote_authority");
+    if (!owner) throw new Error("no policy owner");
+    this.engine.setPolicy(policy, owner);
+  }
+
+  async submitHuman(role: "local_authority" | "remote_authority", input: Omit<ProposalInput, "actorId" | "credential">): Promise<SubmitResult> {
+    const actorId = this.roleActor(role);
+    if (!actorId) throw new Error(`no actor for ${role}`);
+    const res = this.engine.submit({ ...input, actorId, credential: this.#creds.get(actorId), source: input.source ?? "human" });
+    const actor = this.engine.actors.get(actorId);
+    let text = input.type.replace(/_/g, " ");
+    if (input.type === "decide") {
+      const { escalationId, optionId } = input.params as { escalationId: string; optionId: string };
+      text = `Decision: ${this.engine.escalations.get(escalationId)?.options.find((o) => o.id === optionId)?.label ?? optionId}`;
+    }
+    if (actor) this.narrate(actor.id, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : text, res.decision.verdict === "deny" ? "attentive" : "calm", res);
     await this.drain();
     return res;
   }
@@ -149,7 +171,7 @@ export class Orchestrator {
       return;
     }
     if (event.type === "external") {
-      const res = this.engine.submit({ actorId: event.actorId, type: event.action, params: event.params, source: "human" });
+      const res = this.engine.submit({ actorId: event.actorId, type: event.action, params: event.params, source: "human", credential: this.#creds.get(event.actorId) });
       this.narrate(event.actorId, res.decision.verdict === "deny" ? `Refused: ${res.decision.summary}` : event.summary, "calm", res);
       return;
     }
@@ -190,7 +212,7 @@ export class Orchestrator {
       await this.pace();
       return;
     }
-    const res = this.engine.submit({ actorId, type: it.type, params: it.params, rationale: it.rationale, source: brain.kind });
+    const res = this.engine.submit({ actorId, type: it.type, params: it.params, rationale: it.rationale, source: brain.kind, credential: this.#creds.get(actorId) });
     const v = res.decision.verdict;
     if (v === "deny") {
       const failed = res.decision.rules.filter((r) => !r.ok).map((r) => r.detail).join("; ");

@@ -45,6 +45,18 @@ importers:
         specifier: 2.1.19
         version: 2.1.19
 
+  scripts:
+    dependencies:
+      '@ares/agents':
+        specifier: workspace:*
+        version: link:../packages/agents
+      '@ares/engine':
+        specifier: workspace:*
+        version: link:../packages/engine
+      '@ares/world-mars':
+        specifier: workspace:*
+        version: link:../packages/world-mars
+
 packages:
 
   '@jridgewell/resolve-uri@3.1.2':

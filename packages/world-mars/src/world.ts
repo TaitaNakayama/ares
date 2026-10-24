@@ -1,0 +1,609 @@
+import type { ScheduledWorldEvent, World, WorldEvent, WorldSetup } from "@ares/agents";
+import { DEFAULT_POLICY, formatCents, Rng, type Actor, type BankAccount, type Engine, type EngineEvent, type Lever, type Policy, type Time, type Vendor } from "@ares/engine";
+import { CATALOG, deliveredCents, FREIGHT_USD_PER_KG, generateMarket, randomBank, type GeneratedMarket } from "./catalog.ts";
+import { earthMarsDistanceAu, fmtLtst, lightTimeMs, marsSun, SOL_MS } from "./mars-time.ts";
+import { OPPORTUNITY_POINTS, PowerModel } from "./power.ts";
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+
+/** Octavia E. Butler Landing, Jezero crater (research/03). */
+export const SITE = { lat: 18.4446, lonE: 77.4509, name: "Jezero Crater, near Octavia E. Butler Landing" };
+/** Base founding date used for sol numbering (SIMULATED). */
+const BASE_EPOCH = Date.UTC(2025, 8, 1);
+
+export const MARS_ACTORS: Actor[] = [
+  { id: "engineer", role: "requester", displayName: "Engineer" },
+  { id: "cargo", role: "receiver", displayName: "Cargo Keeper" },
+  { id: "bills", role: "ap", displayName: "Bill Checker" },
+  { id: "money", role: "treasury", displayName: "Money Keeper" },
+  { id: "rules", role: "controller", displayName: "Rule Keeper" },
+  { id: "commander", role: "local_authority", displayName: "Commander" },
+  { id: "cfo", role: "remote_authority", displayName: "Earth CFO" },
+];
+
+export const MARS_POLICY: Policy = {
+  ...DEFAULT_POLICY,
+  name: "Ares Base P2P controls",
+  version: 1,
+  approval: { agentMaxCents: 250_000_000, localAuthorityMaxCents: 1_100_000_000, remoteAuthorityMaxCents: 50_000_000_000, splitWindowDays: 7 },
+  match: { priceTolerancePct: 2, payReceivedQtyOnly: true },
+  // A call-back to the supplier's number on file happens in their business hours.
+  vendorBankChange: { action: "hold_and_verify", verificationProcessingMs: 3 * HOUR },
+  duplicates: { windowDays: 120 },
+  priceAnomaly: { zThreshold: 4, ratioThreshold: 1.35, minHistory: 4 },
+  materialityCents: 10_000_000,
+  treasury: { minRunwayDays: 120 },
+};
+
+export type ErrorType = "duplicate_invoice" | "bank_fraud_invoice" | "bank_fraud_quote" | "inflated_quote" | "inflated_invoice" | "short_delivery" | "over_contract_quote";
+export type DecoyType = "legit_bank_change" | "small_price_rise" | "damaged_rejected";
+
+export interface ErrorRates {
+  duplicate_invoice: number;
+  bank_fraud_invoice: number;
+  bank_fraud_quote: number;
+  inflated_quote: number;
+  inflated_invoice: number;
+  short_delivery: number;
+  over_contract_quote: number;
+  legit_bank_change: number;
+  small_price_rise: number;
+  damaged_rejected: number;
+}
+
+export const DEFAULT_RATES: ErrorRates = {
+  duplicate_invoice: 0.06,
+  bank_fraud_invoice: 0.05,
+  bank_fraud_quote: 0.05,
+  inflated_quote: 0.06,
+  inflated_invoice: 0.06,
+  short_delivery: 0.1,
+  over_contract_quote: 0.05,
+  legit_bank_change: 0.05,
+  small_price_rise: 0.15,
+  damaged_rejected: 0.06,
+};
+
+/** Ground truth for one planted document. Never shown to the engine. */
+export interface AnswerKeyEntry {
+  docId: string;
+  cycle: number;
+  kind: "quote" | "invoice" | "delivery";
+  errors: ErrorType[];
+  decoys: DecoyType[];
+  vendorId: string;
+  /** What a correct process pays for this document (0 for fraud/duplicates). */
+  fairCents: number;
+  /** What the document asks for. */
+  billedCents: number;
+  /** For quotes: should a PO ever be issued on it? */
+  shouldOrder?: boolean;
+  requisitionId?: string;
+}
+
+interface CycleState {
+  cycle: number;
+  sku: string;
+  qty: number;
+  requisitionId?: string;
+  planned: { quotes: PlannedQuote[]; delivery: { short: number; damaged: number }; invoice: PlannedInvoice };
+}
+interface PlannedQuote {
+  vendorId: string;
+  unitPrice: number;
+  qtyAvailable: number;
+  bank: BankAccount;
+  terms: "prepay" | "on_receipt";
+  errors: ErrorType[];
+  decoys: DecoyType[];
+  legitNewBank?: BankAccount;
+}
+interface PlannedInvoice {
+  priceFactor: number;
+  fraudBank: boolean;
+  duplicate: boolean;
+  errors: ErrorType[];
+  decoys: DecoyType[];
+}
+
+export interface MarsWorldOptions {
+  seed: string;
+  mode: "demo" | "eval";
+  start?: Time;
+  cycles?: number;
+  rates?: Partial<ErrorRates>;
+  policy?: Policy;
+}
+
+export class MarsWorld implements World {
+  readonly id = "mars";
+  readonly seed: string;
+  readonly mode: "demo" | "eval";
+  readonly start: Time;
+  readonly market: GeneratedMarket;
+  readonly answerKey: AnswerKeyEntry[] = [];
+  readonly power: PowerModel;
+  private readonly rng: Rng;
+  private readonly rates: ErrorRates;
+  private readonly policy: Policy;
+  private readonly cycles: CycleState[] = [];
+  private readonly reqToCycle = new Map<string, CycleState>();
+  private readonly poToCycle = new Map<string, CycleState>();
+  /** Truth about pending bank changes: account key -> is it legitimate? */
+  private readonly bankTruth = new Map<string, boolean>();
+  private docSeq = 0;
+  private lastPowerT: Time;
+  private lastTelemetryT = -Infinity;
+  // Demo state
+  tau = 0.6;
+  private stormFrom?: { t: Time; tau0: number; tau1: number; durMs: number };
+  beat = 0;
+  readonly cyclesTotal: number;
+
+  constructor(opts: MarsWorldOptions) {
+    this.seed = opts.seed;
+    this.mode = opts.mode;
+    this.start = opts.start ?? Date.UTC(2026, 9, 24, 3, 0);
+    this.rng = new Rng(`mars:${opts.seed}`);
+    this.rates = { ...DEFAULT_RATES, ...opts.rates };
+    this.policy = opts.policy ?? MARS_POLICY;
+    this.market = generateMarket(this.rng.fork("market"), this.start);
+    this.cyclesTotal = opts.cycles ?? 40;
+    this.power = new PowerModel({ arrayScale: 934, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 14, iceDrill: 5, science: 1 } });
+    this.lastPowerT = this.mode === "demo" ? this.start - 32 * DAY : this.start;
+  }
+
+  setup(): WorldSetup {
+    return {
+      config: {
+        policy: this.policy,
+        actors: MARS_ACTORS,
+        vendors: this.market.vendors,
+        items: CATALOG.map(({ sku, name, unit }) => ({ sku, name, unit })),
+        contracts: this.market.contracts,
+        priceHistory: this.market.history,
+        openingCash: 18_000_000_000,
+        burnPerDayCents: 60_000_000,
+        // The demo starts a month early so the routine filter order (the prologue) really happens in sim time.
+        startTime: this.mode === "demo" ? this.start - 32 * DAY : this.start,
+        remoteLatencyMs: lightTimeMs(this.start),
+        levers: [this.drillLever()],
+      },
+      meta: {
+        world: "mars",
+        seed: this.seed,
+        mode: this.mode,
+        site: SITE,
+        start: this.start,
+        freightUsdPerKg: Math.round(FREIGHT_USD_PER_KG),
+        credits: [
+          "Terrain: NASA/JPL-Caltech/UArizona (HiRISE), MSSS (CTX); USGS Astrogeology Mars 2020 TRN products",
+          "Sun: Mars24, NASA GISS (Allison & McEwen 2000)",
+          "Earth-Mars distance: astronomy-engine (MIT), checked against JPL Horizons",
+          "Solar power vs dust: Opportunity 2018 storm, JPL mission updates",
+          "Crew consumables: NASA BVAD Rev1 (2018)",
+          "Freight: Falcon Heavy list price / Mars payload (Wikipedia, 2026-10-23)",
+          "Suppliers, prices, budget, invoices: SIMULATED",
+        ],
+        powerCalibration: OPPORTUNITY_POINTS,
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------- time & physics
+
+  sol(t: Time): number {
+    return Math.floor((t - BASE_EPOCH) / SOL_MS);
+  }
+
+  fmtTime = (t: Time): string => {
+    const s = marsSun(t, SITE.lat, SITE.lonE);
+    return `Sol ${this.sol(t)} ${fmtLtst(s.ltst)}`;
+  };
+
+  private tauAt(t: Time): number {
+    const st = this.stormFrom;
+    if (!st || t < st.t) return this.tau;
+    const f = Math.min(1, (t - st.t) / st.durMs);
+    return st.tau0 + (st.tau1 - st.tau0) * (1 - Math.cos(Math.PI * f)) / 2;
+  }
+
+  private drillLever(): Lever {
+    const tau = this.tauAt(this.lastPowerT);
+    const st = this.power.state(tau);
+    const saved = this.power.loads.iceDrill * 24.6597;
+    const net = st.solarKWhPerSol - st.loadKWhPerSol;
+    const after = net + saved >= 0 ? "no deficit" : `${(st.socKWh / -(net + saved)).toFixed(1)} sols`;
+    return {
+      id: "drill_off",
+      label: "Shut down the ice drill",
+      detail: `Saves about ${Math.round(saved)} kWh per sol (ESTIMATE). Water production pauses. Reserve goes from ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "no deficit"} to ${after}.`,
+      appliesToSkus: ["BAT-10"],
+    };
+  }
+
+  telemetry(t: Time, engine: Engine): Record<string, unknown> {
+    const tau = this.tauAt(t);
+    const p = this.power.state(tau);
+    const sun = marsSun(t, SITE.lat, SITE.lonE);
+    return {
+      sol: this.sol(t),
+      ltst: fmtLtst(sun.ltst),
+      sun: { elevation: sun.elevation, azimuth: sun.azimuth, ls: sun.ls },
+      tau,
+      solarKWhPerSol: p.solarKWhPerSol,
+      loadKWhPerSol: p.loadKWhPerSol,
+      socKWh: p.socKWh,
+      socPct: (100 * p.socKWh) / p.capacityKWh,
+      solsLeft: Number.isFinite(p.solsLeft) ? p.solsLeft : null,
+      drillOn: p.drillOn,
+      lightTimeMin: lightTimeMs(t) / MIN,
+      earthDistanceAu: earthMarsDistanceAu(t),
+      cash: engine.ledger.balance("cash"),
+      runwayDays: engine.runwayDays(),
+      preventedTotal: engine.prevented.reduce((s, x) => s + x.amount, 0),
+      beat: this.beat,
+    };
+  }
+
+  onTime(t: Time, engine: Engine): ScheduledWorldEvent[] {
+    if (t > this.lastPowerT) {
+      this.power.step(t - this.lastPowerT, this.tauAt(t));
+      this.lastPowerT = t;
+    }
+    engine.setRemoteLatency(lightTimeMs(t));
+    if (t - this.lastTelemetryT < (this.mode === "demo" ? 0 : 6 * HOUR)) return [];
+    this.lastTelemetryT = t;
+    return [{ at: t, event: { type: "telemetry", data: this.telemetry(t, engine) } }];
+  }
+
+  // ---------------------------------------------------------------- documents
+
+  private docId(prefix: string): string {
+    return `${prefix}-${this.seed.slice(0, 6)}-${String(++this.docSeq).padStart(4, "0")}`;
+  }
+
+  private quoteDoc(engine: Engine, reqId: string, q: PlannedQuote, cycle: number): WorldEvent {
+    const v = engine.vendors.get(q.vendorId) ?? this.market.vendors.find((x) => x.id === q.vendorId)!;
+    const item = CATALOG.find((i) => i.sku === this.cycleOf(reqId)?.sku)!;
+    const id = this.docId("DOC-Q");
+    const validUntil = engine.now + 10 * DAY;
+    const bankLine = `Remit to: ${q.bank.holder}, ${q.bank.bank}, routing ${q.bank.routing}, account ${q.bank.account}`;
+    const changed = q.bank.account !== v.bank.account;
+    const text = [
+      `QUOTATION from ${v.name}`,
+      `Re: your request ${reqId}`,
+      `${item.name}: ${q.qtyAvailable} available at ${formatCents(q.unitPrice)} per ${item.unit}, delivered to the Jezero cargo manifest.`,
+      `Terms: ${q.terms === "prepay" ? "100% prepayment to secure manifest space" : "net 30 after delivery"}.`,
+      changed ? "Please note our banking details have changed; update your records and use the account below." : "",
+      bankLine,
+      `Valid until ${new Date(validUntil).toISOString().slice(0, 10)}.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const total = q.unitPrice * Math.min(q.qtyAvailable, this.cycleOf(reqId)?.qty ?? q.qtyAvailable);
+    this.answerKey.push({
+      docId: id,
+      cycle,
+      kind: "quote",
+      errors: q.errors,
+      decoys: q.decoys,
+      vendorId: q.vendorId,
+      fairCents: q.errors.length ? 0 : total,
+      billedCents: total,
+      shouldOrder: q.errors.length === 0,
+      requisitionId: reqId,
+    });
+    return {
+      type: "document",
+      doc: { id, kind: "quote", from: v.name, text, fields: { quote: { vendorId: q.vendorId, sku: item.sku, unitPrice: q.unitPrice, qtyAvailable: q.qtyAvailable, bank: q.bank, terms: q.terms, validUntil, requisitionId: reqId } } },
+    };
+  }
+
+  private invoiceDoc(engine: Engine, poId: string, cs: CycleState, opts: { bank: BankAccount; unitPrice: number; qty: number; no: string; errors: ErrorType[]; decoys: DecoyType[]; fair: number }): WorldEvent {
+    const po = engine.pos.get(poId)!;
+    const v = engine.vendors.get(po.vendorId)!;
+    const item = CATALOG.find((i) => i.sku === cs.sku)!;
+    const id = this.docId("DOC-I");
+    const total = opts.qty * opts.unitPrice;
+    const text = [
+      `INVOICE ${opts.no} from ${v.name}`,
+      `Purchase order: ${poId}`,
+      `${opts.qty} x ${item.name} @ ${formatCents(opts.unitPrice)} = ${formatCents(total)}`,
+      `Payment due in 30 days to: ${opts.bank.holder}, ${opts.bank.bank}, routing ${opts.bank.routing}, account ${opts.bank.account}`,
+    ].join("\n");
+    this.answerKey.push({ docId: id, cycle: cs.cycle, kind: "invoice", errors: opts.errors, decoys: opts.decoys, vendorId: v.id, fairCents: opts.fair, billedCents: total });
+    return {
+      type: "document",
+      doc: { id, kind: "invoice", from: v.name, text, fields: { invoice: { vendorId: v.id, vendorInvoiceNo: opts.no, poId, lines: [{ sku: cs.sku, qty: opts.qty, unitPrice: opts.unitPrice }], bank: opts.bank, issuedAt: engine.now, dueAt: engine.now + 30 * DAY } } },
+    };
+  }
+
+  private cycleOf(reqId: string): CycleState | undefined {
+    return this.reqToCycle.get(reqId);
+  }
+
+  // ---------------------------------------------------------------- planning (eval)
+
+  private planCycle(i: number, rng: Rng): CycleState {
+    const item = rng.pick(CATALOG);
+    const sellers = this.market.sellers.get(item.sku) ?? [];
+    const qty = item.sku === "BAT-10" ? rng.int(2, 6) : rng.int(5, 40);
+    const r = this.rates;
+    const quotes: PlannedQuote[] = rng.shuffle(sellers).slice(0, Math.max(2, Math.min(3, sellers.length))).map((vid) => {
+      const v = this.market.vendors.find((x) => x.id === vid)!;
+      const base = this.market.basePrice.get(vid)!.get(item.sku)!;
+      return { vendorId: vid, unitPrice: Math.round(base * (1 + rng.normal(0, 0.006))), qtyAvailable: qty + rng.int(0, 20), bank: v.bank, terms: "on_receipt" as const, errors: [], decoys: [] };
+    });
+    // Plant at most one quote problem per cycle, on the quote that would otherwise win.
+    const target = quotes.reduce((a, b) => (a.unitPrice <= b.unitPrice ? a : b));
+    const roll = rng.next();
+    let acc = 0;
+    const pickQuote = (p: number) => {
+      acc += p;
+      return roll < acc;
+    };
+    if (pickQuote(r.bank_fraud_quote)) {
+      target.bank = randomBank(rng, target.bank.holder, true);
+      target.unitPrice = Math.round(target.unitPrice * 0.97);
+      target.terms = "prepay";
+      target.errors.push("bank_fraud_quote");
+    } else if (pickQuote(r.inflated_quote)) {
+      target.unitPrice = Math.round(target.unitPrice * (1.5 + rng.next() * 2));
+      target.errors.push("inflated_quote");
+      for (const q of quotes) if (q !== target) q.qtyAvailable = Math.max(1, Math.floor(qty / 2)); // others can't cover it
+    } else if (pickQuote(r.over_contract_quote) && this.market.contracts.some((c) => c.vendorId === target.vendorId && c.sku === item.sku)) {
+      const c = this.market.contracts.find((x) => x.vendorId === target.vendorId && x.sku === item.sku)!;
+      target.unitPrice = Math.round(c.unitPrice * (1.06 + rng.next() * 0.1));
+      target.errors.push("over_contract_quote");
+    } else if (pickQuote(r.legit_bank_change)) {
+      target.legitNewBank = randomBank(rng, target.bank.holder);
+      target.bank = target.legitNewBank;
+      target.decoys.push("legit_bank_change");
+    } else if (pickQuote(r.small_price_rise)) {
+      target.unitPrice = Math.round(target.unitPrice * (1.01 + rng.next() * 0.015));
+      target.decoys.push("small_price_rise");
+    }
+    const short = rng.chance(r.short_delivery) ? rng.int(1, Math.max(1, Math.floor(qty * 0.25))) : 0;
+    const damaged = !short && rng.chance(r.damaged_rejected) ? rng.int(1, Math.max(1, Math.floor(qty * 0.15))) : 0;
+    const inv: PlannedInvoice = { priceFactor: 1, fraudBank: false, duplicate: false, errors: [], decoys: [] };
+    const iroll = rng.next();
+    if (iroll < r.inflated_invoice) {
+      inv.priceFactor = 1.05 + rng.next() * 0.2;
+      inv.errors.push("inflated_invoice");
+    } else if (iroll < r.inflated_invoice + r.bank_fraud_invoice) {
+      inv.fraudBank = true;
+      inv.errors.push("bank_fraud_invoice");
+    }
+    if (rng.chance(r.duplicate_invoice)) inv.duplicate = true;
+    if (short) inv.errors.push("short_delivery");
+    if (damaged) inv.decoys.push("damaged_rejected");
+    return { cycle: i, sku: item.sku, qty, planned: { quotes, delivery: { short, damaged }, invoice: inv } };
+  }
+
+  initialEvents(engine: Engine): ScheduledWorldEvent[] {
+    if (this.mode === "demo") return this.demoPrologue(engine);
+    const rng = this.rng.fork("cycles");
+    const out: ScheduledWorldEvent[] = [];
+    for (let i = 0; i < this.cyclesTotal; i++) {
+      const cs = this.planCycle(i, rng);
+      this.cycles.push(cs);
+      const item = CATALOG.find((x) => x.sku === cs.sku)!;
+      out.push({ at: this.start + i * 2 * DAY + rng.int(0, 20) * HOUR, event: { type: "need", sku: cs.sku, qty: cs.qty, orderBy: this.start + i * 2 * DAY + 20 * DAY, reason: `Stock of ${item.name} below reorder point.`, context: { cycle: i } } });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------- reacting to the engine
+
+  onEngineEvent(e: EngineEvent, engine: Engine): ScheduledWorldEvent[] {
+    const out: ScheduledWorldEvent[] = [];
+    const d = e.data as Record<string, never>;
+    switch (e.type) {
+      case "requisition_created": {
+        const req = d.requisition as unknown as { id: string; sku: string; qty: number; context?: { cycle?: number } };
+        const cs = this.mode === "demo" ? this.demoCycleFor(req) : this.cycles[req.context?.cycle ?? -1];
+        if (!cs) break;
+        cs.requisitionId = req.id;
+        this.reqToCycle.set(req.id, cs);
+        let t = e.at + 20 * MIN;
+        for (const q of cs.planned.quotes) {
+          if (q.legitNewBank) this.bankTruth.set(q.legitNewBank.account, true);
+          if (q.errors.includes("bank_fraud_quote")) this.bankTruth.set(q.bank.account, false);
+          out.push({ at: t, event: this.quoteDoc(engine, req.id, q, cs.cycle) });
+          t += 5 * MIN;
+        }
+        out.push({ at: t, event: { type: "rfq_closed", requisitionId: req.id } });
+        break;
+      }
+      case "po_created": {
+        const po = d.po as unknown as { id: string; requisitionId: string; lines: { sku: string; qty: number; unitPrice: number }[]; vendorId: string };
+        const cs = this.reqToCycle.get(po.requisitionId);
+        if (!cs) break;
+        this.poToCycle.set(po.id, cs);
+        const ordered = po.lines[0]!.qty;
+        const { short, damaged } = this.mode === "demo" && cs.cycle === 0 ? { short: 2, damaged: 0 } : cs.planned.delivery;
+        const got = Math.max(0, ordered - Math.min(short, ordered - 1));
+        const deliverAt = e.at + (this.mode === "demo" ? (cs.cycle === 0 ? 30 * DAY : 2 * HOUR) : (3 + this.rng.int(0, 4)) * DAY);
+        const delivDoc = this.docId("DOC-D");
+        this.answerKey.push({ docId: delivDoc, cycle: cs.cycle, kind: "delivery", errors: short ? ["short_delivery"] : [], decoys: damaged ? ["damaged_rejected"] : [], vendorId: po.vendorId, fairCents: (got - damaged) * po.lines[0]!.unitPrice, billedCents: ordered * po.lines[0]!.unitPrice });
+        if (this.mode === "demo" && cs.cycle === 1) {
+          // Battery order rides the cargo flight; it lands months after the demo ends.
+        } else if (!(this.mode === "demo" && cs.cycle === 0)) {
+          out.push({ at: deliverAt, event: { type: "delivery", poId: po.id, lines: [{ sku: cs.sku, qtyReceived: got, qtyRejected: damaged }], note: short ? `${ordered - got} missing from manifest` : damaged ? `${damaged} damaged in landing` : "complete", docId: delivDoc } });
+        } else {
+          this.demoFilterPo = { poId: po.id, got, ordered, deliverDoc: delivDoc };
+        }
+        // Invoice follows the delivery (vendor bills what was ordered).
+        if (this.mode === "eval") out.push(...this.invoicesFor(engine, po.id, cs, deliverAt + 6 * HOUR, got - damaged));
+        break;
+      }
+      case "verification_requested": {
+        // The remote authority (Earth) does the call-back and answers truthfully after the round trip.
+        const v = d.verification as unknown as { id: string; claimedBank: BankAccount; sentAt: Time };
+        const legit = this.bankTruth.get(v.claimedBank.account) ?? false;
+        const at = (d.expectedReplyAt as unknown as number) ?? v.sentAt + 2 * engine.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
+        out.push({ at, event: { type: "external", actorId: "cfo", action: "answer_verification", params: { verificationId: v.id, confirmed: legit, answer: legit ? "Supplier confirmed the new account on a call-back to the number on file." : "Supplier says it never changed its bank details. The request was fraudulent." }, summary: legit ? "Earth: call-back confirms the new bank account." : "Earth: the bank change was fake. The real supplier never sent it." } });
+        break;
+      }
+      case "escalation_delivered": {
+        const esc = d.escalation as unknown as { id: string; to: string; options: { id: string }[] };
+        // In eval both humans are simulated. In the demo only Earth is; the commander is the person in the headset.
+        if (esc.to === "remote_authority" || this.mode === "eval") {
+          const choice = esc.options.find((o) => o.id.startsWith("buy-")) ?? esc.options.find((o) => o.id === "approve") ?? esc.options.find((o) => o.id === "wait") ?? esc.options[0];
+          if (choice) {
+            const actorId = esc.to === "remote_authority" ? "cfo" : "commander";
+            const delay = esc.to === "remote_authority" ? 30 * MIN + engine.remoteLatencyMs : 10 * MIN;
+            out.push({ at: e.at + delay, event: { type: "external", actorId, action: "decide", params: { escalationId: esc.id, optionId: choice.id }, summary: `${actorId === "cfo" ? "Earth CFO" : "Commander"} chose ${choice.id}` } });
+          }
+        }
+        break;
+      }
+      case "lever_activated": {
+        if ((d.leverId as unknown as string) === "drill_off") {
+          this.power.drillOn = false;
+          const st = this.power.state(this.tauAt(e.at));
+          out.push({ at: e.at, event: { type: "narration", agentRole: "requester", text: `Ice drill powered down. Load is now ${Math.round(st.loadKWhPerSol)} kWh per sol; reserve ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, mood: "calm" } });
+          out.push({ at: e.at, event: { type: "telemetry", data: this.telemetry(e.at, engine) } });
+        }
+        break;
+      }
+      case "invoice_rejected": {
+        // A vendor whose invoice was rejected for price sends a corrected one at the agreed price.
+        const inv = d.invoice as unknown as { id: string; poId?: string; lines: { qty: number }[]; vendorInvoiceNo: string };
+        const reason = String(d.reason ?? "");
+        const cs = inv.poId ? this.poToCycle.get(inv.poId) : undefined;
+        if (cs && /price/i.test(reason) && !this.corrected.has(inv.poId!)) {
+          this.corrected.add(inv.poId!);
+          const po = engine.pos.get(inv.poId!)!;
+          const v = engine.vendors.get(po.vendorId)!;
+          const accepted = this.acceptedQty(engine, po.id);
+          out.push({ at: e.at + 2 * DAY, event: this.invoiceDoc(engine, po.id, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: po.lines[0]!.qty, no: `${inv.vendorInvoiceNo}-C`, errors: [], decoys: [], fair: accepted * po.lines[0]!.unitPrice }) });
+        }
+        break;
+      }
+    }
+    return out;
+  }
+
+  private corrected = new Set<string>();
+
+  private acceptedQty(engine: Engine, poId: string): number {
+    let n = 0;
+    for (const g of engine.receipts.values()) if (g.poId === poId) for (const l of g.lines) n += l.qtyReceived - l.qtyRejected;
+    return n;
+  }
+
+  private invoicesFor(engine: Engine, poId: string, cs: CycleState, at: Time, acceptedQty: number): ScheduledWorldEvent[] {
+    const po = engine.pos.get(poId)!;
+    const v = engine.vendors.get(po.vendorId)!;
+    const p = cs.planned.invoice;
+    const ordered = po.lines[0]!.qty;
+    const price = Math.round(po.lines[0]!.unitPrice * p.priceFactor);
+    const bank = p.fraudBank ? randomBank(this.rng, v.bank.holder, true) : v.bank;
+    if (p.fraudBank) this.bankTruth.set(bank.account, false);
+    const no = `${v.name.split(" ")[0]!.slice(0, 3).toUpperCase()}-${10_000 + cs.cycle * 7 + this.rng.int(0, 6)}`;
+    const fair = p.fraudBank ? 0 : acceptedQty * po.lines[0]!.unitPrice;
+    const out: ScheduledWorldEvent[] = [{ at, event: this.invoiceDoc(engine, poId, cs, { bank, unitPrice: price, qty: ordered, no, errors: p.errors, decoys: p.decoys, fair }) }];
+    if (p.duplicate) {
+      out.push({ at: at + (1 + this.rng.int(0, 5)) * DAY, event: this.invoiceDoc(engine, poId, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: ordered, no: this.rng.chance(0.5) ? no : `${no}A`, errors: ["duplicate_invoice"], decoys: [], fair: 0 }) });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------- demo director
+
+  private demoFilterPo?: { poId: string; got: number; ordered: number; deliverDoc: string };
+  private demoCycles: CycleState[] = [];
+
+  private demoCycleFor(req: { sku: string; qty: number }): CycleState | undefined {
+    return this.demoCycles.find((c) => c.sku === req.sku && c.qty === req.qty && !c.requisitionId);
+  }
+
+  /** Before the demo: a routine air-filter order a month ago (quotes, approval, PO). */
+  private demoPrologue(engine: Engine): ScheduledWorldEvent[] {
+    const filterSellers = this.market.sellers.get("FLT-HEPA") ?? [];
+    const quotes = filterSellers.slice(0, 2).map((vid) => {
+      const v = this.market.vendors.find((x) => x.id === vid)!;
+      return { vendorId: vid, unitPrice: this.market.basePrice.get(vid)!.get("FLT-HEPA")!, qtyAvailable: 60, bank: v.bank, terms: "on_receipt" as const, errors: [], decoys: [] };
+    });
+    this.demoCycles.push({ cycle: 0, sku: "FLT-HEPA", qty: 36, planned: { quotes, delivery: { short: 2, damaged: 0 }, invoice: { priceFactor: 1, fraudBank: false, duplicate: false, errors: ["short_delivery"], decoys: [] } } });
+
+    // Battery order for beat 2-7: usual supplier compromised (3x price, new bank), trusted alternative has 15.
+    const batSellers = this.market.sellers.get("BAT-10") ?? [];
+    const usual = this.market.vendors.find((x) => x.id === batSellers[0])!;
+    const alt = this.market.vendors.find((x) => x.id === batSellers[1])!;
+    const usualPrice = this.market.basePrice.get(usual.id)!.get("BAT-10")!;
+    const altPrice = this.market.basePrice.get(alt.id)!.get("BAT-10")!;
+    const fraudBank = randomBank(this.rng.fork("fraud"), usual.name, true);
+    this.bankTruth.set(fraudBank.account, false);
+    const altQty = Math.min(15, Math.floor(this.policy.approval.localAuthorityMaxCents / altPrice));
+    this.demoCycles.push({
+      cycle: 1,
+      sku: "BAT-10",
+      qty: 40,
+      planned: {
+        quotes: [
+          { vendorId: usual.id, unitPrice: Math.round(usualPrice * 3), qtyAvailable: 40, bank: fraudBank, terms: "prepay", errors: ["bank_fraud_quote", "inflated_quote"], decoys: [] },
+          // Manifest space is paid up front, so the trusted supplier also quotes prepayment.
+          { vendorId: alt.id, unitPrice: altPrice, qtyAvailable: altQty, bank: alt.bank, terms: "prepay", errors: [], decoys: [] },
+        ],
+        delivery: { short: 0, damaged: 0 },
+        invoice: { priceFactor: 1, fraudBank: false, duplicate: false, errors: [], decoys: [] },
+      },
+    });
+    const t0 = this.start - 31 * DAY;
+    return [{ at: t0, event: { type: "need", sku: "FLT-HEPA", qty: 36, orderBy: t0 + 10 * DAY, reason: "Routine resupply: air filter stock covers 40 sols.", context: {} } }];
+  }
+
+  /** Beat 1: the filters arrive (34 of 36) and the vendor bills 36. */
+  beatDelivery(engine: Engine): ScheduledWorldEvent[] {
+    this.beat = 1;
+    const f = this.demoFilterPo;
+    if (!f) return [];
+    const cs = this.demoCycles[0]!;
+    const po = engine.pos.get(f.poId)!;
+    const v = engine.vendors.get(po.vendorId)!;
+    const t = engine.now;
+    return [
+      { at: t, event: { type: "delivery", poId: f.poId, lines: [{ sku: "FLT-HEPA", qtyReceived: f.got, qtyRejected: 0 }], note: `${f.ordered - f.got} cartridges missing from the cargo manifest`, docId: f.deliverDoc } },
+      { at: t + 5 * MIN, event: this.invoiceDoc(engine, f.poId, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: f.ordered, no: `${v.name.split(" ")[0]!.slice(0, 3).toUpperCase()}-20417`, errors: ["short_delivery"], decoys: [], fair: f.got * po.lines[0]!.unitPrice }) },
+    ];
+  }
+
+  /** Beat 2: a dust storm rolls in; the Engineer asks for batteries for the cargo manifest. */
+  beatStorm(engine: Engine, rampMs = 45 * MIN): ScheduledWorldEvent[] {
+    this.beat = 2;
+    const t = engine.now;
+    this.stormFrom = { t, tau0: this.tauAt(t), tau1: 4.6, durMs: rampMs };
+    this.tau = 4.6;
+    const st = this.power.state(4.6);
+    engine.setLevers([this.drillLeverAt(4.6)]);
+    const reason = `Dust storm: tau ${(4.6).toFixed(1)}. Solar is down to ${Math.round(st.solarKWhPerSol)} kWh per sol against ${Math.round(st.loadKWhPerSol)} used; batteries last about ${st.solsLeft.toFixed(1)} sols. We need more storage before the next storm, and the cargo manifest for the November launch window closes in 90 minutes.`;
+    return [{ at: t + rampMs, event: { type: "need", sku: "BAT-10", qty: 40, orderBy: t + rampMs + 90 * MIN, reason, context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
+  }
+
+  private drillLeverAt(tau: number): Lever {
+    const saved = this.power.loads.iceDrill * 24.6597;
+    const st = this.power.state(tau);
+    const net = st.solarKWhPerSol - st.loadKWhPerSol;
+    return {
+      id: "drill_off",
+      label: "Shut down the ice drill",
+      detail: `Saves about ${Math.round(saved)} kWh per sol (ESTIMATE). Water production pauses. Reserve goes from ${st.solsLeft.toFixed(1)} to ${(st.socKWh / -(net + saved)).toFixed(1)} sols.`,
+      appliesToSkus: ["BAT-10"],
+    };
+  }
+
+  /** Mars-side vendor record helper for clients. */
+  vendor(id: string): Vendor | undefined {
+    return this.market.vendors.find((v) => v.id === id);
+  }
+
+  deliveredPrice(sku: string): number {
+    const item = CATALOG.find((i) => i.sku === sku);
+    return item ? deliveredCents(item) : 0;
+  }
+}
