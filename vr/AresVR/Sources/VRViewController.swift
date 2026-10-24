@@ -32,6 +32,8 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   private var recordEvery = 5
   private var recordDirector = true
   private var recordTex: MTLTexture?
+  private var videoColor: MTLTexture?
+  private var videoDepth: MTLTexture?
   private var recordFrame = 0
   private var recordInFlight = 0
   private var directorYaw: Float = 0
@@ -195,7 +197,22 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     if recording {
       recordFrame += 1
       if recordFrame % recordEvery == 0 && recordInFlight < 3 {
-        let src = eyeColor[0]
+        // Third pass: a mono 16:9 camera at the head centre, for a watchable video.
+        if videoColor == nil {
+          videoColor = makeTexture(.bgra8Unorm_srgb, 1280, 720, [.renderTarget, .shaderRead])
+          videoDepth = makeTexture(.depth32Float, 1280, 720, [.renderTarget])
+        }
+        let vrpd = MTLRenderPassDescriptor()
+        vrpd.colorAttachments[0].texture = videoColor
+        vrpd.colorAttachments[0].loadAction = .clear
+        vrpd.colorAttachments[0].storeAction = .store
+        vrpd.depthAttachment.texture = videoDepth
+        vrpd.depthAttachment.loadAction = .clear
+        vrpd.depthAttachment.storeAction = .dontCare
+        scnRenderer.pointOfView = world.videoCam
+        scnRenderer.render(atTime: now, viewport: CGRect(x: 0, y: 0, width: 1280, height: 720), commandBuffer: cmd, passDescriptor: vrpd)
+        scnRenderer.pointOfView = world.eyes[0]
+        let src = videoColor!
         if recordTex == nil || recordTex!.width != src.width {
           let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: src.pixelFormat, width: src.width, height: src.height, mipmapped: false)
           d.storageMode = .shared

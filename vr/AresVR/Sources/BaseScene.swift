@@ -9,6 +9,8 @@ final class BaseScene {
   /// Head pose node; each eye is a fixed child (head-from-eye), with its own projection.
   let head = SCNNode()
   let eyes = [SCNNode(), SCNNode()]
+  /// Mono 16:9 camera for the demo video (only rendered while recording).
+  let videoCam = SCNNode()
   /// Eye height: the world is shifted down so the head sits 1.6 m above the floor.
   let viewOffset: simd_float4x4 = {
     var m = matrix_identity_float4x4
@@ -29,6 +31,8 @@ final class BaseScene {
   private var captionSeq = -1
   private var captionAt: TimeInterval = -100
   private var captionRole: String?
+  private var lastSaved = ""
+  private var savedChangedAt: TimeInterval = -100
   private let cardRoot = SCNNode()
   private var cards: [SCNNode] = []
   private var cardPanels: [TextPanel] = []
@@ -51,6 +55,13 @@ final class BaseScene {
       e.camera = c
       head.addChildNode(e)
     }
+    let vc = SCNCamera()
+    vc.zNear = 0.05
+    vc.zFar = 60_000
+    vc.fieldOfView = 62
+    vc.projectionDirection = .vertical
+    videoCam.camera = vc
+    head.addChildNode(videoCam)
     scene.rootNode.addChildNode(head)
     Room.build(into: scene.rootNode)
     outside = Outside(scene: scene)
@@ -144,6 +155,10 @@ final class BaseScene {
 
   private func applyState(_ st: VRState?) {
     guard let st else { return }
+    if let saved = st.money?.savedText, saved != lastSaved {
+      if !lastSaved.isEmpty { savedChangedAt = now }
+      lastSaved = saved
+    }
     outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.setDrill(on: st.power?.drillOn ?? true)
     var newest: (role: String, r: VRState.Robot)?
@@ -241,7 +256,9 @@ final class BaseScene {
 
   /// Where the director camera should look (yaw right-positive, pitch up-positive, degrees).
   func directorTarget(now: TimeInterval) -> (Float, Float) {
-    if cardsVisible { return (0, -6) }
+    if cardsVisible { return (0, -4) }
+    // Money just saved: show it on the MONEY screen.
+    if now - savedChangedAt > 2.5 && now - savedChangedAt < 8 { return (60, 2) }
     if now - captionAt < 5, let role = captionRole {
       switch role {
       case "requester": return (-42, 0)
@@ -252,7 +269,7 @@ final class BaseScene {
       default: return (0, 0)
       }
     }
-    return (0, 0)
+    return (0, 3)
   }
 
   static func firstSentence(_ s: String) -> String {

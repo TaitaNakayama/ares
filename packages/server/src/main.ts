@@ -369,7 +369,7 @@ const server = http.createServer(async (req, res) => {
       const dir = recDir;
       recDir = undefined;
       const { execFileSync } = await import("node:child_process");
-      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(recFps), "-i", join(dir, "f_%05d.jpg"), "-vf", "scale=1312:-2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out]);
+      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", String(recFps), "-i", join(dir, "f_%05d.jpg"), "-vf", "scale=1280:-2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out]);
       return send(res, 200, { ok: true, frames: recSeq, out });
     }
     if (path === "/api/headset/recenter" && req.method === "POST") {
