@@ -33,6 +33,12 @@ export function Header({ state, vr, live, error, refresh }: Props) {
           <Fact k="Sim time" v={vr.time} />
           <Fact k="Speed" v={state.paused ? "paused" : `${state.speed}x${vr.timelapse ? " (time-lapse)" : ""}`} />
           <Fact k="Link" v={live ? "live" : error ? "offline" : "polling"} tone={live ? "ok" : "warn"} />
+          {(() => {
+            const h = (state as unknown as { headset?: { connected: number; stats: { fps?: number; receivedAt?: string; link?: string } } }).headset;
+            const fresh = h?.stats?.receivedAt ? Date.now() - Date.parse(h.stats.receivedAt) < 8000 : false;
+            const ok = !!h && h.connected > 0 && fresh;
+            return <Fact k="Headset" v={ok ? `${Math.round(h!.stats.fps ?? 0)} fps` : h && h.connected > 0 ? "connected (paused?)" : "not connected"} tone={ok ? "ok" : "warn"} />;
+          })()}
         </div>
         <div className={state.integrity.ok ? "integrity ok" : "integrity bad"} title={state.integrity.problems.join("\n")}>
           <b>{state.integrity.ok ? "Ledger verified" : "INTEGRITY FAILURE"}</b>

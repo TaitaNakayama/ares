@@ -19,7 +19,9 @@ TOKEN=$(cat $TOKEN_FILE)
   echo "{ \"token\": \"$TOKEN\", \"servers\": ["
   for ip in ${(f)IPS}; do echo "  \"ws://$ip:8787/?client=vr\","; done
   [ -n "$HOST" ] && echo "  \"ws://$HOST.local:8787/?client=vr\","
-  echo '  "ws://172.20.10.2:8787/?client=vr", "ws://172.20.10.3:8787/?client=vr", "ws://172.20.10.4:8787/?client=vr" ] }'
+  # iPhone Personal Hotspot hands out 172.20.10.2-14; try them all after the known addresses.
+  for n in $(seq 2 14); do sep=","; [ $n = 14 ] && sep=""; echo "  \"ws://172.20.10.$n:8787/?client=vr\"$sep"; done
+  echo '] }'
 } > $ROOT/vr/AresVR/Resources/ares.json
 sed -E 's/"token": "[^"]+"/"token": "(hidden)"/' $ROOT/vr/AresVR/Resources/ares.json
 cd $ROOT/vr && xcodegen generate --quiet
