@@ -1,6 +1,6 @@
 # Ares
 
-An AI agent team that runs procure-to-pay (request -> receive -> three-way match -> approve -> pay) on its own under deterministic controls, demoed on a crewed Mars base in Cardboard VR (Unity, iPhone 16 Pro) plus a laptop console. Cal Hacks 13.0, solo; Devpost deadline Sun 2026-10-25 09:00 PT.
+An AI agent team that runs procure-to-pay (request -> receive -> three-way match -> approve -> pay) on its own under deterministic controls, demoed on a crewed Mars base in Cardboard VR (native iOS: Swift + SceneKit + Google Cardboard SDK, iPhone 16 Pro) plus a laptop console. Cal Hacks 13.0, solo; Devpost deadline Sun 2026-10-25 09:00 PT.
 
 Read first: [BRIEF.md](BRIEF.md) (the spec), [PLAN.md](PLAN.md) (decisions, timeline, cut list), [CLAIMS.md](CLAIMS.md) (Tier 1 register), [ARCHITECTURE.md](ARCHITECTURE.md), [STATUS.md](STATUS.md).
 
@@ -15,7 +15,7 @@ Read first: [BRIEF.md](BRIEF.md) (the spec), [PLAN.md](PLAN.md) (decisions, time
 
 ## Key rules
 - Work autonomously. Stop only for:
-  - the user's physical presence (phone, viewer, signing, Unity Hub sign-in);
+  - the user's physical presence (phone unlocked/in the viewer, signing);
   - a failed Tier 1 spike that forces a foundational change;
   - anything that costs money, needs a new account or needs an API key;
   - destructive actions outside the repo.
@@ -39,10 +39,16 @@ pnpm --filter @ares/console dev   # laptop console
 node packages/eval/src/main.ts --seeds 500   # scorecard
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # xcode-select points at CLT
 xcrun devicectl list devices      # phone: B177F8D9-2156-5A6C-8882-05087D03426A
-scripts/build-ios.sh              # Unity batchmode -> xcodebuild -> devicectl install + launch
+scripts/build-ios.sh              # XcodeGen -> xcodebuild (signed) -> devicectl install + launch (phone must be unlocked)
+scripts/build-cardboard.sh        # rebuild Cardboard SDK static libs (vr/Vendor, gitignored)
+curl -X POST localhost:8787/api/capture/request   # headset uploads its current frame to .cache/captures/latest.jpg
+curl localhost:8787/api/vr/stats  # headset fps / thermal / link
+node scripts/record-tape.ts       # re-record the offline replay tape from the live server
 ```
 
 ## Gotchas
-- Unity batchmode fails if the project is open in the editor. Editor log: `~/Library/Logs/Unity/Editor.log`.
-- Cardboard: keep MSAA off (bug #442); Initialize XR on Startup; Landscape Left; new Input System.
-- Venue Wi-Fi is slow (about 0.5 MB/s) and may isolate clients. The phone hotspot is the fallback network; offline replay is the last resort.
+- Unity is NOT used (its 2026-06-30 terms bar AI-agent/CLI use without authorized access); Unity 6000.0.85f1 stays installed only as fallback B.
+- iOS app bundles must not contain a top-level `Resources/` folder (codesign fails); resources are copied flat.
+- Eye textures: `flipV = false` (top_v 1, bottom_v 0), as in Google's Unity plugin.
+- The phone must be unlocked for `devicectl process launch`; Auto-Lock Never during the event.
+- Venue Wi-Fi is slow (about 0.5 MB/s) and may isolate clients. The phone hotspot is the primary network (verified); offline replay is the last resort.
