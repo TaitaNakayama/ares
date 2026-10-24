@@ -25,9 +25,18 @@ struct SplitMix {
 /// (one draw call). Batching is the measured-safe way (spike C-17: loose nodes would cost ~1 draw per rock).
 enum RockField {
   private static let variants: [SCNGeometry] = {
+    // One shared material for every pebble: the dusted-rock map (Poly Haven moon_dusted_01, 1k) tinted to the regolith palette.
     let mat = SCNMaterial()
     mat.lightingModel = .lambert
-    mat.diffuse.contents = PlatformColor(red: 0.43, green: 0.30, blue: 0.22, alpha: 1)
+    if let img = Tex.cg("moon_dusted_01_diff_1k") {
+      mat.diffuse.contents = img
+      mat.diffuse.wrapS = .repeat
+      mat.diffuse.wrapT = .repeat
+      mat.diffuse.mipFilter = .linear
+      mat.multiply.contents = PlatformColor(red: 1.0, green: 0.70, blue: 0.52, alpha: 1)
+    } else {
+      mat.diffuse.contents = PlatformColor(red: 0.43, green: 0.30, blue: 0.22, alpha: 1)
+    }
     return (0..<6).map { i in
       let g = geometry(seed: UInt64(i + 11))
       g.materials = [mat]
@@ -55,7 +64,8 @@ enum RockField {
     f = f2
     let radii = v.map { _ in Float(0.72 + 0.4 * rng.unit()) }
     let sy = Float(0.5 + 0.25 * rng.unit()), sx = Float(0.9 + 0.3 * rng.unit())
-    var pos: [SCNVector3] = [], nor: [SCNVector3] = [], col: [SIMD4<Float>] = []
+    var pos: [SCNVector3] = [], nor: [SCNVector3] = [], col: [SIMD4<Float>] = [], uv: [CGPoint] = []
+    let off = Float(rng.unit())
     for tri in f {
       let p = tri.map { i -> SIMD3<Float> in
         var q = v[i] * radii[i]
@@ -67,12 +77,16 @@ enum RockField {
       let shade = Float(0.78 + 0.3 * rng.unit())
       for q in p {
         pos.append(SCNVector3(q.x, q.y, q.z)); nor.append(SCNVector3(n.x, n.y, n.z)); col.append(SIMD4(shade, shade, shade, 1))
+        // Box-projected UVs on the dominant axis of the face (a pebble is about one metre, so one tile is about a metre).
+        let an = SIMD3(abs(n.x), abs(n.y), abs(n.z))
+        let (u, w) = an.y >= an.x && an.y >= an.z ? (q.x, q.z) : (an.x >= an.z ? (q.z, q.y) : (q.x, q.y))
+        uv.append(CGPoint(x: CGFloat(u * 0.9 + off), y: CGFloat(w * 0.9 + off)))
       }
     }
     let colData = col.withUnsafeBufferPointer { Data(buffer: $0) }
     let idx: [UInt32] = (0..<UInt32(pos.count)).map { $0 }
     return SCNGeometry(sources: [
-      SCNGeometrySource(vertices: pos), SCNGeometrySource(normals: nor),
+      SCNGeometrySource(vertices: pos), SCNGeometrySource(normals: nor), SCNGeometrySource(textureCoordinates: uv),
       SCNGeometrySource(data: colData, semantic: .color, vectorCount: col.count, usesFloatComponents: true, componentsPerVector: 4, bytesPerComponent: 4, dataOffset: 0, dataStride: 16),
     ], elements: [SCNGeometryElement(indices: idx, primitiveType: .triangles)])
   }

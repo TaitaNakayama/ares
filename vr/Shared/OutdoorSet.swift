@@ -590,42 +590,8 @@ final class OutdoorSet {
 
   // ---------------------------------------------------------------- habitat exterior
 
-  private static func shellTexture() -> PlatformImage {
-    Bitmap.image(size: CGSize(width: 1024, height: 512), scale: 1, opaque: true) { ctx in
-      var rng = SplitMix(77)
-      Draw.fill(ctx, CGRect(x: 0, y: 0, width: 1024, height: 512), PlatformColor(red: 0.80, green: 0.77, blue: 0.72, alpha: 1))
-      // Panels: 4 columns x 2 rows, each a touch different.
-      for r in 0..<2 {
-        for c in 0..<4 {
-          let t = 0.94 + 0.08 * CGFloat(rng.unit())
-          Draw.fill(ctx, CGRect(x: CGFloat(c) * 256 + 3, y: CGFloat(r) * 256 + 3, width: 250, height: 250), PlatformColor(red: 0.80 * t, green: 0.77 * t, blue: 0.72 * t, alpha: 1))
-          // Rivets.
-          ctx.setFillColor(PlatformColor(white: 0.45, alpha: 0.7).cgColor)
-          for k in 0..<12 {
-            let x = CGFloat(c) * 256 + 14 + CGFloat(k) * 20
-            ctx.fillEllipse(in: CGRect(x: x, y: CGFloat(r) * 256 + 12, width: 4, height: 4))
-            ctx.fillEllipse(in: CGRect(x: x, y: CGFloat(r) * 256 + 240, width: 4, height: 4))
-          }
-        }
-      }
-      ctx.setStrokeColor(PlatformColor(white: 0.30, alpha: 0.8).cgColor)
-      ctx.setLineWidth(3)
-      for c in 0...4 { ctx.move(to: CGPoint(x: CGFloat(c) * 256, y: 0)); ctx.addLine(to: CGPoint(x: CGFloat(c) * 256, y: 512)) }
-      for r in 0...2 { ctx.move(to: CGPoint(x: 0, y: CGFloat(r) * 256)); ctx.addLine(to: CGPoint(x: 1024, y: CGFloat(r) * 256)) }
-      ctx.strokePath()
-      // An orange service stripe, scuffs, and regolith dust climbing the lower wall.
-      Draw.fill(ctx, CGRect(x: 0, y: 372, width: 1024, height: 14), PlatformColor(red: 0.85, green: 0.45, blue: 0.20, alpha: 1))
-      for _ in 0..<60 {
-        ctx.setFillColor(PlatformColor(red: 0.35, green: 0.30, blue: 0.26, alpha: 0.06 + 0.10 * CGFloat(rng.unit())).cgColor)
-        ctx.fill(CGRect(x: CGFloat(rng.unit()) * 1024, y: CGFloat(rng.unit()) * 400, width: 3 + CGFloat(rng.unit()) * 8, height: 20 + CGFloat(rng.unit()) * 80))
-      }
-      for y in 0..<512 {
-        let a = 0.55 * pow(CGFloat(y) / 512, 2.2)
-        ctx.setFillColor(PlatformColor(red: 0.60, green: 0.42, blue: 0.29, alpha: a).cgColor)
-        ctx.fill(CGRect(x: 0, y: CGFloat(y), width: 1024, height: 1))
-      }
-    }
-  }
+  /// The habitat shell: the shared exterior hull texture (panel seams, rivets, edge wear, dust).
+  private static func shellTexture() -> PlatformImage { hullTexture(seed: 77) }
 
   private static func doorTexture() -> PlatformImage {
     Bitmap.image(size: CGSize(width: 512, height: 768), scale: 1, opaque: true) { ctx in

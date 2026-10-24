@@ -27,6 +27,8 @@ final class Outside {
   /// Real terrain heights (terrain frame) for placing things on the ground.
   private(set) var heights: HeightField?
   private let dustNode = SCNNode()
+  /// The storm front: a wide gradient billboard on the horizon that rises and darkens with tau (no geometry beyond one plane).
+  private let stormWall = SCNNode()
   private var outdoor = false
   private var lastTau: Double = 0.6
   private var lastSun: (Double, Double) = (120, 45)
@@ -49,6 +51,7 @@ final class Outside {
     buildPanels()
     buildDrill()
     buildDust()
+    buildStormWall()
 
     sunNode.light = SCNLight()
     sunNode.light?.type = .directional
@@ -183,6 +186,9 @@ final class Outside {
     }
   }
 
+  /// Regolith dust on every Kenney prop (a warm, slightly darker multiply).
+  static let dustTint = PlatformColor(red: 0.90, green: 0.80, blue: 0.70, alpha: 1)
+
   func loadProp(_ name: String) -> SCNNode? {
     guard let url = Bundle.main.url(forResource: name, withExtension: "obj") else { return nil }
     let asset = MDLAsset(url: url)
@@ -190,7 +196,7 @@ final class Outside {
     let n = SCNNode()
     for i in 0..<asset.count {
       let child = SCNNode(mdlObject: asset.object(at: i))
-      for m in child.geometry?.materials ?? [] { m.lightingModel = .lambert }
+      for m in child.geometry?.materials ?? [] { m.lightingModel = .lambert; m.multiply.contents = Self.dustTint }
       n.addChildNode(child)
     }
     return n.flattenedClone()
@@ -403,6 +409,71 @@ final class Outside {
     }
   }
 
+  // ---------------------------------------------------------------- storm wall
+
+  /// White-on-alpha dust bank, 1024 x 256: opaque at the base, a ragged billowing top that fades out.
+  private static func stormWallImage() -> PlatformImage {
+    Bitmap.image(size: CGSize(width: 1024, height: 256), scale: 1, opaque: false) { ctx in
+      var rng = SplitMix(41)
+      var edge = [CGFloat](repeating: 0.7, count: 1024)
+      // Top edge: layered low-frequency noise, wrapped so the ends meet.
+      for (period, amp) in [(256.0, 0.16), (96.0, 0.10), (31.0, 0.06)] {
+        let ph = rng.unit() * 6.28
+        for x in 0..<1024 { edge[x] += CGFloat(amp * sin(Double(x) / period * 6.2832 * (period > 200 ? 0.25 : 1) + ph)) }
+      }
+      for x in 0..<1024 {
+        let top = max(0.25, min(0.98, edge[x]))
+        let ends = CGFloat(min(1, Double(min(x, 1023 - x)) / 200)), taper = ends * ends * (3 - 2 * ends)
+        // Fully opaque to 40% of the bank's height, then a long soft fade up to its ragged edge.
+        let steps = 64
+        for k in 0..<steps {
+          let f = CGFloat(k) / CGFloat(steps) // 0 = base, 1 = top of the image
+          let a: CGFloat
+          if f < top * 0.4 { a = 0.95 } else if f < top { let u = (f - top * 0.4) / (top * 0.6); a = 0.95 * (1 - u) * (1 - u * 0.4) } else { a = 0 }
+          ctx.setFillColor(PlatformColor(white: 1, alpha: max(0, a * taper)).cgColor)
+          ctx.fill(CGRect(x: CGFloat(x), y: 256 * (1 - f) - 256 / CGFloat(steps), width: 1, height: 256 / CGFloat(steps) + 0.5))
+        }
+      }
+      // Billowing streaks inside the bank.
+      for _ in 0..<60 {
+        ctx.setFillColor(PlatformColor(white: 0, alpha: 0.05 + 0.08 * rng.unit()).cgColor)
+        ctx.fillEllipse(in: CGRect(x: rng.unit() * 1024, y: 90 + rng.unit() * 150, width: 40 + rng.unit() * 160, height: 10 + rng.unit() * 30))
+      }
+    }
+  }
+
+  private func buildStormWall() {
+    let plane = SCNPlane(width: 1, height: 1)
+    let m = SCNMaterial()
+    m.lightingModel = .constant
+    m.diffuse.contents = Self.stormWallImage()
+    m.diffuse.wrapS = .clamp
+    m.diffuse.wrapT = .clamp
+    m.diffuse.mipFilter = .linear
+    m.isDoubleSided = true
+    m.blendMode = .alpha
+    m.writesToDepthBuffer = false
+    m.readsFromDepthBuffer = true
+    plane.materials = [m]
+    stormWall.geometry = plane
+    stormWall.renderingOrder = -5
+    stormWall.name = "storm-wall"
+    // Ahead and to the left of the view (the storm comes up over the crater rim from the north-west), 450 m out.
+    stormWall.simdPosition = SIMD3(-290, 0, -345)
+    stormWall.simdLook(at: SIMD3(0, 0, 0), up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
+    scene?.rootNode.addChildNode(stormWall)
+  }
+
+  /// Rises from a low brown haze bank to a wall a few hundred metres high, darkening toward #5A3A2A as tau climbs.
+  private func applyStormWall(t: Float) {
+    let hgt = 22 + 190 * t * t + 40 * t
+    stormWall.simdScale = SIMD3(1500, hgt * 1.0, 1)
+    stormWall.simdPosition = SIMD3(-290, hgt / 2 - 12, -345)
+    let c = Self.mix(SIMD3(0.84, 0.64, 0.46), SIMD3(0.353, 0.227, 0.165), t: min(1, t * 1.4))
+    stormWall.geometry?.firstMaterial?.multiply.contents = PlatformColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
+    stormWall.geometry?.firstMaterial?.transparency = CGFloat(0.03 + 0.97 * min(1, t * 1.3))
+  }
+
   // ---------------------------------------------------------------- state
 
   private static let lampOn = PlatformColor(red: 1.0, green: 0.85, blue: 0.45, alpha: 1)
@@ -535,7 +606,10 @@ final class Outside {
       scene?.fogEndDistance = CGFloat(90_000 * pow(1 - t, 3) + 1800)
     }
     let horizon = Self.skyColor(dir: simd_normalize(SIMD3(sunWorld.x, 0.02, sunWorld.z) * -1 + SIMD3(0, 0.02, 0)), sun: sunWorld, tau: tau, sunElev: Float(sunElevation))
-    scene?.fogColor = PlatformColor(red: CGFloat(horizon.x), green: CGFloat(horizon.y), blue: CGFloat(horizon.z), alpha: 1)
+    // The haze thickens and takes the storm's colour (#5A3A2A) as tau climbs.
+    let haze = Self.mix(horizon, SIMD3(0.353, 0.227, 0.165) * max(0.35, min(1, 0.5 + Float(sunElevation) / 40)), t: min(1, t * 0.8))
+    scene?.fogColor = PlatformColor(red: CGFloat(haze.x), green: CGFloat(haze.y), blue: CGFloat(haze.z), alpha: 1)
+    applyStormWall(t: t)
 
     applyDust(tau: rawTau)
 
