@@ -31,13 +31,13 @@ const DECISION_POINTS: Record<AgentRole, Record<string, DecisionTool[]>> = {
     "engine:escalation_decided": ["say"],
   },
   ap: {
-    "engine:invoice_recorded": ["submit_invoice", "raise_flag", "report_issue", "say"],
+    "engine:invoice_recorded": ["submit_invoice", "raise_flag", "say"],
     "world:report": ["raise_flag", "report_issue", "say"],
     "engine:escalation_decided": ["say"],
   },
   treasury: {
-    "engine:requisition_created": ["confirm_funds", "report_issue", "say"],
-    "engine:invoice_approved": ["schedule_payment", "report_issue", "say"],
+    "engine:requisition_created": ["confirm_funds", "say"],
+    "engine:invoice_approved": ["schedule_payment", "say"],
     "world:report": ["report_issue", "say"],
     "engine:escalation_decided": ["say"],
   },
@@ -516,7 +516,7 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
     case "invoice_approved": {
       const inv = d.invoice as Invoice;
       const already = [...e.payments.values()].filter((p) => p.invoiceId === inv.id && p.status !== "cancelled").reduce((s, p) => s + p.amount, 0);
-      return `Invoice ${inv.id} approved for ${inv.approvedAmount ?? 0} cents (${formatCents(inv.approvedAmount ?? 0)}); ${already} cents already scheduled. Vendor ${e.vendors.get(inv.vendorId)?.name}. Decide what to schedule now.`;
+      return `Invoice ${inv.id} (${inv.vendorInvoiceNo}, ${e.vendors.get(inv.vendorId)?.name}) is approved. It billed ${inv.total} cents (${formatCents(inv.total)}); the approved, payable amount after the three-way match is ${inv.approvedAmount ?? 0} cents (${formatCents(inv.approvedAmount ?? 0)}); ${already} cents already scheduled. Schedule the unpaid approved amount with schedule_payment (invoiceId only; the payment always goes to the verified account on file), or say why you wait.`;
     }
     case "verification_requested": {
       const v = d.verification as { id: string; vendorId: string; subject: { kind: string; id: string } };
@@ -586,7 +586,7 @@ export function stateSummary(role: AgentRole, ctx: BrainContext): string {
     }
   }
   const invs = [...e.invoices.values()].filter((i) => ["received", "held", "submitted", "approved"].includes(i.status)).slice(-4);
-  if (invs.length && (role === "ap" || role === "controller" || role === "treasury")) lines.push(`Invoices in progress: ${invs.map((i) => `${i.id} ${i.vendorInvoiceNo} ${i.status} ${i.total} cents`).join("; ")}.`);
+  if (invs.length && (role === "ap" || role === "controller" || role === "treasury")) lines.push(`Invoices in progress: ${invs.map((i) => `${i.id} ${i.vendorInvoiceNo} ${i.status}, billed ${i.total} cents${i.approvedAmount !== undefined ? `, approved for payment ${i.approvedAmount} cents` : ""}`).join("; ")}.`);
   const pays = [...e.payments.values()].filter((p) => p.status === "scheduled").slice(-4);
   if (pays.length && role === "treasury") lines.push(`Scheduled payments: ${pays.map((p) => `${p.id} ${p.amount} cents to ${p.vendorId}`).join("; ")}.`);
   const vers = [...e.verifications.values()].filter((v) => v.status === "pending");
