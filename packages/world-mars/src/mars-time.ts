@@ -69,7 +69,8 @@ export function marsSun(unixMs: number, latDeg: number, lonEastDeg: number): Sun
 export function lightTimeMs(unixMs: number): number {
   const v = Astronomy.GeoVector(Astronomy.Body.Mars, new Date(unixMs), false);
   const au = Math.hypot(v.x, v.y, v.z);
-  return au * 499.004784 * 1000;
+  // Whole milliseconds: simulated timestamps are integers everywhere.
+  return Math.round(au * 499.004784 * 1000);
 }
 
 export function earthMarsDistanceAu(unixMs: number): number {

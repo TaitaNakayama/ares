@@ -18,6 +18,7 @@ const INCOMPATIBLE: [string, ActionType[], ActionType[]][] = [
   ["request and receive", ["create_requisition"], ["record_receipt"]],
   ["submit and approve invoices", ["submit_invoice"], ["approve_invoice"]],
   ["receive and pay", ["record_receipt"], ["schedule_payment", "execute_payment"]],
+  ["request and answer bank verifications", ["request_verification"], ["answer_verification"]],
 ];
 
 export const policySchema = z.object({
@@ -115,6 +116,7 @@ export const DEFAULT_POLICY: Policy = {
       "reject_quote",
       "hold_vendor",
       "block_vendor",
+      "release_vendor",
     ],
     system: [],
   },

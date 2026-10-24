@@ -82,6 +82,7 @@ export const ACTION_SCHEMAS = {
   reject_quote: z.object({ quoteId: z.string(), reason: z.string() }),
   hold_vendor: z.object({ vendorId: z.string(), reason: z.string() }),
   block_vendor: z.object({ vendorId: z.string(), reason: z.string() }),
+  release_vendor: z.object({ vendorId: z.string(), reason: z.string() }),
   request_verification: z.object({ vendorId: z.string(), subject: refSchema }),
   escalate: z.object({ subject: refSchema, reason: z.string() }),
 
@@ -122,6 +123,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   reject_quote: "Reject a quote so it can never be used for an order.",
   hold_vendor: "Put a supplier on hold: no new orders or payments until released.",
   block_vendor: "Block a supplier permanently: no orders or payments.",
+  release_vendor: "Release a supplier from hold after its details on file were re-verified out of band.",
   request_verification: "Ask the remote authority to verify a supplier's changed bank details out of band (call-back on file).",
   escalate: "Escalate a decision to a human authority with the reason.",
   decide: "Choose one option of an escalation.",

@@ -115,6 +115,8 @@ export interface Escalation {
   decideBy?: Time;
   status: "in_transit" | "awaiting_decision" | "decided" | "superseded";
   decision?: { optionId: string; by: string; at: Time };
+  /** Non-final choices made so far (wait, operational levers). */
+  history?: { optionId: string; by: string; at: Time }[];
   /** Message drafted for the human (by an LLM agent or a template). */
   message?: string;
   createdBy: string;
@@ -188,7 +190,7 @@ export class Engine {
   readonly quotes = new Map<string, Quote & { status: "open" | "held" | "used" | "rejected"; flags: FlagCode[] }>();
   readonly pos = new Map<string, PurchaseOrder>();
   readonly receipts = new Map<string, GoodsReceipt>();
-  readonly invoices = new Map<string, Invoice & { flags: FlagCode[]; submittedBy?: string; voidedAsFraud?: boolean }>();
+  readonly invoices = new Map<string, Invoice & { flags: FlagCode[]; submittedBy?: string; voidedAsFraud?: boolean; matchedQty?: Record<string, number> }>();
   readonly payments = new Map<string, Payment>();
   readonly verifications = new Map<string, Verification>();
   readonly escalations = new Map<string, Escalation>();
@@ -220,7 +222,7 @@ export class Engine {
     this.now = cfg.startTime;
     this.remoteLatencyMs = cfg.remoteLatencyMs;
     this.burnPerDayCents = cfg.burnPerDayCents;
-    for (const a of cfg.actors) this.actors.set(a.id, { ...a });
+    for (const a of cfg.actors) this.actors.set(a.id, Object.freeze({ ...a }));
     for (const v of cfg.vendors) this.vendors.set(v.id, { ...v, bank: { ...v.bank } });
     for (const i of cfg.items) this.items.set(i.sku, i);
     this.contracts = cfg.contracts.map((c) => ({ ...c }));
@@ -291,7 +293,14 @@ export class Engine {
     try {
       while (this.pendingEvents.length) {
         const e = this.pendingEvents.shift()!;
-        for (const l of [...this.listeners]) l(e);
+        for (const l of [...this.listeners]) {
+          try {
+            l(e);
+          } catch (err) {
+            // A faulty listener must not affect execution that already happened.
+            this.audit.append(this.now, "message", "system", `listener error on ${e.type}: ${(err as Error).message}`, { seq: e.seq });
+          }
+        }
       }
     } finally {
       this.flushing = false;
@@ -357,9 +366,10 @@ export class Engine {
   }
 
   /** Only the remote authority (policy owner) may change policy; the change is validated and audited. */
-  setPolicy(input: unknown, actorId: string): Policy {
+  setPolicy(input: unknown, actorId: string, credential?: string): Policy {
     const actor = this.actors.get(actorId);
     if (!actor || actor.role !== "remote_authority") throw new Error(`policy can only be changed by the remote authority, not "${actorId}"`);
+    if (this.#requireCredentials && this.#credentials.get(actorId) !== credential) throw new Error(`policy change not authenticated as "${actorId}"`);
     const next = freezePolicy(parsePolicy(input));
     const prev = this.#policy;
     this.#policy = next;
@@ -409,7 +419,7 @@ export class Engine {
       if (!actor) rules.push(fail("actor.known", `unknown actor "${input.actorId}"`, "deny"));
       if (!parsed.ok) rules.push(fail("schema.valid", parsed.error, "deny"));
       const decision = this.recordDecision(undefined, input.actorId, actor?.role ?? "system", input.type, rules);
-      this.audit.append(this.now, "proposal", input.actorId, `Rejected malformed proposal ${input.type}`, { input, rules });
+      this.audit.append(this.now, "proposal", input.actorId, `Rejected malformed proposal ${input.type}`, { type: String(input.type), actorId: String(input.actorId), params: input.params, rules });
       return { decision, executed: false, error: rules.map((r) => r.detail).join("; ") };
     }
 
@@ -564,6 +574,11 @@ export class Engine {
       case "hold_vendor":
       case "block_vendor":
         return [this.vendors.has(a.params.vendorId) ? pass("state.valid", "known vendor") : fail("state.valid", `unknown vendor ${a.params.vendorId}`, "deny")];
+      case "release_vendor": {
+        const v = this.vendors.get(a.params.vendorId);
+        if (!v) return [fail("state.valid", `unknown vendor ${a.params.vendorId}`, "deny")];
+        return [v.status === "hold" ? pass("state.valid", "vendor is on hold") : fail("state.valid", `vendor is ${v.status}; only a hold can be released`, "deny")];
+      }
       case "request_verification": {
         const v = this.vendors.get(a.params.vendorId);
         if (!v) return [fail("state.valid", `unknown vendor ${a.params.vendorId}`, "deny")];
@@ -658,7 +673,9 @@ export class Engine {
     const invoiced = new Map<string, number>();
     for (const o of this.invoices.values()) {
       if (o.id === inv.id || o.poId !== po.id || !["approved", "paid"].includes(o.status)) continue;
-      for (const l of o.lines) invoiced.set(l.sku, (invoiced.get(l.sku) ?? 0) + l.qty);
+      // Count what was actually matched (paid for), not what was billed, so a short-paid
+      // invoice doesn't block billing for goods that arrive later.
+      for (const l of o.lines) invoiced.set(l.sku, (invoiced.get(l.sku) ?? 0) + (o.matchedQty?.[l.sku] ?? l.qty));
     }
     if (po.terms === "on_receipt" || poReceipts.length > 0) {
       rules.push(poReceipts.length > 0 ? pass("match.receipt_exists", `${poReceipts.length} receipt(s)`) : fail("match.receipt_exists", "nothing received yet", "hold"));
@@ -833,7 +850,9 @@ export class Engine {
     r.push(params.amount > 0 && params.amount <= remaining ? pass("payment.amount_within_approved", `${formatCents(params.amount)} of ${formatCents(remaining)} remaining`) : fail("payment.amount_within_approved", `${formatCents(params.amount)} exceeds remaining approved ${formatCents(remaining)}`, "deny"));
     if (po) {
       const paid = this.paidAgainstPo(po.id);
-      r.push(paid + params.amount <= po.total ? pass("payment.po_cap", `${formatCents(paid + params.amount)} of order total ${formatCents(po.total)}`) : fail("payment.po_cap", `would bring payments on ${po.id} to ${formatCents(paid + params.amount)}, over the order total ${formatCents(po.total)}`, "deny"));
+      // Invoice payments may use the match's price tolerance; prepayments never exceed the order total.
+      const cap = params.invoiceId ? Math.round(po.total * (1 + this.#policy.match.priceTolerancePct / 100)) : po.total;
+      r.push(paid + params.amount <= cap ? pass("payment.po_cap", `${formatCents(paid + params.amount)} of order cap ${formatCents(cap)}`) : fail("payment.po_cap", `would bring payments on ${po.id} to ${formatCents(paid + params.amount)}, over the order cap ${formatCents(cap)}`, "deny"));
     }
     const vendor = this.vendors.get(vendorId);
     if (vendor) r.push(this.vendorActiveRule(vendor, "deny"));
@@ -1142,6 +1161,7 @@ export class Engine {
         }
         const m = this.computeMatch(inv);
         inv.status = "approved";
+        inv.matchedQty = Object.fromEntries(m.lines.map((l) => [l.sku, l.payQty]));
         const lines: PostingLine[] = [];
         if (m.grniRelief > 0) lines.push({ account: "grni", debit: m.grniRelief, credit: 0 });
         const ppv = m.matchedValue - m.grniRelief;
@@ -1178,6 +1198,13 @@ export class Engine {
         v.status = a.type === "hold_vendor" ? "hold" : "blocked";
         v.statusReason = a.params.reason;
         for (const pay of this.payments.values()) if (pay.vendorId === v.id && pay.status === "scheduled") pay.status = "cancelled";
+        this.emit("vendor_status_changed", { vendor: v, reason: a.params.reason });
+        break;
+      }
+      case "release_vendor": {
+        const v = this.vendors.get(a.params.vendorId)!;
+        v.status = "active";
+        v.statusReason = undefined;
         this.emit("vendor_status_changed", { vendor: v, reason: a.params.reason });
         break;
       }
@@ -1241,8 +1268,17 @@ export class Engine {
         for (const sub of opt.actions) {
           this.submit({ actorId: p.actorId, type: sub.type, params: sub.params, rationale: `Decision on ${esc.id}: ${opt.label}`, source: "human", credential: this.#credentials.get(p.actorId) });
         }
-        esc.status = "decided";
-        esc.decision = { optionId: opt.id, by: p.actorId, at: this.now };
+        esc.history = [...(esc.history ?? []), { optionId: opt.id, by: p.actorId, at: this.now }];
+        // "Wait" and operational levers don't settle the purchase: the escalation stays with
+        // this authority (nobody else can act on the subject) until a final choice.
+        const final = opt.id !== "wait" && !opt.leverId;
+        if (final) {
+          esc.status = "decided";
+          esc.decision = { optionId: opt.id, by: p.actorId, at: this.now };
+        } else if (esc.status === "awaiting_decision") {
+          if (opt.leverId) esc.options = esc.options.filter((o) => o.id !== opt.id);
+          this.emit("escalation_updated", { escalation: esc });
+        }
         this.audit.append(this.now, "escalation", p.actorId, `${this.actors.get(p.actorId)?.displayName} chose "${opt.label}" on ${esc.id}`, { escalationId: esc.id, option: opt });
         this.emit("escalation_decided", { escalation: esc, option: opt });
         if (opt.leverId) {
@@ -1285,6 +1321,14 @@ export class Engine {
         }
         this.audit.append(this.now, "verification", p.actorId, `Verification ${v.id}: ${v.status} (${a.params.answer})`, v);
         this.emit("verification_answered", { verification: v, vendor });
+        // Open escalations on the affected purchase get options rebuilt from the new facts.
+        const reqId = v.subject.kind === "quote" ? this.quotes.get(v.subject.id)?.requisitionId : undefined;
+        const esc = reqId ? this.openEscalationFor({ kind: "requisition", id: reqId }) : undefined;
+        if (esc) {
+          const used = new Set((esc.history ?? []).map((h) => h.optionId));
+          esc.options = this.buildOptions(esc.subject, esc.to).filter((o) => !(o.leverId && used.has(o.id)));
+          this.emit("escalation_updated", { escalation: esc });
+        }
         break;
       }
     }

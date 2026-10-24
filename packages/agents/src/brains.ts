@@ -120,6 +120,13 @@ export class ApRules implements Brain {
       const poId = (receipt.po as { id: string }).id;
       return [...e.invoices.values()].filter((i) => i.poId === poId && i.status === "received").flatMap((i) => this.trySubmit(i, ctx));
     }
+    const vs = ev(input, "vendor_status_changed");
+    if (vs) {
+      const v = vs.vendor as { id: string; status: string };
+      // A released supplier's held invoices go back through the full match.
+      if (v.status === "active") return [...e.invoices.values()].filter((i) => i.vendorId === v.id && i.status === "held").flatMap((i) => this.trySubmit(i, ctx));
+      return [];
+    }
     const answered = ev(input, "verification_answered");
     if (answered) {
       const v = answered.verification as { status: string; subject: { kind: string; id: string } };
@@ -134,7 +141,7 @@ export class ApRules implements Brain {
   private trySubmit(invRef: Invoice, ctx: BrainContext): Intent[] {
     const e = ctx.engine;
     const inv = e.invoices.get(invRef.id);
-    if (!inv || inv.status !== "received") return [];
+    if (!inv || (inv.status !== "received" && inv.status !== "held")) return [];
     const po = inv.poId ? e.pos.get(inv.poId) : undefined;
     const hasReceipt = po ? [...e.receipts.values()].some((g) => g.poId === po.id) : false;
     if (po && !hasReceipt && po.terms === "on_receipt") return []; // wait for the goods
@@ -253,7 +260,8 @@ export class ControllerRules implements Brain {
       if (v.status === "confirmed" && v.subject.kind === "quote") {
         const q = e.quotes.get(v.subject.id);
         const req = q?.requisitionId ? e.requisitions.get(q.requisitionId) : undefined;
-        if (q && req && (req.status === "open" || req.status === "escalated")) {
+        // If a human already holds the decision, the rebuilt escalation options carry it; don't act around them.
+        if (q && req && (req.status === "open" || req.status === "escalated") && !e.openEscalationFor({ kind: "requisition", id: req.id })) {
           return [{ type: "approve_requisition", params: { requisitionId: req.id, quoteId: q.id }, rationale: "Bank change verified", say: `Bank change verified by call-back. Re-checking ${vendor?.name}'s quote.` }];
         }
       }

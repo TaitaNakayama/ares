@@ -142,7 +142,7 @@ export class Orchestrator {
   setPolicy(policy: unknown): void {
     const owner = this.roleActor("remote_authority");
     if (!owner) throw new Error("no policy owner");
-    this.engine.setPolicy(policy, owner);
+    this.engine.setPolicy(policy, owner, this.#creds.get(owner));
   }
 
   async submitHuman(role: "local_authority" | "remote_authority", input: Omit<ProposalInput, "actorId" | "credential">): Promise<SubmitResult> {

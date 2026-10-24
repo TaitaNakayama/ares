@@ -38,7 +38,7 @@ export const MARS_POLICY: Policy = {
 };
 
 export type ErrorType = "duplicate_invoice" | "bank_fraud_invoice" | "bank_fraud_quote" | "inflated_quote" | "inflated_invoice" | "short_delivery" | "over_contract_quote";
-export type DecoyType = "legit_bank_change" | "small_price_rise" | "damaged_rejected";
+export type DecoyType = "legit_bank_change" | "small_price_rise" | "damaged_rejected" | "genuine_after_fraud";
 
 export interface ErrorRates {
   duplicate_invoice: number;
@@ -153,6 +153,7 @@ export class MarsWorld implements World {
     this.cyclesTotal = opts.cycles ?? 40;
     this.power = new PowerModel({ arrayScale: 934, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 14, iceDrill: 5, science: 1 } });
     this.lastPowerT = this.mode === "demo" ? this.start - 32 * DAY : this.start;
+    for (const v of this.market.vendors) this.bankTruth.set(v.bank.account, true);
   }
 
   setup(): WorldSetup {
@@ -262,7 +263,7 @@ export class MarsWorld implements World {
   // ---------------------------------------------------------------- documents
 
   private docId(prefix: string): string {
-    return `${prefix}-${this.seed.slice(0, 6)}-${String(++this.docSeq).padStart(4, "0")}`;
+    return `${prefix}-${this.seed}-${String(++this.docSeq).padStart(4, "0")}`;
   }
 
   private quoteDoc(engine: Engine, reqId: string, q: PlannedQuote, cycle: number): WorldEvent {
@@ -437,7 +438,15 @@ export class MarsWorld implements World {
           this.demoFilterPo = { poId: po.id, got, ordered, deliverDoc: delivDoc };
         }
         // Invoice follows the delivery (vendor bills what was ordered).
-        if (this.mode === "eval") out.push(...this.invoicesFor(engine, po.id, cs, deliverAt + 6 * HOUR, got - damaged));
+        break;
+      }
+      case "receipt_recorded": {
+        // Vendors bill after delivery, using whatever bank account they have on file at that time.
+        const po = d.po as unknown as { id: string };
+        const cs = this.poToCycle.get(po.id);
+        if (this.mode !== "eval" || !cs || this.invoiced.has(po.id)) break;
+        this.invoiced.add(po.id);
+        out.push(...this.invoicesFor(engine, po.id, cs, e.at + 6 * HOUR, this.acceptedQty(engine, po.id)));
         break;
       }
       case "verification_requested": {
@@ -459,6 +468,13 @@ export class MarsWorld implements World {
             out.push({ at: e.at + delay, event: { type: "external", actorId, action: "decide", params: { escalationId: esc.id, optionId: choice.id }, summary: `${actorId === "cfo" ? "Earth CFO" : "Commander"} chose ${choice.id}` } });
           }
         }
+        break;
+      }
+      case "vendor_status_changed": {
+        // Earth re-verifies a locked supplier's details on file by call-back, then releases it.
+        const v = d.vendor as unknown as { id: string; name: string; status: string };
+        if (v.status !== "hold" || this.mode !== "eval") break;
+        out.push({ at: e.at + 2 * engine.remoteLatencyMs + 2 * DAY, event: { type: "external", actorId: "cfo", action: "release_vendor", params: { vendorId: v.id, reason: "Details on file re-verified by call-back; supplier contacts secured." }, summary: `Earth: ${v.name} re-verified and released.` } });
         break;
       }
       case "lever_activated": {
@@ -489,6 +505,12 @@ export class MarsWorld implements World {
   }
 
   private corrected = new Set<string>();
+  private invoiced = new Set<string>();
+
+  /** Accounts the world planted as fraudulent (ground truth for scoring). */
+  fraudAccounts(): Set<string> {
+    return new Set([...this.bankTruth.entries()].filter(([, legit]) => !legit).map(([acct]) => acct));
+  }
 
   private acceptedQty(engine: Engine, poId: string): number {
     let n = 0;
@@ -508,7 +530,9 @@ export class MarsWorld implements World {
     const fair = p.fraudBank ? 0 : acceptedQty * po.lines[0]!.unitPrice;
     const out: ScheduledWorldEvent[] = [{ at, event: this.invoiceDoc(engine, poId, cs, { bank, unitPrice: price, qty: ordered, no, errors: p.errors, decoys: p.decoys, fair }) }];
     if (p.duplicate) {
-      out.push({ at: at + (1 + this.rng.int(0, 5)) * DAY, event: this.invoiceDoc(engine, poId, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: ordered, no: this.rng.chance(0.5) ? no : `${no}A`, errors: ["duplicate_invoice"], decoys: [], fair: 0 }) });
+      // After a fraudulent copy, the second invoice is the real supplier's genuine bill: paying it once is correct.
+      const genuine = p.fraudBank;
+      out.push({ at: at + (1 + this.rng.int(0, 5)) * DAY, event: this.invoiceDoc(engine, poId, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: ordered, no: this.rng.chance(0.5) ? no : `${no}A`, errors: genuine ? [] : ["duplicate_invoice"], decoys: genuine ? ["genuine_after_fraud" as DecoyType] : [], fair: genuine ? acceptedQty * po.lines[0]!.unitPrice : 0 }) });
     }
     return out;
   }
