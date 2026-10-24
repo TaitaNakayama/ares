@@ -229,6 +229,13 @@ export class LlmBrain implements Brain {
       // The role had nothing it must do; the model may still speak (a validated line) or stay quiet.
       return spoken ? [{ type: "__say", params: {}, rationale: "", say: spoken, short: shorten(spoken), mood, via: "llm" }] : [];
     }
+    // Rules as the floor for the human handoff: if the rules brain would escalate now and the model neither
+    // escalated nor approved, the escalation still happens, labeled as rules.
+    const floor = ruleIntents.find((i) => i.type === "escalate");
+    if (floor && !actions.some((a) => a.type === "escalate" || a.type === "approve_requisition" || a.type === "reject_requisition")) {
+      actions.push({ ...floor, via: "rules", rationale: `${floor.rationale} [rules: escalation floor]`, say: undefined, short: undefined });
+      dropped.push("escalation added by rules");
+    }
     // The line goes with the first action; the others are silent proposals (the engine narrates refusals).
     actions.forEach((it, i) => {
       if (i === 0) {
@@ -452,8 +459,13 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
         const po = e.pos.get(ev.poId);
         return `Delivery for ${ev.poId}${po ? ` (ordered ${po.lines.map((l) => `${l.qty} x ${l.sku}`).join(", ")} from ${e.vendors.get(po.vendorId)?.name})` : ""}. Counted: ${ev.lines.map((l) => `${l.qtyReceived} x ${l.sku} received, ${l.qtyRejected} rejected`).join("; ")}. Note: "${ev.note}"`;
       }
-      case "rfq_closed":
-        return `Quotes are in for requisition ${ev.requisitionId}; decide how to source it. Standing procedure: buy the cheapest quote that passed every policy check and covers the full quantity; a quote whose bank details differ from the vendor master is never approved or rejected on the spot, you request_verification (Earth calls the supplier back) and escalate what you cannot approve within your limit; a partial clean quote may be approved for its available quantity.`;
+      case "rfq_closed": {
+        const req = e.requisitions.get(ev.requisitionId);
+        const minsLeft = req ? Math.round((req.orderBy - e.now) / 60_000) : undefined;
+        const replyMins = Math.round((2 * e.remoteLatencyMs + e.policy.vendorBankChange.verificationProcessingMs) / 60_000);
+        const cmdLimit = e.limitFor("local_authority");
+        return `Quotes are in for requisition ${ev.requisitionId}; decide how to source it.${minsLeft !== undefined ? ` It must be ordered within ${minsLeft} minutes.` : ""} Earth's answer to a bank verification takes about ${replyMins} minutes (light-time round trip plus processing). The on-site commander can approve up to ${cmdLimit} cents (${formatCents(cmdLimit)}) per order. Standing procedure: buy the cheapest quote that passed every policy check and covers the full quantity; a quote whose bank details differ from the vendor master is never approved or rejected on the spot: request_verification (Earth calls the supplier back) AND, when the deadline comes before Earth's answer or no clean quote covers the need within your limit, escalate to the commander now, proposing concrete options with the exact action for each (e.g. approve_requisition of a clean quote for its available quantity within the commander's limit).`;
+      }
       case "report":
         return `Report from ${ev.from}: "${ev.text.slice(0, 1500)}"`;
       default:
