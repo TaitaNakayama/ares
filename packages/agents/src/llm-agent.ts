@@ -228,10 +228,6 @@ export class LlmBrain implements Brain {
     this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, usage: res.usage, result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
     this.note(true);
 
-    if (actions.length === 0) {
-      // The role had nothing it must do; the model may still speak (a validated line) or stay quiet.
-      return spoken ? [{ type: "__say", params: {}, rationale: "", say: spoken, short: shorten(spoken), mood, via: "llm" }] : [];
-    }
     // Rules as the floor for the human handoff: if the rules brain would escalate now and the model neither
     // escalated nor approved, the escalation still happens, labeled as rules.
     const floor = ruleIntents.find((i) => i.type === "escalate");
@@ -246,6 +242,10 @@ export class LlmBrain implements Brain {
       }
     }
     actions.push(...this.takePendingFloor(point, actions));
+    if (actions.length === 0) {
+      // The role had nothing it must do; the model may still speak (a validated line) or stay quiet.
+      return spoken ? [{ type: "__say", params: {}, rationale: "", say: spoken, short: shorten(spoken), mood, via: "llm" }] : [];
+    }
     // The line goes with the first action; the others are silent proposals (the engine narrates refusals).
     actions.forEach((it, i) => {
       if (i === 0) {
