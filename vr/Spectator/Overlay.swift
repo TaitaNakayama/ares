@@ -8,11 +8,12 @@ final class OverlayView: NSView {
   let subtitles = SubtitleView()
   let card = DecisionCardView()
   let badges = BadgeView()
+  let thinking = ThinkingView()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    for v in [badges, card, subtitles, dot] as [NSView] { addSubview(v) }
+    for v in [badges, card, subtitles, thinking, dot] as [NSView] { addSubview(v) }
     card.alphaValue = 0
     dot.isHidden = true
   }
@@ -26,6 +27,7 @@ final class OverlayView: NSView {
     super.layout()
     let b = bounds
     badges.frame = NSRect(x: 0, y: 0, width: b.width, height: max(70, b.height * 0.09))
+    thinking.frame = NSRect(x: 0, y: badges.frame.maxY + 6, width: b.width, height: max(34, b.height * 0.05))
     let cardH = b.height * 0.44
     card.frame = NSRect(x: b.width * 0.06, y: b.height - cardH - b.height * 0.03, width: b.width * 0.88, height: cardH)
     // Subtitles sit low; while a decision is up they move above it.
@@ -148,6 +150,31 @@ final class SubtitleView: NSView {
       body.draw(with: NSRect(x: box.minX + 28, y: box.minY + 12 + nameSize * 1.35, width: width, height: bodyH), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
       y -= 10
     }
+  }
+}
+
+// MARK: - Thinking
+
+/// "<Name> is thinking…": a subtle centred pill under the badges while an agent's brain is deciding.
+final class ThinkingView: NSView {
+  var roles: [String] = [] { didSet { if roles != oldValue { needsDisplay = true } } }
+  override var isFlipped: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard !roles.isEmpty else { return }
+    let size = max(15, bounds.height * 0.46)
+    let text = NSMutableAttributedString()
+    for (i, role) in roles.enumerated() {
+      let name = RobotCrew.layout.first { $0.role == role }?.name ?? role
+      if i > 0 { text.append(NSAttributedString(string: "   ", attributes: [.font: NSFont.systemFont(ofSize: size)])) }
+      text.append(NSAttributedString(string: name, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .heavy), .foregroundColor: SpectatorPalette.role(role)]))
+      text.append(NSAttributedString(string: " is thinking…", attributes: [.font: NSFont.systemFont(ofSize: size, weight: .medium), .foregroundColor: NSColor(white: 0.9, alpha: 1)]))
+    }
+    let ts = text.size()
+    let box = NSRect(x: (bounds.width - ts.width) / 2 - 18, y: 0, width: ts.width + 36, height: bounds.height)
+    NSColor(white: 0.02, alpha: 0.6).setFill()
+    NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
+    text.draw(at: NSPoint(x: box.minX + 18, y: (bounds.height - ts.height) / 2))
   }
 }
 

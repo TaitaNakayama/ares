@@ -30,6 +30,12 @@ final class Robot {
   private var nextBlink: TimeInterval = 2
   private let phase: Float
   private let nametag: Nametag
+  private var thinking = false
+  private var dots: [SCNNode] = []
+  private let dotMat = SCNMaterial()
+  private var halo: SCNNode!
+  /// Reticle is on this robot (set by the scene): the nametag offers "tap to ask".
+  var hovered = false
   /// Speech bubble: lives in the scene root (not under the robot) so the robot's yaw does not turn it.
   let bubble = SpeechBubble()
   private var bubbleVisible = false
@@ -54,7 +60,7 @@ final class Robot {
     haloMat.diffuse.contents = color.withAlphaComponent(0.8)
     haloMat.blendMode = .add
     haloMat.writesToDepthBuffer = false
-    let halo = SCNNode(geometry: SCNTorus(ringRadius: 0.2, pipeRadius: 0.012))
+    halo = SCNNode(geometry: SCNTorus(ringRadius: 0.2, pipeRadius: 0.012))
     halo.geometry?.materials = [haloMat]
     halo.position = SCNVector3(0, -0.32, 0)
     node.addChildNode(halo)
@@ -176,6 +182,28 @@ final class Robot {
       e.position = SCNVector3(x, 0, 0.002)
       face.addChildNode(e)
     }
+    // Thinking face: three dots that pulse in turn (shown instead of the eyes).
+    dotMat.lightingModel = .constant
+    dotMat.diffuse.contents = PlatformColor(red: 0.75, green: 0.90, blue: 1.0, alpha: 1)
+    for x in [Float(-0.06), 0, 0.06] {
+      let d = SCNNode(geometry: SCNSphere(radius: 0.017))
+      d.geometry?.materials = [dotMat]
+      d.position = SCNVector3(x, -0.005, 0.004)
+      d.isHidden = true
+      face.addChildNode(d)
+      dots.append(d)
+    }
+  }
+
+  private func setThinking(_ on: Bool) {
+    thinking = on
+    eyeL.isHidden = on
+    eyeR.isHidden = on
+    for d in dots { d.isHidden = !on }
+    if !on {
+      halo.scale = SCNVector3(1, 1, 1)
+      setMood(mood, force: true)
+    }
   }
 
   func setMood(_ m: String, force: Bool = false) {
@@ -261,8 +289,21 @@ final class Robot {
     }
   }
 
-  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool, bubbleWanted: Bool = true) {
+  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool, bubbleWanted: Bool = true, thinking think: Bool = false) {
     let t = Float(now)
+    if think != thinking { setThinking(think) }
+    if thinking {
+      // Slow pulse of the halo (size and brightness) and a travelling dot on the face.
+      let k = 0.5 + 0.5 * sin(t * 2.4)
+      halo.scale = SCNVector3(1 + 0.12 * k, 1 + 0.12 * k, 1 + 0.12 * k)
+      haloMat.diffuse.contents = PlatformColor(red: 0.55 + 0.4 * CGFloat(k), green: 0.80 + 0.2 * CGFloat(k), blue: 1.0, alpha: 0.35 + 0.65 * CGFloat(k))
+      for (i, d) in dots.enumerated() {
+        let a = Float(max(0, sin(t * 5 - Float(i) * 0.9)))
+        let sc = 0.7 + 0.9 * a
+        d.scale = SCNVector3(sc, sc, sc)
+      }
+    }
+    nametag.setSuffix(thinking ? " · thinking…" : hovered ? " · tap to ask" : "")
     node.simdPosition = SIMD3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
     // Turn toward the user while speaking or when a decision is waiting; otherwise face the work.
     let speaking = now - spokeAt < 9

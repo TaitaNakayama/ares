@@ -22,6 +22,12 @@ final class BaseScene {
     return m
   }()
   var onDecide: ((String, String) -> Void)?
+  /// The Cardboard button with the reticle on a robot (and no card): ask that robot to explain itself.
+  var onAsk: ((String) -> Void)?
+  /// Roles whose agent is thinking; set from the link every frame.
+  private var thinkingRoles = Set<String>()
+  private var hoveredRobot: String?
+  private var lastAsk: [String: TimeInterval] = [:]
   /// The spectator view draws its own gaze dot.
   var showsReticle = true { didSet { reticleHolder.isHidden = !showsReticle } }
   /// The decision card under the reticle (0-3), if any: streamed to the spectator view.
@@ -149,15 +155,32 @@ final class BaseScene {
         dist = simd_distance(origin, SIMD3(h.worldCoordinates)) - 0.01
       }
     }
+    // Robots (body or nametag): a simple ray test; cards take priority.
+    var robotHit: (role: String, d: Float)?
+    if hitNode == nil {
+      for r in robots.values {
+        for (c, rad) in [(r.worldPosition, Float(0.34)), (r.worldPosition + SIMD3(0, 0.62, 0), Float(0.2))] {
+          let t = simd_dot(c - origin, fwd)
+          guard t > 0.3, simd_length(c - (origin + fwd * t)) < rad else { continue }
+          if t < (robotHit?.d ?? .infinity) { robotHit = (r.role, t) }
+        }
+      }
+    }
+    hoveredRobot = robotHit?.role
+    if let rh = robotHit { dist = max(0.5, rh.d - 0.4) }
     reticleHolder.simdPosition = origin + fwd * dist
     reticleHolder.simdOrientation = simd_quatf(worldFromHead)
-    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil ? 1.7 : 1.0))
+    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil || robotHit != nil ? 1.7 : 1.0))
     setHover(hitNode)
     let needs = !(latest?.waiting ?? []).isEmpty
     if needs && !cardsVisible && now >= hideUntil { refreshCards(latest) }
     // One bubble at a time: the newest speaker's.
     let speaker = now - captionAt < 9 ? captionRole : nil
-    for r in robots.values { r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker) }
+    thinkingRoles = link.thinkingRoles
+    for r in robots.values {
+      r.hovered = r.role == hoveredRobot
+      r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker, thinking: thinkingRoles.contains(r.role))
+    }
     updateArrow(worldFromHead: worldFromHead)
     screens.update(latest, now: time, linkText: link.statusText)
     updateDebug(link: link, fps: fps)
@@ -222,7 +245,15 @@ final class BaseScene {
     lastTap = now
     taps += 1
     guard cardsVisible, let h = hovered, let name = h.name, name.hasPrefix("card:"), let i = Int(name.dropFirst(5)), i < cardTargets.count, !cardTargets[i].esc.isEmpty else {
-      lastTapText = "tap"
+      if let role = hoveredRobot, now - (lastAsk[role] ?? -100) > 3 {
+        lastAsk[role] = now
+        lastTapText = "asked: \(role)"
+        NSLog("[ask] %@", role)
+        Sound.shared.play("select", volume: 0.6)
+        onAsk?(role)
+      } else {
+        lastTapText = "tap"
+      }
       return
     }
     guard now >= hideUntil else { return }

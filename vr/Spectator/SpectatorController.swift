@@ -167,6 +167,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
         pushLine(["seq": seq, "role": role, "name": r.name ?? role, "text": r.text ?? r.short ?? "", "short": r.short as Any, "outcome": r.outcome ?? "said"])
       }
     }
+    overlay.thinking.roles = RobotCrew.layout.map(\.role).filter { link.thinkingRoles.contains($0) }
     if subtitles.tick(now: now) { overlay.subtitles.items = subtitles.visible }
 
     let waiting = st?.waiting?.first
