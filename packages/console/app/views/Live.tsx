@@ -27,7 +27,7 @@ export function Live({ state, vr, narration, thinking }: { state: AppState; vr: 
           {narration.map((n) => (
             <article key={n.seq} className={`msg-row ${n.outcome}`}>
               <div className="who">
-                <RoleChip role={n.role} name={n.name} />
+                <RoleChip role={n.role} name={n.name} showRole />
                 <span className="mood">{n.mood}</span>
                 <Outcome o={n.outcome} />
               </div>
@@ -38,7 +38,7 @@ export function Live({ state, vr, narration, thinking }: { state: AppState; vr: 
           {thinking.map((role) => (
             <article key={`think-${role}`} className="msg-row thinking">
               <div className="who">
-                <RoleChip role={role} />
+                <RoleChip role={role} showRole />
                 <span className="think"><i className="pulse" />thinking…</span>
               </div>
             </article>

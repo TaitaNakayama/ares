@@ -165,7 +165,7 @@ final class Robot {
       ear.geometry?.materials = [a]
       ear.position = SCNVector3(-0.2, 0, 0)
       body.addChildNode(ear)
-    case "receiver": // Cargo Keeper: wide capsule with a cargo-bay belt
+    case "receiver": // Cargo: wide capsule with a cargo-bay belt
       let b = SCNNode(geometry: SCNCapsule(capRadius: 0.16, height: 0.52))
       b.geometry?.materials = [s]
       b.eulerAngles.z = .pi / 2
@@ -180,7 +180,7 @@ final class Robot {
         pod.position = SCNVector3(x, 0, 0)
         body.addChildNode(pod)
       }
-    case "ap": // Bill Checker: tall slim pill with a scanner visor
+    case "ap": // Bills: tall slim pill with a scanner visor
       let b = SCNNode(geometry: SCNCapsule(capRadius: 0.13, height: 0.5))
       b.geometry?.materials = [s]
       body.addChildNode(b)
@@ -188,7 +188,7 @@ final class Robot {
       band.geometry?.materials = [a]
       band.position = SCNVector3(0, -0.12, 0)
       body.addChildNode(band)
-    case "treasury": // Money Keeper: a coin on edge with a rim
+    case "treasury": // Money: a coin on edge with a rim
       let b = SCNNode(geometry: SCNCylinder(radius: 0.21, height: 0.09))
       b.geometry?.materials = [s]
       b.eulerAngles.x = .pi / 2
@@ -197,7 +197,7 @@ final class Robot {
       rim.geometry?.materials = [a]
       rim.eulerAngles.x = .pi / 2
       body.addChildNode(rim)
-    default: // controller, Rule Keeper: hexagonal prism with a crown band
+    default: // controller, Rules: hexagonal prism with a crown band
       let hex = SCNCylinder(radius: 0.2, height: 0.42)
       hex.radialSegmentCount = 6
       let b = SCNNode(geometry: hex)
@@ -468,18 +468,20 @@ final class Robot {
 }
 
 enum RobotCrew {
-  /// The colour of the agent with this display name (e.g. "Rule Keeper"); nil for an unknown name.
+  /// The colour of the agent with this display name (e.g. "Rules"; the pre-rename names still resolve for old tapes); nil for an unknown name.
   static func color(forAgent name: String) -> PlatformColor? {
-    layout.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }.map { Palette.role($0.role) }
+    let legacy = ["cargo keeper": "receiver", "bill checker": "ap", "money keeper": "treasury", "rule keeper": "controller"]
+    if let r = legacy[name.lowercased()] { return Palette.role(r) }
+    return layout.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }.map { Palette.role($0.role) }
   }
 
   /// Angle (deg, 0 = straight ahead), distance and height for each role.
   static let layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] = [
     ("requester", "Engineer", -48, 2.45, 1.38),
-    ("receiver", "Cargo Keeper", -27, 2.75, 1.02),
-    ("controller", "Rule Keeper", 16, 2.45, 2.12),
-    ("ap", "Bill Checker", 31, 2.75, 1.10),
-    ("treasury", "Money Keeper", 50, 2.45, 1.38),
+    ("receiver", "Cargo", -27, 2.75, 1.02),
+    ("controller", "Rules", 16, 2.45, 2.12),
+    ("ap", "Bills", 31, 2.75, 1.10),
+    ("treasury", "Money", 50, 2.45, 1.38),
   ]
 
   static func build(into root: SCNNode) -> [String: Robot] {

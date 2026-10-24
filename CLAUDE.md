@@ -45,6 +45,7 @@ scripts/build-spectator.sh        # Mac spectator view, full screen (Release; --
 curl -X POST localhost:8787/api/capture/request   # headset uploads its current frame to .cache/captures/latest.jpg
 curl localhost:8787/api/vr/stats  # headset fps / thermal / link
 node scripts/record-tape.ts       # re-record the offline replay tape from the live server
+scripts/record-demo.sh            # director-camera MP4 of a full autoplay run (headset on the desk)
 ```
 
 ## Gotchas

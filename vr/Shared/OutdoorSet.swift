@@ -542,7 +542,7 @@ final class OutdoorSet {
       group.addChildNode(gen)
     }
     always.addChildNode(Dressing.bake(group))
-    // Scan beam: the Cargo Keeper sweeps the stack. A pulsing amber cone from its hover point and a line rising and falling on the crates.
+    // Scan beam: the Cargo sweeps the stack. A pulsing amber cone from its hover point and a line rising and falling on the crates.
     let from = SIMD3(Spots.cargoKeeper.x, groundY(Spots.cargoKeeper) + 1.15, Spots.cargoKeeper.y)
     let to = SIMD3(c.x, groundY(c) + 0.9, c.y)
     let aim = SCNNode()

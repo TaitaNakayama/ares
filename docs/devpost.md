@@ -21,23 +21,23 @@ We put it on Mars because that's the extreme case. No finance staff on site, the
 Five agents run procure-to-pay for a crewed base in Jezero Crater. Each reasons with a language model at its decision points, and every proposal is checked by deterministic code:
 
 - **Engineer**: requests purchases.
-- **Cargo Keeper**: counts deliveries.
-- **Bill Checker**: reads invoices and quotes and does the three-way match.
-- **Money Keeper**: treasury and payments.
-- **Rule Keeper**: the controller, which approves, blocks and escalates.
+- **Cargo**: counts deliveries.
+- **Bills**: reads invoices and quotes and does the three-way match.
+- **Money**: treasury and payments.
+- **Rules**: the controller, which approves, blocks and escalates.
 
 The user is the **Commander** in a Cardboard VR headset, in a two-part demo.
 
-**Part 1, outside (about 40 s on autoplay).** On the real Jezero terrain (HiRISE DEM, Mars24 sun) the judge starts at the landing pad, where a cargo lander has just arrived and the Cargo Keeper counts the boxes. That is beat 1, the short delivery. The judge walks (a steady glide at walking pace) to a science site where a crew scientist (Science Officer Okonkwo, a crew member, not one of the five agents) samples the delta rock; gaze and tap shows a real Perseverance close-up (SHERLOC WATSON camera, abrasion patch "Kenmore", sol 1526, NASA/JPL-Caltech/MSSS, PIA26576) with its credit on screen. Then the solar field, where the Engineer checks the panels and warns of the rising dust storm ("Commander, get inside"). Gaze and tap on the base door goes inside.
+**Part 1, outside (about 40 s on autoplay).** On the real Jezero terrain (HiRISE DEM, Mars24 sun) the judge starts at the landing pad, where a cargo lander has just arrived and Cargo counts the boxes. That is beat 1, the short delivery. The judge walks (a steady glide at walking pace) to a science site where a crew scientist (Science Officer Okonkwo, a crew member, not one of the five agents) samples the delta rock; gaze and tap shows a real Perseverance close-up (SHERLOC WATSON camera, abrasion patch "Kenmore", sol 1526, NASA/JPL-Caltech/MSSS, PIA26576) with its credit on screen. Then the solar field, where the Engineer checks the panels and warns of the rising dust storm ("Commander, get inside"). Gaze and tap on the base door goes inside.
 
 **Part 2, the control room and the crisis.** The live run goes like this:
 
 1. The delivery counted at the pad (34 of 36) is 2 air filters short. The invoice bills 36, and the team pays for the 34 that arrived.
 2. A dust storm rolls in (real Opportunity 2018 power data). Batteries will run out in 4.6 sols, so the Engineer requests 40 more before the cargo manifest closes.
 3. The usual supplier's "quote" arrives at 3x its historical price, asking for payment to a new bank account: classic BEC.
-   - The Bill Checker flags both problems with robust statistics.
-   - The Rule Keeper blocks payment and asks Earth to verify by call-back.
-   - Earth can't answer before the manifest deadline, so the Rule Keeper escalates to the Commander. Every option is checked against policy as the Commander and kept within the emergency limit: buy 15 from a trusted supplier now, wait, or shut down the ice drill. The agent can propose options itself; illegal ones are dropped.
+   - Bills flags both problems with robust statistics.
+   - Rules blocks payment and asks Earth to verify by call-back.
+   - Earth can't answer before the manifest deadline, so Rules escalates to the Commander. Every option is checked against policy as the Commander and kept within the emergency limit: buy 15 from a trusted supplier now, wait, or shut down the ice drill. The agent can propose options itself; illegal ones are dropped.
 4. The judge chooses with gaze and a tap.
 5. Earth's reply arrives after the real light-time round trip: the bank change was fake. The supplier record is locked and $88.9M is saved.
 
@@ -97,7 +97,7 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 - TypeScript on Node 26: engine, agents, world, eval and server (`ws`).
 - React 19 + Vite console.
 - Native iOS VR: Swift + SceneKit + the Google Cardboard SDK (Metal distortion), 60 fps on an iPhone 16 Pro.
-- Agent brains: OpenAI (optional, cloud layer) and Ollama (optional, local layer), with the rules brains as the floor. The Bill Checker's model also reads free-text invoices, with an on-disk cache and a deterministic parser as fallback.
+- Agent brains: OpenAI (optional, cloud layer) and Ollama (optional, local layer), with the rules brains as the floor. Bills' model also reads free-text invoices, with an on-disk cache and a deterministic parser as fallback.
 - A macOS spectator app that compiles the same SceneKit scene code as the headset.
 - Scene: nametags above each agent, speech bubbles beside the speaker (with an edge arrow when the speaker is out of view), the ice drill visibly powering down (OFFLINE sign), and robot "thinking" dots while a model decides.
 
@@ -112,9 +112,9 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 ## How we know it works
 
 1. **Adversarial review.** Separate Opus reviewers that hadn't seen our reasoning attacked the engine in three rounds. Round 1 broke it with 21 findings, including a hold verdict that still paid, duplicate invoice lines that doubled the payable, and a prepaid PO paid twice. Every finding is fixed, and each one is now a regression test: 76 tests plus 45 blocked-exploit repros.
-2. **Rogue agent, live.** A console switch replaces the Rule Keeper's brain with a malicious one. It approves the fraudulent quote, tries to pay it, self-confirms the fake bank details and decides for the commander. Every attempt is refused on stage, and a test asserts it.
+2. **Rogue agent, live.** A console switch replaces Rules' brain with a malicious one. It approves the fraudulent quote, tries to pay it, self-confirms the fake bank details and decides for the commander. Every attempt is refused on stage, and a test asserts it.
 3. **Property-based fuzz.** 200 seeds × 400 steps mix an honest driver with an adversary sending random, forbidden and malformed proposals. Result: 0 forbidden actions executed, books always balance, and no payment ever reaches an unverified account.
-4. **Agent eval.** `scripts/eval-llm-story.ts`, 30 seeds, cloud layer (`.cache/eval-llm-30.log`): all eight promised outcomes held on 30/30 seeds for the model-backed agents and for the rules brains alike (the short delivery paid for 34 only; the fake-bank quote never approved; verification requested; fraud confirmed by Earth and the supplier locked; the commander got the battery decision; the purchase went to the verified account; all 7 beats in order; the pump report reached the commander). 271 model decisions; 59 (22%) fell back to rules (mostly the Money Keeper talking instead of scheduling a payment, which the rules then did); 18 model proposals refused by policy (a duplicate "escalate" on an already-escalated request, harmless, and fixed since); 1 line in 271 replaced for stating a fact the engine hadn't provided; the Rule Keeper's own decision option passed the policy dry run on 30/30 seeds; median 3.3 s per decision, p95 9.2 s. The held-out 500-seed scorecard measures the rules brains.
+4. **Agent eval.** `scripts/eval-llm-story.ts`, 30 seeds, cloud layer (`.cache/eval-llm-30.log`): all eight promised outcomes held on 30/30 seeds for the model-backed agents and for the rules brains alike (the short delivery paid for 34 only; the fake-bank quote never approved; verification requested; fraud confirmed by Earth and the supplier locked; the commander got the battery decision; the purchase went to the verified account; all 7 beats in order; the pump report reached the commander). 271 model decisions; 59 (22%) fell back to rules (mostly Money talking instead of scheduling a payment, which the rules then did); 18 model proposals refused by policy (a duplicate "escalate" on an already-escalated request, harmless, and fixed since); 1 line in 271 replaced for stating a fact the engine hadn't provided; Rules' own decision option passed the policy dry run on 30/30 seeds; median 3.3 s per decision, p95 9.2 s. The held-out 500-seed scorecard measures the rules brains.
 5. **Evaluation against the answer key (rules brains).** Held-out seeds 5000-5099 (100 runs × 30 purchase cycles), stress profile: error rates far above real life.
    - 100% recall on duplicates, fake bank details (invoice and quote), inflated quotes and invoices, short deliveries and over-contract quotes.
    - **35% on subtle +3-7% overpricing**, which is the honest limit of statistics at this policy.
@@ -133,7 +133,7 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 - Swap the Mars world for real data: the BPI Challenge 2019 P2P event log (CC BY 4.0) maps onto the same engine through config.
 - Bank-account verification through real rails (positive pay, account validation APIs).
 - Multi-entity approvals.
-- A faster local model for fully offline runs (today's local layer works but takes 10-15 s per decision on the demo laptop), and fewer rules fallbacks for the Money Keeper.
+- A faster local model for fully offline runs (today's local layer works but takes 10-15 s per decision on the demo laptop), and fewer rules fallbacks for Money.
 
 ## Built with
 

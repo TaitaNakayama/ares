@@ -75,7 +75,7 @@ function ProposalView({ p }: { p: Proposal }) {
   return (
     <>
       <dl className="kv">
-        <dt>Agent</dt><dd><RoleChip role={p.role} /></dd>
+        <dt>Agent</dt><dd><RoleChip role={p.role} showRole /></dd>
         <dt>Action</dt><dd><code>{p.action.type}</code></dd>
         <dt>Rationale</dt><dd>{p.rationale ?? "-"}</dd>
         <dt>Parameters</dt><dd><code className="wrap">{JSON.stringify(p.action.params)}</code></dd>
