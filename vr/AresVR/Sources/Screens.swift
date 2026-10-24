@@ -12,7 +12,8 @@ final class WallScreens {
   init(root: SCNNode) {
     for (panel, deg) in [(power, Float(-63)), (money, Float(63))] {
       let n = panel.node
-      n.position = Room.ring(deg, r: Room.radius - 0.08, y: 1.78)
+      // Flat panels on a curved wall: mount inside the curve so the edges don't sink into it.
+      n.position = Room.ring(deg, r: Room.radius - 0.28, y: 1.78)
       n.look(at: SCNVector3(0, 1.78, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
       root.addChildNode(n)
       let bezel = SCNNode(geometry: SCNBox(width: 2.22, height: 1.32, length: 0.04, chamferRadius: 0.03))

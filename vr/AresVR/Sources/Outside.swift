@@ -164,14 +164,16 @@ final class Outside {
   private func buildDust() {
     dust.birthRate = 0
     dust.particleLifeSpan = 6
-    dust.particleSize = 0.25
-    dust.particleSizeVariation = 0.2
-    dust.particleColor = UIColor(red: 0.75, green: 0.52, blue: 0.34, alpha: 0.35)
+    // Fine wind-blown grit: small, faint, streaked along the wind.
+    dust.particleSize = 0.05
+    dust.particleSizeVariation = 0.03
+    dust.stretchFactor = 0.06
+    dust.particleColor = UIColor(red: 0.80, green: 0.58, blue: 0.40, alpha: 0.22)
     dust.particleColorVariation = SCNVector4(0, 0, 0, 0.15)
     dust.emitterShape = SCNBox(width: 60, height: 8, length: 30, chamferRadius: 0)
     dust.acceleration = SCNVector3(0, 0, 0)
-    dust.particleVelocity = 6
-    dust.particleVelocityVariation = 2
+    dust.particleVelocity = 14
+    dust.particleVelocityVariation = 4
     dust.emittingDirection = SCNVector3(1, 0.05, 0)
     dust.spreadingAngle = 10
     dust.blendMode = .alpha
@@ -281,7 +283,7 @@ final class Outside {
     let horizon = Self.skyColor(dir: simd_normalize(SIMD3(sunWorld.x, 0.02, sunWorld.z) * -1 + SIMD3(0, 0.02, 0)), sun: sunWorld, tau: tau, sunElev: Float(sunElevation))
     scene?.fogColor = UIColor(red: CGFloat(horizon.x), green: CGFloat(horizon.y), blue: CGFloat(horizon.z), alpha: 1)
 
-    dust.birthRate = CGFloat(max(0, (tau - 1.2)) * 120)
+    dust.birthRate = CGFloat(max(0, (tau - 1.2)) * 400)
 
     let key = "\(Int(tau * 10))|\(Int(sunAzimuth / 4))|\(Int(sunElevation / 2))"
     if key != lastSkyKey && !skyBusy {

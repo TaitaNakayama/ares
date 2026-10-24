@@ -16,7 +16,6 @@ final class Robot {
   private let eyeMat = SCNMaterial()
   private let faceMat = SCNMaterial()
   private let haloMat = SCNMaterial()
-  private let bubble: TextPanel
   private let home: SCNVector3
   private let homeYaw: Float
   private var mood = "calm"
@@ -34,7 +33,6 @@ final class Robot {
     home = pos
     homeYaw = faceYaw
     phase = Float(abs(role.hashValue % 100)) / 100 * 6.28
-    bubble = TextPanel(width: 1.25, height: 0.52, pixelsPerMeter: 820)
     node.position = pos
     node.eulerAngles.y = faceYaw
     node.addChildNode(body)
@@ -49,20 +47,16 @@ final class Robot {
     halo.geometry?.materials = [haloMat]
     halo.position = SCNVector3(0, -0.32, 0)
     node.addChildNode(halo)
-    // Bubble floats above, always facing the camera.
-    bubble.node.position = SCNVector3(pos.x, pos.y + 0.55, pos.z)
-    bubble.node.constraints = [SCNBillboardConstraint()]
-    bubble.node.renderingOrder = 50
     setMood("calm", force: true)
-    drawBubble(active: false)
   }
-
-  var bubbleNode: SCNNode { bubble.node }
 
   private func shell() -> SCNMaterial {
     let m = SCNMaterial()
     m.lightingModel = .blinn
-    m.diffuse.contents = UIColor(white: 0.92, alpha: 1)
+    // Shell lightly tinted toward the role colour so each robot reads at a glance.
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    m.diffuse.contents = UIColor(red: 0.80 + 0.18 * r, green: 0.80 + 0.18 * g, blue: 0.80 + 0.18 * b, alpha: 1)
     m.specular.contents = UIColor(white: 0.6, alpha: 1)
     m.shininess = 0.6
     return m
@@ -213,25 +207,8 @@ final class Robot {
     self.outcome = outcome
     spokeAt = now
     setMood(outcome == "deny" ? "attentive" : mood)
-    drawBubble(active: true)
+    haloMat.diffuse.contents = (mood == "suspicious" ? UIColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : color).withAlphaComponent(1)
     body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
-  }
-
-  private func drawBubble(active: Bool) {
-    let t = text
-    let accentColor = color
-    let deny = outcome == "deny"
-    bubble.update(key: "\(active)|\(t)|\(outcome)") { ctx, size in
-      let r = CGRect(origin: .zero, size: size)
-      Draw.fill(ctx, r, UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1), radius: 0)
-      Draw.fill(ctx, CGRect(x: 0, y: 0, width: 14, height: size.height), accentColor)
-      _ = Draw.text(self.name.uppercased(), at: CGPoint(x: 40, y: 22), size: 44, weight: .heavy, color: accentColor)
-      if deny { _ = Draw.text("REFUSED BY POLICY", at: CGPoint(x: size.width - 470, y: 26), size: 36, weight: .heavy, color: Palette.red) }
-      if active {
-        _ = Draw.text(t, at: CGPoint(x: 40, y: 92), size: 62, weight: .bold, color: Palette.text, width: size.width - 80, maxLines: 4)
-      }
-    }
-    bubble.node.opacity = active ? 1 : 0.55
   }
 
   func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool) {
@@ -246,7 +223,7 @@ final class Robot {
     while dyaw > .pi { dyaw -= 2 * .pi }
     while dyaw < -.pi { dyaw += 2 * .pi }
     node.eulerAngles.y += dyaw * 0.08
-    if !speaking && bubble.node.opacity > 0.9 { drawBubble(active: false); if mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") } }
+    if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
     if now > nextBlink {
       nextBlink = now + 2.5 + Double((sin(t * 7.1 + phase) + 1) * 2)
       let s = eyeL.scale.y
@@ -260,11 +237,11 @@ final class Robot {
 enum RobotCrew {
   /// Angle (deg, 0 = straight ahead), distance and height for each role.
   static let layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] = [
-    ("requester", "Engineer", -56, 2.45, 1.32),
-    ("receiver", "Cargo Keeper", -30, 2.75, 1.02),
-    ("controller", "Rule Keeper", 0, 2.55, 2.02),
-    ("ap", "Bill Checker", 30, 2.75, 1.08),
-    ("treasury", "Money Keeper", 56, 2.45, 1.32),
+    ("requester", "Engineer", -48, 2.45, 1.38),
+    ("receiver", "Cargo Keeper", -27, 2.75, 1.02),
+    ("controller", "Rule Keeper", 16, 2.45, 2.12),
+    ("ap", "Bill Checker", 31, 2.75, 1.10),
+    ("treasury", "Money Keeper", 50, 2.45, 1.38),
   ]
 
   static func build(into root: SCNNode) -> [String: Robot] {
@@ -276,7 +253,6 @@ enum RobotCrew {
       let yaw = atan2(-pos.x, -pos.z) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
       let r = Robot(role: l.role, name: l.name, color: Palette.role(l.role), at: pos, faceYaw: yaw)
       root.addChildNode(r.node)
-      root.addChildNode(r.bubbleNode)
       out[l.role] = r
     }
     return out

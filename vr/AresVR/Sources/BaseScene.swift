@@ -23,6 +23,10 @@ final class BaseScene {
   private let screens: WallScreens
   private var robots: [String: Robot] = [:]
   private let debug = TextPanel(width: 1.6, height: 0.6, pixelsPerMeter: 600)
+  /// Subtitle bar: the latest robot line, in one comfortable place low in the view.
+  private let caption = TextPanel(width: 1.9, height: 0.34, pixelsPerMeter: 1000)
+  private var captionSeq = -1
+  private var captionAt: TimeInterval = -100
   private let cardRoot = SCNNode()
   private var cards: [SCNNode] = []
   private var cardPanels: [TextPanel] = []
@@ -48,6 +52,11 @@ final class BaseScene {
     robots = RobotCrew.build(into: scene.rootNode)
     buildReticle()
     buildCards()
+    caption.node.position = SCNVector3(0, 1.33, -2.25)
+    caption.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
+    caption.node.opacity = 0
+    caption.node.renderingOrder = 60
+    scene.rootNode.addChildNode(caption.node)
     debug.node.position = Room.ring(180, r: Room.radius - 0.1, y: 1.6)
     debug.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
     scene.rootNode.addChildNode(debug.node)
@@ -120,6 +129,10 @@ final class BaseScene {
     if needs && !cardsVisible && now >= hideUntil { refreshCards(latest) }
     for r in robots.values { r.update(now: time, user: origin, needsCommander: needs) }
     screens.update(latest, now: time, linkText: link.statusText)
+    // Captions sit low; when choices are up they move above the cards.
+    let capY: Float = cardsVisible ? 2.28 : 1.33
+    if abs(caption.node.position.y - capY) > 0.01 { caption.node.position.y += (capY - caption.node.position.y) * 0.15 }
+    if now - captionAt > 9, caption.node.opacity > 0.99, !caption.node.hasActions { caption.node.runAction(.fadeOpacity(to: 0.0, duration: 0.6)) }
     updateDebug(link: link, fps: fps)
   }
 
@@ -127,11 +140,32 @@ final class BaseScene {
     guard let st else { return }
     outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.setDrill(on: st.power?.drillOn ?? true)
+    var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
       guard let robot = robots[role], let seq = r.seq else { continue }
       robot.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
+      if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
     }
+    if let n = newest, let seq = n.r.seq, seq != captionSeq { showCaption(role: n.role, r: n.r, seq: seq) }
     refreshCards(st)
+  }
+
+  private func showCaption(role: String, r: VRState.Robot, seq: Int) {
+    captionSeq = seq
+    captionAt = now
+    let color = Palette.role(role)
+    let name = (r.name ?? role).uppercased()
+    let text = r.short ?? r.text ?? ""
+    let deny = r.outcome == "deny"
+    caption.update(key: "\(seq)") { ctx, size in
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1))
+      Draw.fill(ctx, CGRect(x: 0, y: 0, width: 16, height: size.height), color)
+      _ = Draw.text(name, at: CGPoint(x: 44, y: 22), size: 44, weight: .heavy, color: color)
+      if deny { _ = Draw.text("REFUSED BY POLICY", at: CGPoint(x: size.width - 480, y: 26), size: 38, weight: .heavy, color: Palette.red) }
+      _ = Draw.text(text, at: CGPoint(x: 44, y: 92), size: 72, weight: .bold, color: Palette.text, width: size.width - 88, maxLines: 3)
+    }
+    caption.node.removeAllActions()
+    caption.node.runAction(.fadeOpacity(to: 1, duration: 0.2))
   }
 
   private func setHover(_ node: SCNNode?) {
@@ -189,7 +223,7 @@ final class BaseScene {
         ctx.setStrokeColor((isHover ? Palette.amber : UIColor(white: 1, alpha: 0.3)).cgColor)
         ctx.setLineWidth(isHover ? 16 : 5)
         ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 8, dy: 8))
-        _ = Draw.text(t.label, at: CGPoint(x: 40, y: 34), size: 66, weight: .heavy, color: isHover ? Palette.amber : Palette.text, width: size.width - 80, maxLines: 2)
+        _ = Draw.text(t.label, at: CGPoint(x: 40, y: 30), size: 58, weight: .heavy, color: isHover ? Palette.amber : Palette.text, width: size.width - 80, maxLines: 2)
         _ = Draw.text(t.detail, at: CGPoint(x: 40, y: 210), size: 44, weight: .semibold, color: Palette.dim, width: size.width - 80, maxLines: 3)
         if isHover { _ = Draw.text("Press the button to choose", at: CGPoint(x: 40, y: size.height - 76), size: 42, weight: .heavy, color: Palette.amber) }
       }
