@@ -66,6 +66,7 @@ final class GroundSpike {
     func arg(_ k: String) -> String? { args.firstIndex(of: k).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
     window = Double(arg("--ground-window") ?? "") ?? 70
     hold = Int(arg("--ground-hold") ?? "")
+    world.drivesView = false // the spike owns the view offset
     world.scene.rootNode.addChildNode(node)
     placeJudge()
     buildRocks()
@@ -315,18 +316,4 @@ final class GroundSpike {
     if samples.count >= 3 { live[label] = summary() }
     return ["ground": true, "cfg": label, "cfgIndex": current, "cfgAvgFps": live[label]?[0] ?? 0, "cfgMinFps": live[label]?[1] ?? 0, "cfgResults": live]
   }
-}
-
-struct SplitMix {
-  var s: UInt64
-  init(_ seed: UInt64) { s = seed &+ 0x9E3779B97F4A7C15 }
-  mutating func next() -> UInt64 {
-    s = s &+ 0x9E3779B97F4A7C15
-    var z = s
-    z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
-    z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
-    return z ^ (z >> 31)
-  }
-  mutating func unit() -> Double { Double(next() >> 11) / Double(1 << 53) }
-  mutating func gauss() -> Double { sqrt(-2 * log(max(unit(), 1e-12))) * cos(2 * .pi * unit()) }
 }

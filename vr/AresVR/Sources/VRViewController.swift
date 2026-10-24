@@ -90,6 +90,8 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
     world.onAsk = { [weak self] role in self?.link.ask(role: role) }
+    world.onEnter = { [weak self] in self?.link.enter() }
+    world.attachFade(to: world.head)
     link.onRecenter = { [weak self] in self?.cardboard.recenter() }
     link.onScanViewer = { [weak self] in self?.cardboard.scanViewerQR() }
     // "Forward" = wherever the phone faces shortly after launch (then on demand from the console).
@@ -194,7 +196,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     if poseFrame % 2 == 0 {
       let q = simd_normalize(simd_quatf(rawHeadView.inverse))
       let fovX = 2 * atan(1 / cardboard.projection[0].columns.0.x) * 180 / .pi
-      link.sendPose(q, gaze: world.gazedCard, cards: world.cardsShown, fovX: fovX)
+      link.sendPose(q, gaze: world.gazedCard, cards: world.cardsShown, fovX: fovX, pos: world.director.eye, yaw: world.director.yaw, closeUp: world.director.closeUp.isOpen)
     }
 
     world.head.simdTransform = (headView * world.viewOffset).inverse // world-from-head

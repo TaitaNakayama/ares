@@ -83,3 +83,9 @@ Author: Kenney, https://www.kenney.nl . Licence: Creative Commons Zero, CC0 1.0,
 - Solar panels, lockers, whiteboard, cable tray, warning-stripe texture (lockers, whiteboard, cable trays and stripes are now built from primitives and code-drawn textures, see "Used in the scene" above): no verified CC0 model located in the time available (Poly Haven has none; the Kenney and Quaternius kits above contain no solar panel or locker). UNVERIFIED sources were not downloaded. Build these from primitives with the metal textures above.
 - Poly Haven `modular_electric_cables` (42k triangles) was found and removed as too heavy.
 - Ultimate Space Kit by Quaternius: the Sketchfab page says CC-BY while the description says CC0 (conflict), and the contents were not confirmed. UNVERIFIED, not downloaded.
+
+**Used in the scene (outdoor part 1, `vr/Shared/OutdoorSet.swift`, `Scientist.swift`, `CloseUp.swift`; files copied flat into `vr/AresVR/Resources/outdoor/`):**
+- Kenney Space Kit (CC0): `craft_cargoA` (the cargo lander on the landing pad), `barrels` (beside the cargo pallets), `machine_generator` (pad generator); plus the props already placed in the window view (`rover`, `satelliteDish_large`, `hangar_round*`, rocks).
+- Poly Haven (CC0): `moon_rock_02` and `moon_rock_04` (.usdc, diffuse JPG; the science outcrop).
+- NASA/JPL-Caltech/MSSS, PIA26576, `perseverance-sol1526-watson-kenmore.jpg`: the scientist's close-up panel (abrasion patch "Kenmore", SHERLOC WATSON, sol 1526), shown with its caption and credit line. Imagery only; no NASA logo.
+- Original, drawn in code: pad markings and scorch decal, habitat shell panels and the AIRLOCK 1 door, crate stencils (invented "ARES CARGO SIM-n" labels), footprints and tyre tracks, solar-cell texture, the scientist figure (primitives). Terrain is the real USGS HiRISE/CTX mesh already credited above.
