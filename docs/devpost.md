@@ -26,9 +26,13 @@ Five agents run procure-to-pay for a crewed base in Jezero Crater. Each reasons 
 - **Money Keeper**: treasury and payments.
 - **Rule Keeper**: the controller, which approves, blocks and escalates.
 
-The user stands in the base's control room in a Cardboard VR headset as the **Commander**. The live run goes like this:
+The user is the **Commander** in a Cardboard VR headset, in a two-part demo.
 
-1. A delivery arrives 2 air filters short. The invoice bills 36, and the team pays for the 34 that arrived.
+**Part 1, outside (about 40 s on autoplay).** On the real Jezero terrain (HiRISE DEM, Mars24 sun) the judge starts at the landing pad, where a cargo lander has just arrived and the Cargo Keeper counts the boxes. That is beat 1, the short delivery. The judge walks (a steady glide at walking pace) to a science site where a crew scientist (Science Officer Okonkwo, a crew member, not one of the five agents) samples the delta rock; gaze and tap shows a real Perseverance close-up (SHERLOC WATSON camera, abrasion patch "Kenmore", sol 1526, NASA/JPL-Caltech/MSSS, PIA26576) with its credit on screen. Then the solar field, where the Engineer checks the panels and warns of the rising dust storm ("Commander, get inside"). Gaze and tap on the base door goes inside.
+
+**Part 2, the control room and the crisis.** The live run goes like this:
+
+1. The delivery counted at the pad (34 of 36) is 2 air filters short. The invoice bills 36, and the team pays for the 34 that arrived.
 2. A dust storm rolls in (real Opportunity 2018 power data). Batteries will run out in 4.6 sols, so the Engineer requests 40 more before the cargo manifest closes.
 3. The usual supplier's "quote" arrives at 3x its historical price, asking for payment to a new bank account: classic BEC.
    - The Bill Checker flags both problems with robust statistics.
@@ -47,7 +51,7 @@ A laptop console shows that it isn't scripted:
 The judge can also steer it:
 - Look at an agent in the headset and press: it explains what it is doing, live from current state.
 - After the story, type any event on the console, or use a preset (broken water pump, crew injury needing medicine, supplier bankruptcy). Anything no catalog action covers reaches the Commander as an escalation with the agent's recommendation. All three presets reached the Commander in live tests.
-- A Mac spectator view shows what the judge sees, full screen, with subtitles in each agent's colour, the decision card and the gazed option, the beat counter and a LIVE or REPLAY badge.
+- A Mac spectator view shows what the judge sees, following their position and orientation through both parts, full screen, with subtitles in each agent's colour, the decision card and the gazed option, the beat counter and a LIVE or REPLAY badge.
 
 ## How we built it
 
@@ -95,7 +99,15 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 - Native iOS VR: Swift + SceneKit + the Google Cardboard SDK (Metal distortion), 60 fps on an iPhone 16 Pro.
 - Agent brains: OpenAI (optional, cloud layer) and Ollama (optional, local layer), with the rules brains as the floor. The Bill Checker's model also reads free-text invoices, with an on-disk cache and a deterministic parser as fallback.
 - A macOS spectator app that compiles the same SceneKit scene code as the headset.
-- Scene: nametags above each agent, speech bubbles beside the speaker (with an edge arrow when the speaker is out of view), the ice drill visibly powering down (OFFLINE sign), and robot "thinking" faces while a model decides.
+- Scene: nametags above each agent, speech bubbles beside the speaker (with an edge arrow when the speaker is out of view), the ice drill visibly powering down (OFFLINE sign), and robot "thinking" dots while a model decides.
+
+**Visual polish, four reviewer-scored rounds.**
+- Control room: textured and lived-in, with worn panels, rubber floor, warm ceiling tubes with housings and ducts, cable trays, vents, lockers with name tapes (fictional crew), hydroponics under grow lights, a stores rack, O2 scrubber, water recycler, whiteboard, an airlock door with hazard stripes, contact shadows and floor markings.
+- Wall screens redesigned (ring gauge, sparklines, KPI tiles, a WAITING card) plus a LOCATION screen on the real Jezero orbital map (PIA23976, NASA/JPL-Caltech/USGS/University of Arizona).
+- Robots: satin shells, rim glow in their colour, blink and glance, lean when speaking.
+- Outdoor set: lander, pallets, rover, dish, solar field, habitat with airlock, survey flags, footprints, batched rocks, a grit texture, storm dust capped outside.
+- Procedural sound: hum inside, wind rising with dust opacity, per-agent chimes, a thinking tick, a decision tone.
+- Ground-level rendering held about 60 fps at each outdoor station on the phone in short samples (one 1 s dip to 48 at the door). That is a short-sample measurement, not a long soak.
 
 ## How we know it works
 
@@ -125,7 +137,7 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 
 ## Built with
 
-TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, Metal, Google Cardboard SDK, USGS Astrogeology data, astronomy-engine, Mars24, OpenAI API, Ollama.
+TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, Metal, Google Cardboard SDK, Poly Haven / Kenney / Quaternius CC0 assets, NASA imagery (Perseverance WATSON, Jezero map), USGS Astrogeology data, astronomy-engine, Mars24, OpenAI API, Ollama.
 
 ## Credits
 
@@ -133,6 +145,8 @@ TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, 
 - **Sun model:** Mars24, NASA GISS (Allison & McEwen 2000).
 - **Power calibration:** JPL Opportunity mission updates (2018).
 - **Consumables:** NASA BVAD Rev 1 (2018).
-- **3D props and sounds:** Kenney Space Kit, Interface Sounds and Sci-fi Sounds (CC0).
+- **3D models and textures:** Poly Haven, Kenney and Quaternius (all CC0); sounds are procedural plus Kenney sound packs (CC0). Full list in CREDITS.md.
+- **Imagery:** NASA/JPL-Caltech/MSSS (Perseverance SHERLOC WATSON "Kenmore", sol 1526, PIA26576) and NASA/JPL-Caltech/USGS/University of Arizona (Jezero map, PIA23976). No agency logos.
+- Crew names and invented figures are fictional or SIMULATED.
 - **Fonts and system:** Apple system fonts.
 - No NASA or USGS endorsement is implied.

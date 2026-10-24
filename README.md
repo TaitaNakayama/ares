@@ -51,13 +51,28 @@ Environment knobs:
 
 Free-text invoices are read by the Bill Checker's model when one is available, and by a deterministic parser otherwise. Cloud responses are cached in `.cache/llm/`.
 
+## The two-part demo
+
+**Part 1, outside (about 40 s on autoplay).** On the real Jezero terrain (HiRISE DEM, Mars24 sun) the judge starts at the landing pad, where a cargo lander has just arrived and the Cargo Keeper counts the boxes. That is beat 1, the short delivery: 34 of 36. The judge then walks, at a steady glide at walking pace, to a science site where a crew scientist (Science Officer Okonkwo, a crew member and not one of the five agents) samples the delta rock; gaze and tap shows a real Perseverance close-up (SHERLOC WATSON camera, abrasion patch "Kenmore", sol 1526, NASA/JPL-Caltech/MSSS, PIA26576) with its credit on screen. Next is the solar field, where the Engineer checks the panels and warns of the rising dust storm ("Commander, get inside"). Gaze and tap on the base door to go inside.
+
+**Part 2, inside.** The control room and the crisis, as described above.
+
+On the phone the ground-level scene held about 60 fps at each station in short samples (the door had one 1 s dip to 48); that is a short-sample measurement, not a long soak. The door tap and the scientist tap are described here as what the judge does; they have not been tested on the real headset at the time of writing.
+
 ## Spectator view
 
-`AresSpectator` is a macOS app that renders the same SceneKit scene code (`vr/Shared`) as the headset, undistorted and full screen, following the judge's head (the phone streams its orientation at 30 Hz). It shows subtitles in each agent's colour, the decision card with the option being gazed at, a "N of 7" beat counter and a LIVE or REPLAY badge. With no headset connected it plays the recorded run under a slowly drifting camera (REPLAY). It is read-only.
+`AresSpectator` is a macOS app that renders the same SceneKit scene code (`vr/Shared`) as the headset, undistorted and full screen, following the judge's position and orientation through both parts (the phone streams its pose at 30 Hz). It shows subtitles in each agent's colour, the decision card with the option being gazed at, a "N of 7" beat counter and a LIVE or REPLAY badge. With no headset connected it plays the recorded run under a slowly drifting camera (REPLAY). It is read-only.
 
 ## In the scene
 
-Nametags above each agent; speech bubbles beside the speaker, with an edge arrow when the speaker is out of view; the ice drill visibly powers down (OFFLINE sign) when that choice is made; and robot "thinking" faces while a model decides.
+Nametags above each agent; speech bubbles beside the speaker, with an edge arrow when the speaker is out of view; the ice drill visibly powers down (OFFLINE sign) when that choice is made; and robot "thinking" dots while a model decides.
+
+Visual polish (four reviewer-scored rounds):
+- **Control room:** textured, lived-in panels with wear, rubber floor, warm ceiling tubes with housings and ducts, cable trays, vents, lockers with name tapes (fictional crew), hydroponics under grow lights, a stores rack, O2 scrubber, water recycler, whiteboard, an airlock door with hazard stripes, contact shadows and floor markings.
+- **Wall screens:** redesigned with a ring gauge, sparklines, KPI tiles and a WAITING card, plus a LOCATION screen on the real Jezero orbital map (PIA23976, NASA/JPL-Caltech/USGS/University of Arizona).
+- **Robots:** satin shells, rim glow in their colour, blink and glance, lean when speaking, thinking dots.
+- **Outdoor set:** lander, pallets, rover, dish, solar field, habitat with airlock, survey flags, footprints, batched rocks, a grit texture, and storm dust capped outside.
+- **Sound (procedural):** hum inside, wind rising with dust opacity, per-agent chimes, a thinking tick and a decision tone.
 
 ## Layout
 
@@ -83,5 +98,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md), [PLAN.md](PLAN.md), [CLAIMS.md](CLAIMS.m
 - **Solar power vs dust:** Opportunity 2018 storm, JPL mission updates.
 - **Consumables:** NASA BVAD Rev 1.
 - **Google Cardboard SDK:** Apache-2.0.
-- **3D props and sounds:** Kenney Space Kit, Interface Sounds and Sci-fi Sounds (CC0).
-- Suppliers, prices, budget and invoices are **SIMULATED**. No NASA or USGS endorsement is implied.
+- **3D models and textures:** Poly Haven, Kenney and Quaternius (all CC0), plus Kenney sound packs (CC0). Full list in [CREDITS.md](CREDITS.md).
+- **Imagery:** NASA/JPL-Caltech/MSSS (Perseverance SHERLOC WATSON, PIA26576) and NASA/JPL-Caltech/USGS/University of Arizona (Jezero map, PIA23976). No agency logos are used.
+- Suppliers, prices, budget and invoices are **SIMULATED**; crew names are fictional. No NASA or USGS endorsement is implied.
