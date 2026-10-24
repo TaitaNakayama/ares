@@ -1,0 +1,142 @@
+// LLM agent evaluation: run the full 7-beat story with the LLM brains (local -> cloud -> rules), many
+// seeds, and report honestly next to the rules brains on the same seeds: did every beat happen in
+// order, how many decisions the model actually made vs fell back, how many lines were replaced
+// for stating facts the engine didn't provide, latency, denials, and whether a novel event (the
+// broken water pump) reached the commander with a recommendation.
+//   node scripts/eval-llm-story.ts --seeds 5 [--mode auto|local|cloud] [--roles requester,controller] [--json out.json]
+import { writeFileSync } from "node:fs";
+import {
+  ApWithReader, ControllerRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, TreasuryRules,
+  type AgentMode, type Brain, type LlmOutcome,
+} from "@ares/agents";
+import type { AgentRole } from "@ares/engine";
+import { MarsWorld } from "@ares/world-mars";
+
+process.loadEnvFile(new URL("../.env", import.meta.url).pathname);
+const args = process.argv.slice(2);
+const opt = (k: string, d: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1]! : d; };
+const SEEDS = Number(opt("--seeds", "5"));
+const MODE = opt("--mode", "auto") as AgentMode;
+const ROLES = opt("--roles", "requester,receiver,ap,treasury,controller").split(",") as AgentRole[];
+const OUT = opt("--json", "");
+const PUMP = "URGENT from Hab-2: crew member Okafor broke the only water pump while clearing a filter. The water recycler is down; stored water covers 9 sols. Kepler Salvage offers a used replacement pump at half the new price ($9,000 instead of $18,000), no warranty, 3 sols delivery. A new pump from Tharsis Supply is $18,000 with 6 sols delivery.";
+
+const local = new OllamaProvider();
+const avail = await local.available();
+const cloud = process.env.OPENAI_API_KEY ? new OpenAIProvider(process.env.OPENAI_API_KEY) : undefined;
+const router = new ModelRouter(avail.up && avail.hasModel ? local : undefined, cloud); // no cache: every seed is a real call
+router.mode = MODE;
+console.log(`layers: local ${router.local?.model ?? "none"}; cloud ${router.cloud?.model ?? "none"}; mode ${MODE}; roles ${ROLES.join(",")}`);
+
+interface RunResult {
+  seed: string;
+  brains: "llm" | "rules";
+  beats: number[];
+  onStory: boolean;
+  escalationToCommander: boolean;
+  prevented: number;
+  paid: number;
+  cash: number;
+  proposals: Record<string, number>;
+  denied: Record<string, number>;
+  llm: { decisions: number; fallbacks: number; byReason: Record<string, number>; linesReplaced: number; p50: number; p95: number; max: number; byLayer: Record<string, number> };
+  pump: { reached: boolean; by?: string; urgency?: string; recommendation?: string; ms?: number };
+  wallMs: number;
+}
+
+function brainsFor(kind: "llm" | "rules"): Brain[] {
+  const rules: Record<AgentRole, Brain> = { requester: new RequesterRules(), receiver: new ReceiverRules(), ap: new ApWithReader(kind === "llm" ? router : undefined), treasury: new TreasuryRules(), controller: new ControllerRules() };
+  const list: Brain[] = [];
+  for (const role of Object.keys(rules) as AgentRole[]) {
+    const use = kind === "llm" && ROLES.includes(role);
+    list.push(use ? new LlmBrain({ role, rules: rules[role], router }) : rules[role]);
+    if (!use) list.push(new ReportRules(role));
+  }
+  list.push(new EscalationDrafter(kind === "llm" ? router : undefined));
+  return list;
+}
+
+const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))]! : 0; };
+const count = (xs: string[]) => xs.reduce<Record<string, number>>((m, x) => ((m[x] = (m[x] ?? 0) + 1), m), {});
+
+async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
+  const t0 = performance.now();
+  const world = new MarsWorld({ seed, mode: "demo" });
+  const brains = brainsFor(kind);
+  const orch = new Orchestrator({ world, brains, fmtTime: world.fmtTime, routeReport: kind === "llm" ? llmRoute(router) : undefined });
+  const e = orch.engine;
+  const beats: number[] = [];
+  const mark = () => { const b = world.storyBeat(e); if (beats.at(-1) !== b) beats.push(b); };
+  // Prologue (pre-story history) on rules, as the server does.
+  const mode = router.mode;
+  router.mode = "rules";
+  await orch.runUntil(world.start);
+  router.mode = mode;
+  mark();
+  orch.scheduleAll(world.beatDelivery(e));
+  await orch.runUntil(e.now + 2 * 3600e3);
+  mark();
+  orch.scheduleAll(world.beatStorm(e));
+  await orch.runUntil(e.now + 2 * 3600e3);
+  mark();
+  const esc = [...e.escalations.values()].find((x) => x.status === "awaiting_decision" && x.to === "local_authority" && x.subject.kind === "requisition");
+  if (esc) {
+    const buy = esc.options.find((o) => o.id.startsWith("buy-")) ?? esc.options[0]!;
+    await orch.submitHuman("local_authority", { type: "decide", params: { escalationId: esc.id, optionId: buy.id } });
+    mark();
+  }
+  await orch.runUntil(e.now + 6 * 3600e3);
+  mark();
+  // A novel event after the story: must reach the commander with a recommendation.
+  const tp = performance.now();
+  orch.schedule(e.now + 60_000, { type: "report", id: `REP-EVAL-${seed}`, from: "Hab-2", text: PUMP });
+  await orch.runUntil(e.now + 10 * 60_000);
+  const rep = [...e.reports.values()].at(-1);
+  const repEsc = rep ? [...e.escalations.values()].find((x) => x.subject.kind === "report" && x.subject.id === rep.id) : undefined;
+
+  const hist: LlmOutcome[] = brains.flatMap((b) => (b instanceof LlmBrain ? b.history : []));
+  const ms = hist.filter((h) => h.result === "llm").map((h) => h.ms ?? 0);
+  const paid = [...e.payments.values()].filter((p) => p.status === "sent").reduce((s, p) => s + p.amount, 0);
+  return {
+    seed,
+    brains: kind,
+    beats,
+    onStory: [1, 2, 3, 4, 5, 6, 7].every((b) => beats.includes(b)) && beats.join() === [...beats].sort((a, b) => a - b).join(),
+    escalationToCommander: !!esc,
+    prevented: e.prevented.reduce((s, x) => s + x.amount, 0),
+    paid,
+    cash: e.ledger.balance("cash"),
+    proposals: count(e.proposals.map((p) => p.source)),
+    denied: count(e.decisions.filter((d) => d.verdict === "deny").map((d) => e.proposals.find((p) => p.id === d.proposalId)?.source ?? "?")),
+    llm: {
+      decisions: hist.filter((h) => h.result === "llm").length,
+      fallbacks: hist.filter((h) => h.result === "fallback").length,
+      byReason: count(hist.filter((h) => h.result === "fallback").map((h) => (h.reason ?? "?").replace(/\(.*$/, "").trim().slice(0, 40))),
+      linesReplaced: hist.filter((h) => h.result === "llm" && /line replaced/.test(h.reason ?? "")).length,
+      p50: q(ms, 0.5), p95: q(ms, 0.95), max: Math.max(0, ...ms),
+      byLayer: count(hist.filter((h) => h.result === "llm").map((h) => h.layer ?? "?")),
+    },
+    pump: { reached: !!repEsc && repEsc.to === "local_authority", by: rep ? e.actors.get(rep.by)?.role : undefined, urgency: rep?.urgency, recommendation: rep?.recommendation, ms: performance.now() - tp },
+    wallMs: performance.now() - t0,
+  };
+}
+
+const results: RunResult[] = [];
+for (let i = 0; i < SEEDS; i++) {
+  const seed = `eval-${i + 1}`;
+  for (const kind of ["rules", "llm"] as const) {
+    if (kind === "llm" && !router.order().length) continue;
+    const r = await run(seed, kind);
+    results.push(r);
+    const flag = r.onStory ? "" : "  OFF-STORY";
+    console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
+  }
+}
+const llm = results.filter((r) => r.brains === "llm");
+const rules = results.filter((r) => r.brains === "rules");
+if (llm.length) {
+  const allMs = llm.flatMap((r) => [r.llm.p50]);
+  console.log(`\nLLM brains over ${llm.length} seeds: on-story ${llm.filter((r) => r.onStory).length}/${llm.length}; commander escalation ${llm.filter((r) => r.escalationToCommander).length}/${llm.length}; pump reached ${llm.filter((r) => r.pump.reached).length}/${llm.length}; decisions by model ${llm.reduce((s, r) => s + r.llm.decisions, 0)}, fallbacks ${llm.reduce((s, r) => s + r.llm.fallbacks, 0)}, lines replaced ${llm.reduce((s, r) => s + r.llm.linesReplaced, 0)}; denied llm proposals ${llm.reduce((s, r) => s + (r.denied.llm ?? 0), 0)}; median per-call p50 ${(q(allMs, 0.5) / 1000).toFixed(1)}s, worst p95 ${(Math.max(...llm.map((r) => r.llm.p95)) / 1000).toFixed(1)}s`);
+  console.log(`Rules brains over ${rules.length} seeds: on-story ${rules.filter((r) => r.onStory).length}/${rules.length}; pump reached ${rules.filter((r) => r.pump.reached).length}/${rules.length}; prevented same as LLM on ${llm.filter((r) => rules.find((x) => x.seed === r.seed)?.prevented === r.prevented).length}/${llm.length} seeds`);
+}
+if (OUT) writeFileSync(OUT, JSON.stringify(results, null, 1));
