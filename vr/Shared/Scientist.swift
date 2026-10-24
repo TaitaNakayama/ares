@@ -41,7 +41,7 @@ final class Scientist {
     tagNode.addChildNode(tag.node)
     tagNode.position = SCNVector3(0, 1.72, 0)
     tag.node.scale = SCNVector3(1.5, 1.5, 1.5) // already 1.9 m wide: 1.5x reads from 5 m outdoors
-    bubble.enlarge(1.5, tailLeft: false) // he is 4 m away: 1.5x, placed on the judge's left (he stands at the right of the view)
+    bubble.enlarge(2.4, tailLeft: false) // he is 4 m away: 2.4x (was 1.5x), placed on the judge's left (he stands at the right of the view)
     node.addChildNode(tagNode)
     redrawTag()
   }

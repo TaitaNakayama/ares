@@ -251,8 +251,17 @@ final class DecisionCardView: NSView {
           .draw(with: NSRect(x: r.minX + 22, y: tagTop, width: r.width - 44, height: labelSize * 0.8), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         detailTop = tagTop + labelSize * 0.8 + 4
       }
-      NSAttributedString(string: BaseSceneText.firstSentence(o.detail), attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.68, weight: .medium), .foregroundColor: NSColor(white: 0.68, alpha: 1)])
-        .draw(with: NSRect(x: r.minX + 22, y: detailTop, width: r.width - 44, height: r.maxY - detailTop - 10), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+      // Never cut a word: wrap, and shrink the font until the whole sentence fits the box.
+      let dRect = NSRect(x: r.minX + 22, y: detailTop, width: r.width - 44, height: r.maxY - detailTop - 10)
+      let dText = BaseSceneText.firstSentence(o.detail)
+      var dSize = labelSize * 0.68
+      while dSize > 9 {
+        let h = (dText as NSString).boundingRect(with: NSSize(width: dRect.width, height: 4000), options: [.usesLineFragmentOrigin], attributes: [.font: NSFont.systemFont(ofSize: dSize, weight: .medium)]).height
+        if ceil(h) <= dRect.height { break }
+        dSize -= 1
+      }
+      NSAttributedString(string: dText, attributes: [.font: NSFont.systemFont(ofSize: dSize, weight: .medium), .foregroundColor: NSColor(white: 0.68, alpha: 1)])
+        .draw(with: dRect, options: [.usesLineFragmentOrigin])
       if isGazed || isChosen {
         let tag = isChosen ? "CHOSEN" : "LOOKING"
         let t = NSAttributedString(string: tag, attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.6, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : SpectatorPalette.amber, .kern: 1.5])

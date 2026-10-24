@@ -104,6 +104,8 @@ final class SpeechBubble {
   let node: SCNNode
   private let sprite: SpritePanel
   static let w: CGFloat = 1.5, h: CGFloat = 0.62
+  /// Outdoor bubbles (see `enlarge`) get a bigger name header.
+  fileprivate var headerScale: CGFloat = 1
   init() {
     sprite = SpritePanel(width: Self.w, height: Self.h, pixelsPerMeter: 760)
     node = sprite.node
@@ -114,7 +116,8 @@ final class SpeechBubble {
 
   /// `tailLeft`: the speaker is to the bubble's left (as seen by the viewer).
   func set(text: String, name: String, color: PlatformColor, deny: Bool, tailLeft: Bool, key: String) {
-    sprite.update(key: "\(key)|\(tailLeft)") { ctx, size in
+    let hsc = headerScale
+    sprite.update(key: "\(key)|\(tailLeft)|\(hsc)") { ctx, size in
       let tail: CGFloat = 70
       let body = CGRect(x: tailLeft ? tail : 0, y: 0, width: size.width - tail, height: size.height).insetBy(dx: 4, dy: 4)
       let bg = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 0.95)
@@ -132,22 +135,27 @@ final class SpeechBubble {
       ctx.fillPath()
       Draw.fill(ctx, body.insetBy(dx: -4, dy: -4), color, radius: 44)
       Draw.fill(ctx, body.insetBy(dx: 5, dy: 5), bg, radius: 40)
-      _ = Draw.text(name.uppercased(), at: CGPoint(x: body.minX + 36, y: body.minY + 22), size: 42, weight: .heavy, color: color)
-      if deny { _ = Draw.text("REFUSED", at: CGPoint(x: body.maxX - 250, y: body.minY + 24), size: 38, weight: .heavy, color: Palette.red) }
-      // Fit the whole text: shrink the font until it wraps within the bubble (never cut a word before the last line).
-      let avail = body.height - 80 - 22, tw = body.width - 72
+      let hs = 42 * hsc
+      let headH = hs * 1.25
+      _ = Draw.text(name.uppercased(), at: CGPoint(x: body.minX + 36, y: body.minY + 18), size: hs, weight: .heavy, color: color)
+      if deny {
+        let rs = hs * 0.9
+        let rw = ("REFUSED" as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: rs, weight: .heavy)]).width
+        _ = Draw.text("REFUSED", at: CGPoint(x: body.maxX - rw - 36, y: body.minY + 20), size: rs, weight: .heavy, color: Palette.red)
+      }
+      // Never truncate: wrap to as many lines as fit at the largest size (up to 64 px), shrinking only when even that does not fit.
+      let top = body.minY + 18 + headH + 6
+      let avail = body.maxY - 22 - top, tw = body.width - 72
       var fs: CGFloat = 64
-      var lines = 1
       while true {
         let f = PlatformFont.systemFont(ofSize: fs, weight: .bold)
         let para = NSMutableParagraphStyle(); para.lineBreakMode = .byWordWrapping
         let r = (text as NSString).boundingRect(with: CGSize(width: tw, height: 4000), options: [.usesLineFragmentOrigin], attributes: [.font: f, .paragraphStyle: para], context: nil)
-        lines = max(1, Int((ceil(r.height) / f.lineHeight).rounded()))
-        if ceil(r.height) <= avail || fs <= 38 { break }
-        fs -= 3
+        if ceil(r.height) <= avail || fs <= 22 { break }
+        fs -= 2
       }
       let lh = PlatformFont.systemFont(ofSize: fs, weight: .bold).lineHeight
-      _ = Draw.text(text, at: CGPoint(x: body.minX + 36, y: body.minY + 80), size: fs, weight: .bold, color: Palette.text, width: tw, maxLines: max(lines, Int(avail / lh)))
+      _ = Draw.text(text, at: CGPoint(x: body.minX + 36, y: top), size: fs, weight: .bold, color: Palette.text, width: tw, maxLines: max(3, Int(avail / lh) + 1))
     }
   }
 }
@@ -263,6 +271,7 @@ enum Consequence: Hashable {
 extension SpeechBubble {
   /// `tailLeft`: the speaker is to the bubble's left (the tail edge stays fixed there).
   func enlarge(_ k: CGFloat, tailLeft: Bool) {
+    headerScale = 1.5
     let kk = SCNFloat(k)
     let inv: SCNFloat = 1 / kk
     let sign: SCNFloat = tailLeft ? -1 : 1

@@ -63,7 +63,7 @@ final class OutdoorDirector {
         let lift: SCNFloat = -0.085 * (1 - 1 / k)
         tag.pivot = SCNMatrix4MakeTranslation(0, lift, 0)
       }
-      r.bubble.enlarge(Self.labelScale, tailLeft: p.x < 0)
+      r.bubble.enlarge(Self.bubbleScale, tailLeft: p.x < 0)
     }
     closeUp.configure(nil)
     applyPartVisibility(.inside)
@@ -71,6 +71,8 @@ final class OutdoorDirector {
   }
 
   static let labelScale: CGFloat = 2.5
+  /// Speech bubbles outdoors: about 1.45x the old 2.5x, plus a bigger header (see `SpeechBubble.enlarge`).
+  static let bubbleScale: CGFloat = 3.6
 
   var isOutside: Bool { part == .outside }
   /// The glide is in progress (or the door sequence is running).
