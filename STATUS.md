@@ -26,8 +26,36 @@ _Updated Sat 2026-10-24 04:25 PT_
 - **LLM reader live** (OpenAI key in `.env`, gpt-6.1-sol, cached). Pasted messy invoices are read by the model. Charges for things we don't stock are left out deterministically and named, so the bank and quantity controls still run.
 - **Public repo:** https://github.com/TaitaNakayama/ares. Checked before pushing: no secrets or headset token in history, no Claude attribution, largest file 28 MB.
 
+## Real agents (in progress, Sat 05:50)
+Decision (your call, Sat 04:50): make the agents real, keep the demo reliable. [AUDIT.md](AUDIT.md) has the audit this started from.
+
+**Done and committed**
+- **Honest labels** (3bfae8d): each proposal's `source` is what produced it (`rules`, `llm`, `parser`); the Rogue brain is labeled `rules`.
+- **Tier 1 spike C-16, local model** (`scripts/spike-local-llm.ts`, [verify-08](research/verify-08-local-llm.md)): three models compared on this Mac. qwen3.5:9b made valid tool calls 100% and right decisions 58/60 with a warm prompt prefix (median 4.3 s), but a cold ~900-token prompt takes 9-17 s. Opus verdict: FAILS as evidenced, HOLDS WITH CAVEATS once three checks pass (see CLAIMS.md C-16). Ollama 0.40.10 installed via Homebrew; models pulled: qwen3.5:9b (default), qwen3:8b, llama3.1:8b.
+- **Three model layers** (`packages/agents/src/router.ts`): local Ollama -> cloud OpenAI (when a key is set and online) -> rules. Per-call deadlines 8 s (action) / 15 s (free-text report), breaker after 2 failures in 4, prefix-stable prompts, model prewarmed at boot. Mode `auto|local|cloud|rules`; `rules` is SAFE MODE (console button, `POST /api/agents/mode`), instant, mid-run.
+- **One generic LLM brain per role** (`packages/agents/src/llm-agent.ts`): at each decision point the model gets the event and a code-written state summary; its tools are exactly the actions policy permits that role for that event, plus `say` and `report_issue`. Every proposal still goes through `Engine.submit`. Unknown ids, invented subjects and known small-model slips are caught before submit; lines are checked against the facts the engine provided (numbers, ids, length, character) and replaced by the rules' line when they fail. Mechanical events (executing a scheduled payment, entering structured documents) stay on rules.
+- **Reports**: a free-text `report` event, routed to one agent (model, keyword fallback), and an engine action `report_issue` that always becomes an escalation to the commander with the agent's recommendation. Live: the broken pump, the injury and the supplier bankruptcy all reached the commander with sensible recommendations (cloud layer, 6-8 s). Console: Inject -> Report, with the three presets.
+- **Thinking state** (`thinking` in `vr_state`, push message): robot face dots, halo pulse, nametag suffix in the headset; "X is thinking…" pill in the spectator.
+- **Ask an agent**: look at a robot and tap (`vr_ask`), or `POST /api/ask {role}`: it answers live from the current state (validated line, or a code-written status line).
+- **Eval harness** `scripts/eval-llm-story.ts`: full story per seed, LLM vs rules, beats in order, fallbacks and reasons, replaced lines, latency, denials, and the pump report.
+
+**Measured so far (honest)**
+- Live, auto mode: the cloud answered every decision in 2-8 s. The local model failed 3/3 live calls (two 8 s timeouts on cold prompts, one Ollama tool-call parse error) even though it passed the spike warm. So today "a few seconds" holds for the cloud, not for the local layer on cold prompts. The fallback chain did its job: zero rules fallbacks, zero denied model proposals.
+- First eval (2 seeds, before the line fix): 16 model decisions, 0 fallbacks, but 14/16 lines replaced (the models made one tool call and no `say`; fixed: the line now rides inside the action call), and the LLM run diverged from the story on the fake-quote beat (the controller escalated without asking for verification, so "$88.9M saved" never happened). Fixed by stating the standing procedure in the controller's prompt; the 3-seed re-run is in progress (`.cache/eval-llm-3.log`).
+
+**Next, in order**
+1. Read the 3-seed eval; then 30 seeds overnight-style in the background; report next to the rules scorecard.
+2. Decide the demo model layout from the numbers: cloud-first when online (hotspot) with local fallback, or local for the Engineer's reports only (`ARES_LLM_ROLES`).
+3. Prefix warm-up per (role, decision point) at boot, and measure the cache hit from `prompt_eval_count` (now recorded in `/api/agents/history`).
+4. Decision options proposed by the agents (today: engine-built list); a judge choice with visible later consequences beyond the drill.
+5. Re-record the REPLAY tape with the final agent setup.
+6. Hotspot networking test (needs your phone's Personal Hotspot on, Mac joined).
+7. README, pitch, Devpost to match exactly what runs.
+
+**Needs you**: see "Needs you" below (phone in the viewer: thinking face, tap-to-ask, nametags, bubbles, drill OFFLINE; the spectator on screen).
+
 ## Agent audit
-- See [AUDIT.md](AUDIT.md). In short, the five agents are deterministic rule brains with templated dialogue. The LLM reads pasted invoices and drafts one escalation note (1 call in the whole story), and decides nothing. Two misleading `llm` labels and the "Five AI agents" claims are flagged there, awaiting your decision.
+- See [AUDIT.md](AUDIT.md): the starting point (rules engine with personas). Labels fixed Sat 04:45; the "Five AI agents" wording is now being made true (section above) and the pitch/README/Devpost will be updated to exactly what runs.
 
 ## Spectator view on the Mac (done; needs your on-screen check)
 
