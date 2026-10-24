@@ -147,6 +147,15 @@ export class LlmBrain implements Brain {
     if (!point) return this.rules.react(input, ctx);
     // Safe mode: rules by choice, not a fallback.
     if (this.router.mode === "rules") return this.ruleIntents(input, ctx);
+    // Nothing to decide at the verification turn if the requisition is already with a human (the model escalated at once).
+    if (point === "engine:verification_requested" && input.kind === "engine") {
+      const v = input.event.data.verification as { subject?: { kind: string; id: string } } | undefined;
+      const q = v?.subject?.kind === "quote" ? ctx.engine.quotes.get(v.subject.id) : undefined;
+      if (q?.requisitionId && ctx.engine.openEscalationFor({ kind: "requisition", id: q.requisitionId })) {
+        this.pendingFloor = undefined;
+        return [];
+      }
+    }
     const fallback = async (reason: string, layer?: "local" | "cloud", ms?: number, raw?: string): Promise<Intent[]> => {
       this.history.push({ at: Date.now(), point, layer, ms, result: "fallback", reason, raw });
       this.router.stats.rulesFallbacks++;

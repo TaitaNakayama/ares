@@ -119,10 +119,15 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
 - Check on device: gaze a robot, see "tap to ask", press the button, see the dots, then the answer bubble (a few seconds with the local model); press again within 3 s does nothing; with a card up, looking at a card and pressing still chooses it.
 
 ## Needs you
-- Viewer checklist (in the terminal).
-- Spectator on-screen check: put the phone in the viewer, run `scripts/build-spectator.sh`, swipe to its Space. Turn your head left and right: does the Mac view turn the same way, smoothly? Is it readable from across a table, and is 110° too wide? Then quit the phone app and confirm REPLAY appears.
-- Decisions in AUDIT.md: the label fix, and the "AI agents" wording or real agents.
-- Push to GitHub: yes or no.
+- **Phone in the viewer** (everything below is built and installed; the Cardboard button press itself is untested by me):
+  - Gaze at a robot: nametag says "tap to ask"; press: thinking dots, then an answer bubble; a second press within 3 s does nothing; card taps still choose cards.
+  - Nametags readable; speech bubble beside the speaker with its tail; the edge arrow when the speaker is behind you.
+  - The decision card at the storm beat: the "Buy 15 now" option carries "proposed by Rule Keeper" (small tag); choose "Shut down the ice drill" and look out of the window: OFFLINE sign, lights dark.
+  - Quit the headset app: the Mac spectator shows REPLAY within ~1.5 s; relaunch: LIVE again.
+- **Spectator on screen**: `scripts/build-spectator.sh`, swipe to its Space. Does it turn with your head, smoothly? Readable across a table? Is 110° too wide?
+- **Console** (reload): SAFE MODE button and mode group; Inject → Report presets; "thinking…" rows.
+- **Hotspot**: turn on your iPhone's Personal Hotspot, join the Mac to it, restart the server (`node packages/server/src/main.ts`), relaunch the headset app: it should find the Mac on 172.20.10.x within a minute (the app tries .2-.14 after the baked addresses). If it doesn't, rebuild once while the Mac is on the hotspot (`scripts/build-ios.sh` bakes the current IPs).
+- Before the demo: `scripts/start-local-llm.sh` (fresh Ollama, memory back to ~9 GB), close Chrome and other heavy apps, Mac on power.
 
 ## Cut
 - Second real dataset (BPI Challenge 2019): 4TU.ResearchData was unreachable on both networks.
