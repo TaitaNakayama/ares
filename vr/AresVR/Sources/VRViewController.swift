@@ -23,7 +23,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   private let startTime = CACurrentMediaTime()
   private var configured = false
   /// SceneKit renders upright into the eye textures; Cardboard's UVs assume bottom-left origin.
-  var flipV = true
+  var flipV = false
   private(set) var link: Link!
   private var captureRequested = false
   private var frameCount = 0
