@@ -42,7 +42,7 @@ export class Orchestrator {
   readonly narration: Narration[] = [];
   private readonly brains: Brain[];
   private readonly fmtTime: (t: Time) => string;
-  private readonly paceMs: number;
+  private paceMs: number;
   private readonly maxSteps: number;
   private timeline: { at: Time; seq: number; event: WorldEvent }[] = [];
   private queue: EngineEvent[] = [];
@@ -89,6 +89,10 @@ export class Orchestrator {
 
   scheduleAll(evs: ScheduledWorldEvent[]): void {
     for (const s of evs) this.schedule(s.at, s.event);
+  }
+
+  setPace(ms: number): void {
+    this.paceMs = ms;
   }
 
   get isBusy(): boolean {

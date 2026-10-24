@@ -1,7 +1,7 @@
 import type { ScheduledWorldEvent, World, WorldEvent, WorldSetup } from "@ares/agents";
 import { DEFAULT_POLICY, formatCents, Rng, type Actor, type BankAccount, type Engine, type EngineEvent, type Lever, type Policy, type Time, type Vendor } from "@ares/engine";
 import { CATALOG, deliveredCents, FREIGHT_USD_PER_KG, generateMarket, randomBank, type GeneratedMarket } from "./catalog.ts";
-import { earthMarsDistanceAu, fmtLtst, lightTimeMs, marsSun, SOL_MS } from "./mars-time.ts";
+import { earthMarsDistanceAu, fmtLtst, lightTimeMs, marsSun } from "./mars-time.ts";
 import { OPPORTUNITY_POINTS, PowerModel } from "./power.ts";
 
 const MIN = 60_000;
@@ -195,8 +195,10 @@ export class MarsWorld implements World {
 
   // ---------------------------------------------------------------- time & physics
 
+  /** Local sol number since the base was founded; rolls over at local mean midnight at Jezero. */
   sol(t: Time): number {
-    return Math.floor((t - BASE_EPOCH) / SOL_MS);
+    const local = (x: Time) => marsSun(x, SITE.lat, SITE.lonE).msd + SITE.lonE / 360;
+    return Math.floor(local(t)) - Math.floor(local(BASE_EPOCH));
   }
 
   fmtTime = (t: Time): string => {
@@ -409,12 +411,14 @@ export class MarsWorld implements World {
         if (!cs) break;
         cs.requisitionId = req.id;
         this.reqToCycle.set(req.id, cs);
-        let t = e.at + 20 * MIN;
+        // Demo time is compressed so the story fits a 2-minute pitch; eval uses realistic gaps.
+        const gap = this.mode === "demo" ? 2 * MIN : 5 * MIN;
+        let t = e.at + (this.mode === "demo" ? 3 * MIN : 20 * MIN);
         for (const q of cs.planned.quotes) {
           if (q.legitNewBank) this.bankTruth.set(q.legitNewBank.account, true);
           if (q.errors.includes("bank_fraud_quote")) this.bankTruth.set(q.bank.account, false);
           out.push({ at: t, event: this.quoteDoc(engine, req.id, q, cs.cycle) });
-          t += 5 * MIN;
+          t += gap;
         }
         out.push({ at: t, event: { type: "rfq_closed", requisitionId: req.id } });
         break;
@@ -598,7 +602,7 @@ export class MarsWorld implements World {
   }
 
   /** Beat 2: a dust storm rolls in; the Engineer asks for batteries for the cargo manifest. */
-  beatStorm(engine: Engine, rampMs = 45 * MIN): ScheduledWorldEvent[] {
+  beatStorm(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
     this.beat = 2;
     const t = engine.now;
     this.stormFrom = { t, tau0: this.tauAt(t), tau1: 4.6, durMs: rampMs };
