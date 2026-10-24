@@ -27,6 +27,9 @@ struct VRState: Decodable {
   var waiting: [Waiting]?
   var earth: [Earth]?
   var robots: [String: Robot]?
+  /// Roles whose LLM brain is deciding right now (absent in old tapes).
+  var thinking: [String]?
+  var agentMode: String?
 }
 
 /// WebSocket link to the Mac. Tries every baked server URL until one answers,
@@ -56,6 +59,9 @@ final class Link: NSObject, @unchecked Sendable {
   private var current: URL?
   private let lock = NSLock()
   private var everConnected = false
+  // Thinking roles: the server's set (vr_state / push) plus asks made here that the server has not confirmed yet.
+  private var serverThinking = Set<String>()
+  private var localThinking: [String: Date] = [:]
   /// Debug: play the tape while staying connected (so captures still work).
   private var forcedReplay = false
   // Offline replay (bundled tape recorded from the live server).
@@ -248,6 +254,14 @@ final class Link: NSObject, @unchecked Sendable {
         lock.lock()
         state = v
         stateVersion += 1
+        serverThinking = Set(v.thinking ?? [])
+        lock.unlock()
+      }
+    case "thinking":
+      if let role = obj["role"] as? String {
+        let on = obj["on"] as? Bool ?? false
+        lock.lock()
+        if on { serverThinking.insert(role) } else { serverThinking.remove(role); localThinking[role] = nil }
         lock.unlock()
       }
     case "decided":
@@ -268,6 +282,26 @@ final class Link: NSObject, @unchecked Sendable {
     default:
       break
     }
+  }
+
+  /// Roles that are thinking now: the server's list plus local asks (shown for up to 12 s until the server says otherwise).
+  var thinkingRoles: Set<String> {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = Date()
+    localThinking = localThinking.filter { $0.value > now }
+    return serverThinking.union(localThinking.keys)
+  }
+
+  /// Ask one agent to explain itself live (`vr_ask`). Shows the thinking state at once; the answer comes back as a narration.
+  func ask(role: String) {
+    guard !isReplay else { return }
+    lock.lock()
+    localThinking[role] = Date().addingTimeInterval(12)
+    lock.unlock()
+    let msg = ["type": "vr_ask", "role": role]
+    guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
+    task?.send(.string(s)) { _ in }
   }
 
   func snapshot() -> (VRState?, Int) {

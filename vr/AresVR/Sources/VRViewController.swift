@@ -86,6 +86,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     _ = Sound.shared // prewarm: the first use costs about 150 ms
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
+    world.onAsk = { [weak self] role in self?.link.ask(role: role) }
     link.onRecenter = { [weak self] in self?.cardboard.recenter() }
     link.onScanViewer = { [weak self] in self?.cardboard.scanViewerQR() }
     // "Forward" = wherever the phone faces shortly after launch (then on demand from the console).

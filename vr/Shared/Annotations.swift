@@ -62,13 +62,28 @@ enum RoleLabel {
 final class Nametag {
   let node: SCNNode
   private let sprite: SpritePanel
+  private let name: String, role: String, color: PlatformColor
+  private var suffix = ""
   init(name: String, role: String, color: PlatformColor) {
+    self.name = name; self.role = role; self.color = color
     let w: CGFloat = 1.12, h: CGFloat = 0.17
     sprite = SpritePanel(width: w, height: h, pixelsPerMeter: 800)
     node = sprite.node
     node.name = "nametag"
     node.renderingOrder = 70
-    let label = "\(name) · \(RoleLabel.title(role))"
+    redraw()
+  }
+
+  /// " · thinking…" or " · tap to ask" after the name; "" for none.
+  func setSuffix(_ s: String) {
+    guard s != suffix else { return }
+    suffix = s
+    redraw()
+  }
+
+  private func redraw() {
+    let label = "\(name) · \(RoleLabel.title(role))" + suffix
+    let color = self.color
     sprite.update(key: label) { ctx, size in
       Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.92), radius: size.height / 2)
       ctx.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
