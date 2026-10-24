@@ -22,6 +22,9 @@ enum Spots {
   static let pad = Spot(pos: [15, -43], look: [26, -55])
   static let science = Spot(pos: [1, -34], look: [-2.6, -36.2])
   static let solar = Spot(pos: [-11, -22], look: [-22, -35])
+  /// The parked rover (world x, z) and where the judge stands to look at it (reality check).
+  static let roverPos = SIMD2<Float>(-0.8, -22)
+  static let rover = Spot(pos: [3.6, -16.5], look: roverPos)
   static let door = Spot(pos: [0, -11], look: [0, -5.5]) // 2 m further back than round 2, so the habitat and door read in context
   /// Where the glide ends before the fade (about 1 m from the door).
   static let doorStep = Spot(pos: [0, -6.7], look: [0, -5.5])
@@ -36,6 +39,7 @@ enum Spots {
     case "pad": return pad
     case "science": return science
     case "solar": return solar
+    case "rover": return rover
     case "door": return door
     default: return nil
     }

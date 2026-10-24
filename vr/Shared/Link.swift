@@ -14,7 +14,7 @@ struct VRState: Decodable {
   /// The real Perseverance reference the scientist shows (all optional; the app has bundled defaults).
   struct Science: Decodable { var scientist: String?; var instrument: String?; var sol: Double?; var target: String?; var credit: String?; var image: String?; var source: String?; var caption: String? }
   /// Two-part demo: `part` outside/inside, `station` pad/science/solar/door (absent in old tapes = inside).
-  struct SceneInfo: Decodable { var part: String?; var station: String?; var science: Science? }
+  struct SceneInfo: Decodable { var part: String?; var station: String?; var mode: String?; var science: Science? }
   var seed: String?
   var policyVersion: Int?
   var beat: Int?
@@ -345,6 +345,14 @@ final class Link: NSObject, @unchecked Sendable {
     let v = q.vector
     let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"p\":[%.3f,%.3f,%.3f],\"wy\":%.4f,\"cu\":%@,\"rc\":%@,\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, pos.x, pos.y, pos.z, yaw, closeUp ? "true" : "false", reality ? "true" : "false", gaze ?? -1, cards ? "true" : "false", fovX)
     t.send(.string(s)) { _ in }
+  }
+
+  /// Free roam: the judge pressed a station pill (`vr_station`: pad, science, solar, rover). The walk starts locally at once.
+  func goTo(station: String) {
+    guard !isReplay else { return }
+    let msg = ["type": "vr_station", "station": station]
+    guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
+    task?.send(.string(s)) { _ in }
   }
 
   /// The judge tapped the pressure door: the server takes the story inside (`vr_enter`).

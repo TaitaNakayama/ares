@@ -12,6 +12,9 @@ final class OutdoorDirector {
   private(set) var part: Part = .inside
   private(set) var station: String?
   private(set) var science: VRState.Science?
+  /// "free" (the judge picks stations), "auto" (the director's fixed order) or nil (older server).
+  private(set) var roamMode: String?
+  let markers: StationMarkers
   private var journey = Journey(at: Spots.start)
   let set: OutdoorSet
   let scientist: Scientist
@@ -49,6 +52,7 @@ final class OutdoorDirector {
     scene.rootNode.addChildNode(scientist.node)
     scene.rootNode.addChildNode(scientist.bubble.node)
     scene.rootNode.addChildNode(closeUp.node)
+    markers = StationMarkers(scene: scene, ground: { outside.groundY($0, $1) })
     for (role, name, p, look) in [("receiver", "Cargo", Spots.cargoKeeper, Spots.crates), ("requester", "Engineer", Spots.engineer, Spots.fieldCenter)] {
       let y = outside.groundY(p.x, p.y) + (role == "receiver" ? 1.3 : 1.45)
       let r = Robot(role: role, name: name, color: Palette.role(role), at: SCNVector3(p.x, y, p.y), faceYaw: atan2(look.x - p.x, look.y - p.y))
@@ -105,6 +109,7 @@ final class OutdoorDirector {
 
   func apply(_ st: VRState, now: TimeInterval) {
     science = st.scene?.science
+    roamMode = st.scene?.mode
     closeUp.configure(science)
     scientist.setName(science?.scientist)
     let wantPart: Part = (st.scene?.part ?? "inside") == "outside" ? .outside : .inside
@@ -216,6 +221,7 @@ final class OutdoorDirector {
       eye = SIMD3(0, 1.6, 0)
       yaw = 0
     }
+    if !markersVisible { markers.hideAll() }
     if part == .outside {
       set.updateRocks(eye: eye)
       set.setDoor(armed: doorArmed, hovered: doorHovered && doorArmed)
@@ -280,6 +286,20 @@ final class OutdoorDirector {
     let p = origin + fwd * t
     guard abs(p.x) < 1.3, p.y > gy - 0.2, p.y < gy + 3.3 else { return nil }
     return t
+  }
+
+  // ---------------------------------------------------------------- free roam
+
+  /// Station pills are up: outside, the judge picks stations (not the fixed order), not at the storm door, nothing else open.
+  var markersVisible: Bool {
+    isOutside && roamMode != "auto" && station != "door" && !isEntering && !closeUp.isOpen && !RealityCheck.shared.isActive && !isWalking
+  }
+
+  /// The pill the reticle is on was pressed: start walking at once (the server's `scene.station` then agrees).
+  func goTo(station id: String, now: TimeInterval) {
+    guard isOutside, id != station, let spot = Spots.spot(id), !isEntering else { return }
+    station = id
+    journey.go(to: spot, now: now)
   }
 
   func openCloseUp(eye: SIMD3<Float>, forward: SIMD3<Float>, now: TimeInterval) {

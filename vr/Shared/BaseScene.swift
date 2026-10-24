@@ -47,6 +47,8 @@ final class BaseScene {
   private var hoveredSpecial: String?
   /// Called when the judge presses the door (the headset sends `vr_enter`).
   var onEnter: (() -> Void)?
+  /// Free roam: the judge pressed a station pill.
+  var onStation: ((String) -> Void)?
   private let interactiveMask = 1 << 3
   private let reticleHolder = SCNNode()
   private let reticle = SCNNode()
@@ -201,10 +203,13 @@ final class BaseScene {
     if hitNode == nil && director.isOutside {
       if let d = director.scientistHit(origin: origin, fwd: fwd) { special = ("scientist", d) }
       if let d = director.doorHit(origin: origin, fwd: fwd), d < (special?.d ?? .infinity) { special = ("door", d) }
+      director.markers.update(eye: origin, visible: director.markersVisible, current: director.station)
+      if let m = director.markers.hit(origin: origin, fwd: fwd), m.d < (special?.d ?? .infinity) { special = ("marker:" + m.id, m.d) }
       if let s = special, let rh = robotHit, rh.d < s.d { special = nil }
       if special != nil { robotHit = nil }
     }
     hoveredSpecial = special?.id
+    director.markers.setHover(special.flatMap { $0.id.hasPrefix("marker:") ? String($0.id.dropFirst(7)) : nil }, current: director.station)
     director.doorHovered = special?.id == "door"
     director.scientist.hovered = special?.id == "scientist" && !director.closeUp.isOpen
     hoveredRobot = robotHit?.role
@@ -332,9 +337,10 @@ final class BaseScene {
   private func tapOutside() -> String? {
     guard director.isOutside else { return nil }
     if director.closeUp.isOpen {
-      director.closeUp.close()
+      // Stereo page -> WATSON page -> closed.
+      let turned = director.closeUp.advance()
       Sound.shared.play("select", volume: 0.5)
-      return "closed close-up"
+      return turned ? "close-up page 2" : "closed close-up"
     }
     switch hoveredSpecial {
     case "scientist":
@@ -346,6 +352,14 @@ final class BaseScene {
       onEnter?()
       return "entering"
     default:
+      if let id = hoveredSpecial, id.hasPrefix("marker:") {
+        let station = String(id.dropFirst(7))
+        Sound.shared.play("select", volume: 0.7)
+        if station == "rover" && director.station == "rover" { RealityCheck.toggle(); return "reality check" }
+        director.goTo(station: station, now: now)
+        onStation?(station)
+        return "go: " + station
+      }
       return nil
     }
   }
