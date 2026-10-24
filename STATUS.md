@@ -131,8 +131,9 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
 - Check on device: gaze a robot, see "tap to ask", press the button, see the dots, then the answer bubble (a few seconds with the local model); press again within 3 s does nothing; with a card up, looking at a card and pressing still chooses it.
 
 ## Needs you
-- **Open the Ares app on the phone once** (a new build with the new REPLAY tape is installed; the phone was locked so it didn't auto-launch).
-- **Phone in the viewer** (everything below is built and installed; the Cardboard button press itself is untested by me):
+- **Phone in the viewer, part 1 (new)**: you start at the landing pad. Watch the Cargo Keeper count the boxes; the walk to the science site should feel steady (tell me if it's uncomfortable: speed and easing are one constant each); gaze at the scientist and press: the real WATSON close-up with its credit opens; press again or look away 3 s to close; at the solar field the Engineer warns of the storm; at the door, gaze and press: fade, then inside. The server auto-enters after 25 s if you don't press. Then: quit the app and confirm the Mac spectator plays REPLAY from the pad.
+- **Sound**: a quiet hum inside, wind that rises with the storm, a two-note chime per agent line, a tick when an agent starts thinking, a deeper tone when you decide. Tell me if anything is too loud (one constant each).
+- **Phone in the viewer, part 2** (everything below is built and installed; the Cardboard button press itself is untested by me):
   - Gaze at a robot: nametag says "tap to ask"; press: thinking dots, then an answer bubble; a second press within 3 s does nothing; card taps still choose cards.
   - Nametags readable; speech bubble beside the speaker with its tail; the edge arrow when the speaker is behind you.
   - The decision card at the storm beat: the "Buy 15 now" option carries "proposed by Rule Keeper" (small tag); choose "Shut down the ice drill" and look out of the window: OFFLINE sign, lights dark.
