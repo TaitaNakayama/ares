@@ -136,7 +136,7 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
     paid,
     cash: e.ledger.balance("cash"),
     proposals: count(e.proposals.map((p) => p.source)),
-    denied: count(e.decisions.filter((d) => d.verdict === "deny").map((d) => e.proposals.find((p) => p.id === d.proposalId)?.source ?? "?")),
+    denied: count(e.decisions.filter((d) => d.verdict === "deny").map((d) => { const p = e.proposals.find((p) => p.id === d.proposalId); return `${p?.source ?? "?"} ${p?.action.type ?? "?"}: ${d.rules.find((r) => !r.ok)?.detail.slice(0, 50) ?? "?"}`; })),
     llm: {
       decisions: hist.filter((h) => h.result === "llm").length,
       fallbacks: hist.filter((h) => h.result === "fallback").length,
