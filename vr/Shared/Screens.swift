@@ -293,7 +293,7 @@ final class WallScreens {
       if let e = sunEl { row("Sun", e >= 0 ? String(format: "%.0f° above horizon", e) : String(format: "%.0f° below horizon", -e), Palette.gold) }
       ctx.setFillColor(PlatformColor(white: 0, alpha: 0.62).cgColor)
       ctx.fill(CGRect(x: 6, y: size.height - 66, width: size.width - 12, height: 56))
-      Kit.footer("NASA/JPL-Caltech/USGS/University of Arizona, PIA23976", size: size, y: size.height - 52)
+      Kit.footer("NASA/JPL-Caltech/USGS/U. Arizona, PIA23976", size: size, y: size.height - 58, max: 38)
     }
   }
 

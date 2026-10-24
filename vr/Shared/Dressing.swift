@@ -737,13 +737,13 @@ enum Dressing {
       let g = SCNCylinder(radius: r, height: len); g.radialSegmentCount = 10
       let n = SCNNode(geometry: g)
       n.geometry?.materials = [m]
-      n.eulerAngles.z = CGFloat.pi / 2
+      n.eulerAngles.z = SCNFloat.pi / 2
       holder.addChildNode(n)
       var t = -len / 2 + 0.6
       while t < len / 2 - 0.2 {
         let c = SCNNode(geometry: SCNCylinder(radius: r + 0.012, height: 0.05))
         c.geometry?.materials = [dark]
-        c.eulerAngles.z = CGFloat.pi / 2
+        c.eulerAngles.z = SCNFloat.pi / 2
         c.position = SCNVector3(t, 0, 0)
         holder.addChildNode(c)
         t += 1.1

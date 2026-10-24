@@ -61,10 +61,10 @@ enum Kit {
   }
 
   /// Footer line (citation / SIMULATED note): `Size.credit`, shrunk only as far as needed to stay on one line (never below 38).
-  static func footer(_ s: String, size: CGSize, y: CGFloat? = nil, color: PlatformColor = Palette.dim) {
-    var fs = Size.credit
+  static func footer(_ s: String, size: CGSize, y: CGFloat? = nil, max top: CGFloat = Size.credit, color: PlatformColor = Palette.dim) {
+    var fs = top
     let w = size.width - 56
-    while fs > 38, (s as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: fs, weight: .semibold)]).width > w { fs -= 1 }
+    while fs > 34, (s as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: fs, weight: .semibold)]).width > w { fs -= 1 }
     _ = Draw.text(s, at: CGPoint(x: 28, y: y ?? size.height - 64), size: fs, weight: .semibold, color: color, width: w)
   }
 
