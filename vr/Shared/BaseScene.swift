@@ -1,5 +1,9 @@
 import SceneKit
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 import simd
 
 /// The commander's control room: room shell, window onto Jezero, three wall screens,
@@ -18,6 +22,14 @@ final class BaseScene {
     return m
   }()
   var onDecide: ((String, String) -> Void)?
+  /// The spectator view draws its own gaze dot.
+  var showsReticle = true { didSet { reticleHolder.isHidden = !showsReticle } }
+  /// The decision card under the reticle (0-3), if any: streamed to the spectator view.
+  var gazedCard: Int? {
+    guard cardsVisible, let n = hovered?.name, n.hasPrefix("card:") else { return nil }
+    return Int(n.dropFirst(5))
+  }
+  var cardsShown: Bool { cardsVisible }
 
   private let interactiveMask = 1 << 3
   private let reticleHolder = SCNNode()
@@ -83,7 +95,7 @@ final class BaseScene {
     let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.0025)
     let m = SCNMaterial()
     m.lightingModel = .constant
-    m.diffuse.contents = UIColor.white
+    m.diffuse.contents = PlatformColor.white
     m.readsFromDepthBuffer = false
     m.writesToDepthBuffer = false
     ring.materials = [m]
@@ -148,7 +160,7 @@ final class BaseScene {
     screens.update(latest, now: time, linkText: link.statusText)
     // Captions sit low; when choices are up they move above the cards.
     let capY: Float = cardsVisible ? 2.28 : 1.33
-    if abs(caption.node.position.y - capY) > 0.01 { caption.node.position.y += (capY - caption.node.position.y) * 0.15 }
+    if abs(caption.node.simdPosition.y - capY) > 0.01 { caption.node.simdPosition.y += (capY - caption.node.simdPosition.y) * 0.15 }
     if now - captionAt > 9, caption.node.opacity > 0.99, !caption.node.hasActions { caption.node.runAction(.fadeOpacity(to: 0.0, duration: 0.6)) }
     updateDebug(link: link, fps: fps)
   }
@@ -181,7 +193,7 @@ final class BaseScene {
     let text = r.short ?? r.text ?? ""
     let deny = r.outcome == "deny"
     caption.update(key: "\(seq)") { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1))
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1))
       Draw.fill(ctx, CGRect(x: 0, y: 0, width: 16, height: size.height), color)
       _ = Draw.text(name, at: CGPoint(x: 44, y: 22), size: 44, weight: .heavy, color: color)
       if deny { _ = Draw.text("REFUSED BY POLICY", at: CGPoint(x: size.width - 480, y: 26), size: 38, weight: .heavy, color: Palette.red) }
@@ -247,8 +259,8 @@ final class BaseScene {
       cards[i].isHidden = t.esc.isEmpty
       let isHover = hovered === cards[i]
       p.update(key: "\(t.label)|\(t.detail)|\(isHover)") { ctx, size in
-        Draw.fill(ctx, CGRect(origin: .zero, size: size), isHover ? UIColor(red: 0.17, green: 0.13, blue: 0.06, alpha: 1) : UIColor(red: 0.06, green: 0.07, blue: 0.10, alpha: 1))
-        ctx.setStrokeColor((isHover ? Palette.amber : UIColor(white: 1, alpha: 0.3)).cgColor)
+        Draw.fill(ctx, CGRect(origin: .zero, size: size), isHover ? PlatformColor(red: 0.17, green: 0.13, blue: 0.06, alpha: 1) : PlatformColor(red: 0.06, green: 0.07, blue: 0.10, alpha: 1))
+        ctx.setStrokeColor((isHover ? Palette.amber : PlatformColor(white: 1, alpha: 0.3)).cgColor)
         ctx.setLineWidth(isHover ? 16 : 5)
         ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 8, dy: 8))
         _ = Draw.text(t.label, at: CGPoint(x: 40, y: 30), size: 58, weight: .heavy, color: isHover ? Palette.amber : Palette.text, width: size.width - 80, maxLines: 2)

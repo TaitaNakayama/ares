@@ -1,5 +1,9 @@
 import SceneKit
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The three wall screens. Text is sized for Cardboard: body cap height >= ~1.5 degrees.
 final class WallScreens {
@@ -17,7 +21,7 @@ final class WallScreens {
       n.look(at: SCNVector3(0, 1.78, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
       root.addChildNode(n)
       let bezel = SCNNode(geometry: SCNBox(width: 2.22, height: 1.32, length: 0.04, chamferRadius: 0.03))
-      bezel.geometry?.firstMaterial?.diffuse.contents = UIColor(white: 0.16, alpha: 1)
+      bezel.geometry?.firstMaterial?.diffuse.contents = PlatformColor(white: 0.16, alpha: 1)
       bezel.position = SCNVector3(0, 0, -0.025)
       n.addChildNode(bezel)
     }

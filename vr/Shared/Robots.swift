@@ -1,5 +1,9 @@
 import SceneKit
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 import simd
 
 /// One floating helper robot: an original silhouette per role, a dark screen face with two
@@ -7,7 +11,7 @@ import simd
 final class Robot {
   let role: String
   let name: String
-  let color: UIColor
+  let color: PlatformColor
   let node = SCNNode()
   private let body = SCNNode()
   private let face = SCNNode()
@@ -16,7 +20,7 @@ final class Robot {
   private let eyeMat = SCNMaterial()
   private let faceMat = SCNMaterial()
   private let haloMat = SCNMaterial()
-  private let home: SCNVector3
+  private let home: SIMD3<Float>
   private let homeYaw: Float
   private var mood = "calm"
   private var lastSeq = -1
@@ -26,15 +30,15 @@ final class Robot {
   private var nextBlink: TimeInterval = 2
   private let phase: Float
 
-  init(role: String, name: String, color: UIColor, at pos: SCNVector3, faceYaw: Float) {
+  init(role: String, name: String, color: PlatformColor, at pos: SCNVector3, faceYaw: Float) {
     self.role = role
     self.name = name
     self.color = color
-    home = pos
+    home = SIMD3<Float>(pos)
     homeYaw = faceYaw
     phase = Float(abs(role.hashValue % 100)) / 100 * 6.28
     node.position = pos
-    node.eulerAngles.y = faceYaw
+    node.simdEulerAngles.y = faceYaw
     node.addChildNode(body)
     buildBody()
     buildFace()
@@ -54,10 +58,9 @@ final class Robot {
     let m = SCNMaterial()
     m.lightingModel = .blinn
     // Shell lightly tinted toward the role colour so each robot reads at a glance.
-    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-    color.getRed(&r, green: &g, blue: &b, alpha: &a)
-    m.diffuse.contents = UIColor(red: 0.80 + 0.18 * r, green: 0.80 + 0.18 * g, blue: 0.80 + 0.18 * b, alpha: 1)
-    m.specular.contents = UIColor(white: 0.6, alpha: 1)
+    let (r, g, b, _) = color.rgba()
+    m.diffuse.contents = PlatformColor(red: 0.80 + 0.18 * r, green: 0.80 + 0.18 * g, blue: 0.80 + 0.18 * b, alpha: 1)
+    m.specular.contents = PlatformColor(white: 0.6, alpha: 1)
     m.shininess = 0.6
     return m
   }
@@ -139,7 +142,7 @@ final class Robot {
 
   private func buildFace() {
     faceMat.lightingModel = .constant
-    faceMat.diffuse.contents = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
+    faceMat.diffuse.contents = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
     let plate = SCNPlane(width: 0.24, height: 0.15)
     plate.cornerRadius = 0.05
     plate.materials = [faceMat]
@@ -155,7 +158,7 @@ final class Robot {
     face.position = SCNVector3(0, role == "ap" ? 0.08 : 0.02, z)
     body.addChildNode(face)
     eyeMat.lightingModel = .constant
-    eyeMat.diffuse.contents = UIColor.white
+    eyeMat.diffuse.contents = PlatformColor.white
     for (e, x) in [(eyeL, Float(-0.05)), (eyeR, Float(0.05))] {
       let g = SCNPlane(width: 0.045, height: 0.07)
       g.cornerRadius = 0.0225
@@ -171,20 +174,20 @@ final class Robot {
     mood = m
     SCNTransaction.begin()
     SCNTransaction.animationDuration = 0.25
-    var eyeColor = UIColor.white
+    var eyeColor = PlatformColor.white
     var sy: Float = 1, rotL: Float = 0, rotR: Float = 0, dy: Float = 0
-    var faceGlow = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
+    var faceGlow = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
     var halo = color.withAlphaComponent(0.8)
     switch m {
     case "worried":
-      eyeColor = UIColor(red: 1.0, green: 0.82, blue: 0.55, alpha: 1); sy = 0.85; rotL = -0.35; rotR = 0.35; dy = 0.006
+      eyeColor = PlatformColor(red: 1.0, green: 0.82, blue: 0.55, alpha: 1); sy = 0.85; rotL = -0.35; rotR = 0.35; dy = 0.006
     case "suspicious":
-      eyeColor = UIColor(red: 1.0, green: 0.30, blue: 0.25, alpha: 1); sy = 0.32; rotL = 0.18; rotR = -0.18
-      faceGlow = UIColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = UIColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.9)
+      eyeColor = PlatformColor(red: 1.0, green: 0.30, blue: 0.25, alpha: 1); sy = 0.32; rotL = 0.18; rotR = -0.18
+      faceGlow = PlatformColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.9)
     case "attentive":
-      eyeColor = UIColor(red: 0.75, green: 0.95, blue: 1.0, alpha: 1); sy = 1.18
+      eyeColor = PlatformColor(red: 0.75, green: 0.95, blue: 1.0, alpha: 1); sy = 1.18
     case "happy":
-      eyeColor = UIColor(red: 0.55, green: 1.0, blue: 0.70, alpha: 1); sy = 0.42; dy = 0.01
+      eyeColor = PlatformColor(red: 0.55, green: 1.0, blue: 0.70, alpha: 1); sy = 0.42; dy = 0.01
     default:
       break
     }
@@ -193,10 +196,10 @@ final class Robot {
     haloMat.diffuse.contents = halo
     eyeL.scale = SCNVector3(1, sy, 1)
     eyeR.scale = SCNVector3(1, sy, 1)
-    eyeL.eulerAngles.z = rotL
-    eyeR.eulerAngles.z = rotR
-    eyeL.position.y = dy
-    eyeR.position.y = dy
+    eyeL.simdEulerAngles.z = rotL
+    eyeR.simdEulerAngles.z = rotR
+    eyeL.simdPosition.y = dy
+    eyeR.simdPosition.y = dy
     SCNTransaction.commit()
   }
 
@@ -207,22 +210,22 @@ final class Robot {
     self.outcome = outcome
     spokeAt = now
     setMood(outcome == "deny" ? "attentive" : mood)
-    haloMat.diffuse.contents = (mood == "suspicious" ? UIColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : color).withAlphaComponent(1)
+    haloMat.diffuse.contents = (mood == "suspicious" ? PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : color).withAlphaComponent(1)
     body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
   }
 
   func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool) {
     let t = Float(now)
-    node.position = SCNVector3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
+    node.simdPosition = SIMD3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
     // Turn toward the user while speaking or when a decision is waiting; otherwise face the work.
     let speaking = now - spokeAt < 9
-    let toUser = user - SIMD3(node.position.x, node.position.y, node.position.z)
+    let toUser = user - node.simdPosition
     let yawUser = atan2(toUser.x, toUser.z)
     let target = speaking || needsCommander ? yawUser : homeYaw
-    var dyaw = target - node.eulerAngles.y
+    var dyaw = target - node.simdEulerAngles.y
     while dyaw > .pi { dyaw -= 2 * .pi }
     while dyaw < -.pi { dyaw += 2 * .pi }
-    node.eulerAngles.y += dyaw * 0.08
+    node.simdEulerAngles.y += dyaw * 0.08
     if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
     if now > nextBlink {
       nextBlink = now + 2.5 + Double((sin(t * 7.1 + phase) + 1) * 2)
@@ -250,7 +253,7 @@ enum RobotCrew {
       let pos = Room.ring(l.deg, r: l.r, y: l.y)
       // Face slightly outward toward the window/screens when idle.
       // Idle: turned ~40 degrees toward its work; it turns to the user when it speaks.
-      let yaw = atan2(-pos.x, -pos.z) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
+      let yaw = atan2(Float(-pos.x), Float(-pos.z)) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
       let r = Robot(role: l.role, name: l.name, color: Palette.role(l.role), at: pos, faceYaw: yaw)
       root.addChildNode(r.node)
       out[l.role] = r

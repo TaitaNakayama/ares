@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// Live state pushed by the server (`vr_state`). Optional everywhere: the app must survive partial data.
 struct VRState: Decodable {
@@ -13,6 +14,9 @@ struct VRState: Decodable {
   var seed: String?
   var policyVersion: Int?
   var beat: Int?
+  /// Where the demo story is, 1-7 (absent in tapes recorded before it existed).
+  var storyBeat: Int?
+  var storyBeats: Int?
   var timelapse: Bool?
   var time: String?
   var tau: Double?
@@ -40,8 +44,11 @@ final class Link: NSObject, @unchecked Sendable {
   var onScanViewer: (() -> Void)?
   /// Recording mode for the demo video: (on, fps, director camera).
   var onRecord: ((Bool, Int, Bool) -> Void)?
+  /// Every parsed message, on the network queue (the spectator view's own message types).
+  var onMessage: ((String, [String: Any]) -> Void)?
+  /// Same, but called before `onMessage` for high-rate messages the receiver handles itself.
+  var onRawMessage: ((String, [String: Any]) -> Void)?
   private let uploadQueue = DispatchQueue(label: "ares.upload")
-  private weak var world: BaseScene?
   private var task: URLSessionWebSocketTask?
   private var session: URLSession!
   private var candidates: [String] = []
@@ -60,14 +67,14 @@ final class Link: NSObject, @unchecked Sendable {
   private var branchStart = Date()
   private var replayTimer: Timer?
 
-  init(world: BaseScene) {
-    self.world = world
+  /// `candidates`: server URLs to try in turn; nil = the addresses baked into ares.json (the headset).
+  init(candidates: [String]? = nil) {
     super.init()
     let cfg = URLSessionConfiguration.default
     cfg.timeoutIntervalForRequest = 4
     cfg.waitsForConnectivity = false
     session = URLSession(configuration: cfg)
-    candidates = Self.loadCandidates()
+    self.candidates = candidates ?? Self.loadCandidates()
   }
 
   /// Per-machine token from scripts/build-ios.sh; the server refuses headsets without it.
@@ -86,6 +93,7 @@ final class Link: NSObject, @unchecked Sendable {
       list = l
     }
     // Append the token unless the URL already has a `t` query item ("client=vr" also contains "t=").
+    guard !token.isEmpty else { return list }
     return list.map { s in
       let hasToken = URLComponents(string: s)?.queryItems?.contains { $0.name == "t" } ?? false
       return hasToken ? s : s + (s.contains("?") ? "&" : "?") + "t=" + token
@@ -102,6 +110,21 @@ final class Link: NSObject, @unchecked Sendable {
   }
 
   var isReplay: Bool { replayTimer != nil }
+
+  /// A live connection to the server (whether or not the recording is playing on top).
+  var isConnectedToServer: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if case .connected = status { return true }
+    return forcedReplay && everConnected && task != nil
+  }
+
+  /// Play the recording instead of the live state (main thread). No-op when already in that mode.
+  func setReplay(_ on: Bool) {
+    guard on != forcedReplay || on != isReplay else { return }
+    forcedReplay = on
+    if on { exitReplay(); enterReplay() } else { exitReplay() }
+  }
 
   private func enterReplay() {
     guard replayTimer == nil, loadTape() else { return }
@@ -209,6 +232,8 @@ final class Link: NSObject, @unchecked Sendable {
       keepAlive(t)
     }
     guard let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = obj["type"] as? String else { return }
+    onRawMessage?(type, obj)
+    if type != "vr_pose" { onMessage?(type, obj) }
     switch type {
     case "force_replay":
       let on = obj["on"] as? Bool ?? true
@@ -258,6 +283,15 @@ final class Link: NSObject, @unchecked Sendable {
     msg["link"] = statusText
     guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
     task?.send(.string(s)) { _ in }
+  }
+
+  /// The judge's head orientation for the Mac's spectator view (`vr_pose`): world-from-head rotation,
+  /// the decision card under the reticle, whether cards are up, the eye's horizontal field of view.
+  func sendPose(_ q: simd_quatf, gaze: Int?, cards: Bool, fovX: Float) {
+    guard case .connected = status, let t = task else { return }
+    let v = q.vector
+    let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, gaze ?? -1, cards ? "true" : "false", fovX)
+    t.send(.string(s)) { _ in }
   }
 
   func decide(escalationId: String, optionId: String) {

@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: io.nakayama
   deploymentTarget:
     iOS: "17.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -10,14 +11,13 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: minimal
-    TARGETED_DEVICE_FAMILY: "1"
-    ENABLE_BITCODE: NO
 targets:
   AresVR:
     type: application
     platform: iOS
     sources:
       - path: AresVR/Sources
+      - path: Shared
       - path: AresVR/Resources
         buildPhase: resources
       - path: Vendor/Cardboard/sdk.bundle
@@ -32,6 +32,8 @@ targets:
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/Cardboard/lib
         OTHER_LDFLAGS: -lCardboardSDK -lProtobuf-C++ -lc++
         INFOPLIST_FILE: AresVR/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_BITCODE: NO
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
     dependencies:
@@ -40,4 +42,33 @@ targets:
       - sdk: SceneKit.framework
       - sdk: SpriteKit.framework
       - sdk: CoreMotion.framework
+      - sdk: AVFoundation.framework
+  # The Mac's spectator view: the same scene (vr/Shared), one undistorted camera, overlays for the table.
+  AresSpectator:
+    type: application
+    platform: macOS
+    sources:
+      - path: Shared
+      - path: Spectator
+        excludes: ["Info.plist"]
+      - path: AresVR/Resources
+        buildPhase: resources
+        excludes: ["ares.json"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.nakayama.ares.spectator
+        PRODUCT_NAME: AresSpectator
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Spectator/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        # Runs only on this Mac: ad-hoc signed, no team or profile needed.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+    dependencies:
+      - sdk: SceneKit.framework
+      - sdk: ModelIO.framework
       - sdk: AVFoundation.framework

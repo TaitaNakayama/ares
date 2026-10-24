@@ -1,7 +1,11 @@
 import ModelIO
 import SceneKit
 import SceneKit.ModelIO
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 import simd
 
 /// Everything outside the window: Jezero terrain (USGS HiRISE + CTX), sky, sun, fog,
@@ -25,7 +29,7 @@ final class Outside {
     self.scene = scene
     // Terrain frame: +X east, +Y up, +Z south. Rotating about Y by -(360-305) degrees
     // turns azimuth 305 (toward the delta) into world -Z.
-    root.eulerAngles.y = -(360 - Self.viewAzimuth) * .pi / 180
+    root.simdEulerAngles.y = -(360 - Self.viewAzimuth) * .pi / 180
     scene.rootNode.addChildNode(root)
     loadTerrain()
     buildProps()
@@ -55,7 +59,7 @@ final class Outside {
       let m = SCNMaterial()
       m.lightingModel = .lambert
       let tex = Bundle.main.url(forResource: "\(name)_albedo", withExtension: "jpg", subdirectory: "terrain") ?? Bundle.main.url(forResource: "\(name)_albedo", withExtension: "jpg")
-      m.diffuse.contents = tex.flatMap { UIImage(contentsOfFile: $0.path) } ?? UIColor(red: 0.6, green: 0.42, blue: 0.3, alpha: 1)
+      m.diffuse.contents = tex.flatMap { PlatformImage(contentsOfFile: $0.path) } ?? PlatformColor(red: 0.6, green: 0.42, blue: 0.3, alpha: 1)
       m.diffuse.mipFilter = .linear
       m.diffuse.wrapS = .clamp
       m.diffuse.wrapT = .clamp
@@ -82,7 +86,7 @@ final class Outside {
     for (name, az, dist, scale, yaw) in place {
       guard let n = loadProp(name) else { continue }
       n.scale = SCNVector3(scale, scale, scale)
-      n.eulerAngles.y = yaw * .pi / 180
+      n.simdEulerAngles.y = yaw * .pi / 180
       n.position = ground(az: az, dist: dist, y: groundHeight(az: az, dist: dist))
       root.addChildNode(n)
     }
@@ -121,7 +125,7 @@ final class Outside {
     let to = root.convertPosition(SCNVector3(p.x, -2000, p.z), to: nil)
     let hits = root.hitTestWithSegment(from: from, to: to, options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
     guard let h = hits.first(where: { $0.node.name?.hasPrefix("terrain") ?? false }) else { return 0 }
-    return root.convertPosition(h.worldCoordinates, from: nil).y
+    return Float(root.convertPosition(h.worldCoordinates, from: nil).y)
   }
 
   /// Point at compass azimuth (deg) and distance (m), in the terrain frame (+X east, +Z south).
@@ -135,12 +139,12 @@ final class Outside {
     let panel = SCNBox(width: 2.0, height: 0.05, length: 1.0, chamferRadius: 0.01)
     let m = SCNMaterial()
     m.lightingModel = .physicallyBased
-    m.diffuse.contents = UIColor(red: 0.07, green: 0.10, blue: 0.22, alpha: 1)
+    m.diffuse.contents = PlatformColor(red: 0.07, green: 0.10, blue: 0.22, alpha: 1)
     m.metalness.contents = 0.7
     m.roughness.contents = 0.25
     panel.materials = [m]
     let legGeo = SCNBox(width: 0.06, height: 0.9, length: 0.06, chamferRadius: 0)
-    legGeo.firstMaterial?.diffuse.contents = UIColor(white: 0.55, alpha: 1)
+    legGeo.firstMaterial?.diffuse.contents = PlatformColor(white: 0.55, alpha: 1)
     for row in 0..<5 {
       for col in 0..<10 {
         let p = SCNNode(geometry: panel)
@@ -162,9 +166,9 @@ final class Outside {
   private func buildDrill() {
     let rig = SCNNode()
     let steel = SCNMaterial()
-    steel.diffuse.contents = UIColor(red: 0.78, green: 0.74, blue: 0.68, alpha: 1)
+    steel.diffuse.contents = PlatformColor(red: 0.78, green: 0.74, blue: 0.68, alpha: 1)
     let orange = SCNMaterial()
-    orange.diffuse.contents = UIColor(red: 0.95, green: 0.45, blue: 0.12, alpha: 1)
+    orange.diffuse.contents = PlatformColor(red: 0.95, green: 0.45, blue: 0.12, alpha: 1)
     // Lattice tower: four legs + cross braces.
     let h: Float = 9
     for (dx, dz) in [(-1, -1), (1, -1), (1, 1), (-1, 1)] as [(Float, Float)] {
@@ -209,7 +213,7 @@ final class Outside {
     // Beacon (cheap glow: emissive sphere + additive halo quad).
     let bm = SCNMaterial()
     bm.lightingModel = .constant
-    bm.diffuse.contents = UIColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
+    bm.diffuse.contents = PlatformColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
     beacon.geometry = SCNSphere(radius: 0.25)
     beacon.geometry?.materials = [bm]
     beacon.position = SCNVector3(0, h + 0.4, 0)
@@ -227,7 +231,7 @@ final class Outside {
     dust.particleSize = 0.05
     dust.particleSizeVariation = 0.03
     dust.stretchFactor = 0.06
-    dust.particleColor = UIColor(red: 0.80, green: 0.58, blue: 0.40, alpha: 0.22)
+    dust.particleColor = PlatformColor(red: 0.80, green: 0.58, blue: 0.40, alpha: 0.22)
     dust.particleColorVariation = SCNVector4(0, 0, 0, 0.15)
     dust.emitterShape = SCNBox(width: 60, height: 8, length: 30, chamferRadius: 0)
     dust.acceleration = SCNVector3(0, 0, 0)
@@ -244,12 +248,12 @@ final class Outside {
     scene?.rootNode.addChildNode(n)
   }
 
-  static func softDot() -> UIImage {
+  static func softDot() -> PlatformImage {
     let size = CGSize(width: 32, height: 32)
-    return UIGraphicsImageRenderer(size: size).image { ctx in
-      let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+    return Bitmap.image(size: size) { ctx in
+      let colors = [PlatformColor.white.cgColor, PlatformColor.white.withAlphaComponent(0).cgColor] as CFArray
       let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])!
-      ctx.cgContext.drawRadialGradient(g, startCenter: CGPoint(x: 16, y: 16), startRadius: 0, endCenter: CGPoint(x: 16, y: 16), endRadius: 16, options: [])
+      ctx.drawRadialGradient(g, startCenter: CGPoint(x: 16, y: 16), startRadius: 0, endCenter: CGPoint(x: 16, y: 16), endRadius: 16, options: [])
     }
   }
 
@@ -260,10 +264,10 @@ final class Outside {
     drillOn = on
     if on {
       drillHead.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 2.0)), forKey: "spin")
-      (beacon.geometry?.firstMaterial)?.diffuse.contents = UIColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
+      (beacon.geometry?.firstMaterial)?.diffuse.contents = PlatformColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)
     } else {
       drillHead.removeAction(forKey: "spin")
-      (beacon.geometry?.firstMaterial)?.diffuse.contents = UIColor(red: 1.0, green: 0.25, blue: 0.2, alpha: 1)
+      (beacon.geometry?.firstMaterial)?.diffuse.contents = PlatformColor(red: 1.0, green: 0.25, blue: 0.2, alpha: 1)
     }
   }
 
@@ -289,7 +293,7 @@ final class Outside {
   private static func mix(_ a: SIMD3<Float>, _ b: SIMD3<Float>, t: Float) -> SIMD3<Float> { a + (b - a) * t }
 
   /// Cube-map sky (background isn't fogged, so the sky stays sky while the ground hazes out).
-  private func makeSky(tau: Float, sunWorld: SIMD3<Float>, sunElev: Float) -> [UIImage] {
+  private func makeSky(tau: Float, sunWorld: SIMD3<Float>, sunElev: Float) -> [PlatformImage] {
     let n = 128
     // Face order SceneKit expects: +X, -X, +Y, -Y, +Z, -Z.
     let faces: [(Float, Float) -> SIMD3<Float>] = [
@@ -310,7 +314,7 @@ final class Outside {
       }
       let cs = CGColorSpace(name: CGColorSpace.sRGB)!
       let ctx = CGContext(data: &px, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: cs, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-      return UIImage(cgImage: ctx.makeImage()!)
+      return PlatformImage(cgImage: ctx.makeImage()!)
     }
   }
 
@@ -321,7 +325,7 @@ final class Outside {
     let el = Float(sunElevation) * .pi / 180
     // Terrain frame -> world: the same Y rotation as the terrain root.
     let local = SIMD3<Float>(sin(az) * cos(el), sin(el), -cos(az) * cos(el))
-    let rot = simd_quatf(angle: root.eulerAngles.y, axis: SIMD3(0, 1, 0))
+    let rot = simd_quatf(angle: root.simdEulerAngles.y, axis: SIMD3(0, 1, 0))
     let sunWorld = simd_normalize(rot.act(local))
 
     // Direct beam: Beer-Lambert through tau along the slant path.
@@ -329,18 +333,18 @@ final class Outside {
     let daylight = min(1, max(0, (Float(sunElevation) + 4) / 12))
     sunNode.light?.intensity = CGFloat(1400 * transmit * daylight)
     let red = min(1, tau / 5)
-    sunNode.light?.color = UIColor(red: 1.0, green: CGFloat(0.93 - 0.2 * red), blue: CGFloat(0.84 - 0.32 * red), alpha: 1)
+    sunNode.light?.color = PlatformColor(red: 1.0, green: CGFloat(0.93 - 0.2 * red), blue: CGFloat(0.84 - 0.32 * red), alpha: 1)
     sunNode.simdPosition = sunWorld * 100
     sunNode.simdLook(at: .zero)
     ambientNode.light?.intensity = CGFloat((260 + 240 * (1 - transmit)) * max(0.25, daylight) * exp(-0.12 * tau))
-    ambientNode.light?.color = UIColor(red: 0.95, green: 0.78, blue: 0.62, alpha: 1)
+    ambientNode.light?.color = PlatformColor(red: 0.95, green: 0.78, blue: 0.62, alpha: 1)
 
     // Fog: rim gone in a storm, faint haze on a clear day. Starts outside the room.
     let t = min(1, max(0, (tau - 0.4) / 4.4))
     scene?.fogStartDistance = CGFloat(3000 * pow(1 - t, 2) + 60)
     scene?.fogEndDistance = CGFloat(90_000 * pow(1 - t, 3) + 1800)
     let horizon = Self.skyColor(dir: simd_normalize(SIMD3(sunWorld.x, 0.02, sunWorld.z) * -1 + SIMD3(0, 0.02, 0)), sun: sunWorld, tau: tau, sunElev: Float(sunElevation))
-    scene?.fogColor = UIColor(red: CGFloat(horizon.x), green: CGFloat(horizon.y), blue: CGFloat(horizon.z), alpha: 1)
+    scene?.fogColor = PlatformColor(red: CGFloat(horizon.x), green: CGFloat(horizon.y), blue: CGFloat(horizon.z), alpha: 1)
 
     // A trickle even on clear days keeps the particle shader warm (no hitch when the storm starts).
     dust.birthRate = CGFloat(max(0.5, (tau - 1.2) * 400))

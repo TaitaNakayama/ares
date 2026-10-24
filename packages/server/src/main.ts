@@ -103,6 +103,7 @@ const spectatorClients = new WeakSet<WebSocket>();
 const headsets = new Set<WebSocket>();
 let activeHeadset: WebSocket | undefined;
 let vrStats: Record<string, unknown> = {};
+let spectatorStats: Record<string, unknown> = {};
 let recDir: string | undefined;
 let recSeq = 0;
 let recFps = 12;
@@ -468,6 +469,11 @@ const server = http.createServer(async (req, res) => {
       broadcast({ type: "scan_viewer" });
       return send(res, 200, { ok: true });
     }
+    if (path === "/api/spectator/stats" && req.method === "POST") {
+      spectatorStats = { ...(await readJson(req)), receivedAt: new Date().toISOString() };
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/api/spectator/stats" && req.method === "GET") return send(res, 200, spectatorStats);
     if (path === "/api/spectator/capture" && req.method === "POST") {
       broadcast({ type: "spectator_capture" });
       return send(res, 200, { ok: true });
@@ -478,8 +484,9 @@ const server = http.createServer(async (req, res) => {
       for await (const c of req) chunks.push(c as Buffer);
       const dir = new URL("../../../.cache/captures/", import.meta.url).pathname;
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "spectator.jpg"), Buffer.concat(chunks));
-      writeFileSync(join(dir, `spectator-${Date.now()}.jpg`), Buffer.concat(chunks));
+      const part = url.searchParams.get("part") === "3d" ? "-3d" : "";
+      writeFileSync(join(dir, `spectator${part}.jpg`), Buffer.concat(chunks));
+      writeFileSync(join(dir, `spectator${part}-${Date.now()}.jpg`), Buffer.concat(chunks));
       return send(res, 200, { ok: true });
     }
     if (path === "/api/capture/request" && req.method === "POST") {

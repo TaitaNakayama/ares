@@ -8,7 +8,7 @@ A claim is **VERIFIED** only when all four checks pass:
 
 Until then the claim is UNVERIFIED, SOURCED, REVIEWED or SPIKED, and it has a named fallback. Nothing is built on a claim until its spike passes.
 
-Last updated: 2026-10-23 19:55 PT.
+Last updated: 2026-10-24 04:30 PT.
 
 Detected setup (context check, 2026-10-23 18:16 PT):
 - macOS 26.3 (25D125), MacBook Air M3, 24 GB.
@@ -35,6 +35,7 @@ Detected setup (context check, 2026-10-23 18:16 PT):
 | C-12 | Libraries exist, permissive, work here | REVIEWED: HOLDS (verify-03) — TS 7.0.2, Node 26 type stripping (incl. pnpm symlinks), vitest, fast-check, zod, ws, React 19.3.1, Vite 8.3.5, astronomy-engine (dormant since 2023-12, still correct: 12.51 min today), rasterio 1.5.2 wheel w/ GDAL 3.12.2. openai SDK 7.43.0: tool calling needs the **Responses API** (gpt-6.1-sol / gpt-6-astra) | npm/PyPI/GitHub (2026-10-23) | verify-03 | PASS (in use) | — |
 | C-13 | Live LLM agents: OpenAI Responses API tool calling with your key proposes valid actions; rules brain when absent | BLOCKED (no key in `.env` yet) | verify-03 (openai 7.43.0, Responses API) | pending | pending | Rules brain (default) |
 | C-14 | Thermal: steady fps through repeated sessions | **PARTLY SPIKED** 21:22-21:42: 20-minute autoplay loop on a **MagSafe charger** (worst case): 41 samples, all 59.9-60.1 fps, thermal 'fair' throughout ([log](docs/evidence/soak-2122.log)). Still to do: off-charger soak in the viewer | research/02 | n/a | partial PASS | render scale 0.85, cool-down between judges |
+| C-15 | The headset's SceneKit scene code compiles for a native macOS (AppKit) target from shared sources and renders the same scene, undistorted, full screen at a steady frame rate on this Mac | **REVIEWED + SPIKED (offscreen); on-screen check pending with you.** Context: Apple M3, macOS 26.3, Xcode 26.6, macOS 26.5 SDK. The display backs full screen at 3840x2486 ("looks like 1920x1243"). Port: `vr/Shared` + a `Platform.swift` shim; iOS still builds. Spike (Sat 04:16): the Debug app renders room, terrain, robots, screens and upright text identical to the headset; the overlays composite correctly; 60 fps render rate while windowed behind other windows ([frame](docs/evidence/spectator-spike.jpg)). Not yet seen: the visible full-screen view and its presentation smoothness | WWDC25 session 288 (June 2025): SceneKit soft-deprecated, maintenance mode, existing apps keep working; Apple docs: SCNVector3 components are CGFloat on macOS, Float on iOS; reviewer: DTS forum posts (Aug 2025, Apr 2026) | verify-07: HOLDS WITH CAVEATS. Not "unchanged" (37 compile errors, fixed by the shim); NSColor getRed crash on gray colours (fixed: rgba()); text needs flipped CTM + flipped NSGraphicsContext (done); SCNView delegate runs on the render queue (only the camera is set there; everything else on main); 150 ms first-use Sound hitch (spectator prewarms it); macOS 26 Metal pacing reports unconfirmed | offscreen PASS; on-screen pending | Mac Catalyst target from the unchanged UIKit sources (typechecks per verify-07); last resort: the headset's 1280x720 frame upload (`/api/record/frame`) |
 
 ## Data claims (Tier 2, cited on screen)
 

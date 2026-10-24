@@ -82,7 +82,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
     scnRenderer.prepare(all, completionHandler: nil)
-    link = Link(world: world)
+    link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
     link.onRecenter = { [weak self] in self?.cardboard.recenter() }
     link.onScanViewer = { [weak self] in self?.cardboard.scanViewerQR() }
