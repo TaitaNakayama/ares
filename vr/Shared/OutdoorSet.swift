@@ -163,18 +163,51 @@ final class OutdoorSet {
     }
   }
 
+  /// Blast scorch under the lander: a dark, ragged-edged burn (many overlapping soot blobs, not one smooth disc) with long
+  /// radial blast streaks. The patch is 17 m across (0.033 m per pixel), so the solid burn reaches about 4.5 m.
   private static func scorchTexture() -> PlatformImage {
     Bitmap.image(size: CGSize(width: 512, height: 512), scale: 1, opaque: false) { ctx in
       var rng = SplitMix(9)
       let cs = CGColorSpaceCreateDeviceRGB()
-      // Radial soot, then blast streaks.
-      let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(red: 0.03, green: 0.025, blue: 0.02, alpha: 0.92).cgColor, PlatformColor(red: 0.05, green: 0.04, blue: 0.03, alpha: 0.55).cgColor, PlatformColor(red: 0.08, green: 0.06, blue: 0.05, alpha: 0).cgColor] as CFArray, locations: [0, 0.45, 1])!
-      ctx.drawRadialGradient(g, startCenter: CGPoint(x: 256, y: 256), startRadius: 0, endCenter: CGPoint(x: 256, y: 256), endRadius: 250, options: [])
-      for _ in 0..<70 {
+      let soot = { (a: CGFloat) in PlatformColor(red: 0.035, green: 0.028, blue: 0.022, alpha: a).cgColor }
+      // Ragged burn: overlapping soft blobs scattered by a radius that thins out.
+      for _ in 0..<150 {
+        let a = CGFloat(rng.unit()) * 2 * .pi, d = CGFloat(pow(rng.unit(), 0.8)) * 190
+        let c = CGPoint(x: 256 + cos(a) * d, y: 256 + sin(a) * d), r = 28 + CGFloat(rng.unit()) * 50
+        let g = CGGradient(colorsSpace: cs, colors: [soot(0.30), soot(0)] as CFArray, locations: [0, 1])!
+        ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: r, options: [])
+      }
+      let core = CGGradient(colorsSpace: cs, colors: [soot(0.88), soot(0.66), soot(0)] as CFArray, locations: [0, 0.55, 1])!
+      ctx.drawRadialGradient(core, startCenter: CGPoint(x: 256, y: 256), startRadius: 0, endCenter: CGPoint(x: 256, y: 256), endRadius: 205, options: [])
+      for _ in 0..<90 {
         let a = CGFloat(rng.unit()) * 2 * .pi
-        let r0 = 40 + CGFloat(rng.unit()) * 80, r1 = r0 + 40 + CGFloat(rng.unit()) * 130
-        ctx.setStrokeColor(PlatformColor(red: 0.04, green: 0.03, blue: 0.025, alpha: 0.10 + 0.25 * CGFloat(rng.unit())).cgColor)
-        ctx.setLineWidth(2 + CGFloat(rng.unit()) * 7)
+        let r0 = 70 + CGFloat(rng.unit()) * 70, r1 = r0 + 40 + CGFloat(rng.unit()) * 140
+        ctx.setStrokeColor(soot(0.12 + 0.30 * CGFloat(rng.unit())))
+        ctx.setLineWidth(2 + CGFloat(rng.unit()) * 6)
+        ctx.move(to: CGPoint(x: 256 + cos(a) * r0, y: 256 + sin(a) * r0))
+        ctx.addLine(to: CGPoint(x: 256 + cos(a) * r1, y: 256 + sin(a) * r1))
+        ctx.strokePath()
+      }
+    }
+  }
+
+  /// Dust thrown outward by the descent: a pale tan ring of uneven puffs and radial streaks around the pad (28 m patch).
+  private static func dustRingTexture() -> PlatformImage {
+    Bitmap.image(size: CGSize(width: 512, height: 512), scale: 1, opaque: false) { ctx in
+      var rng = SplitMix(23)
+      let cs = CGColorSpaceCreateDeviceRGB()
+      let tan = { (a: CGFloat) in PlatformColor(red: 0.78, green: 0.58, blue: 0.40, alpha: a).cgColor }
+      for _ in 0..<220 {
+        let a = CGFloat(rng.unit()) * 2 * .pi, d = 170 + CGFloat(rng.gauss()) * 28
+        let c = CGPoint(x: 256 + cos(a) * d, y: 256 + sin(a) * d), r = 16 + CGFloat(rng.unit()) * 34
+        let g = CGGradient(colorsSpace: cs, colors: [tan(0.12), tan(0)] as CFArray, locations: [0, 1])!
+        ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: r, options: [])
+      }
+      for _ in 0..<120 {
+        let a = CGFloat(rng.unit()) * 2 * .pi
+        let r0 = 140 + CGFloat(rng.unit()) * 40, r1 = r0 + 30 + CGFloat(rng.unit()) * 60
+        ctx.setStrokeColor(tan(0.05 + 0.10 * CGFloat(rng.unit())))
+        ctx.setLineWidth(2 + CGFloat(rng.unit()) * 5)
         ctx.move(to: CGPoint(x: 256 + cos(a) * r0, y: 256 + sin(a) * r0))
         ctx.addLine(to: CGPoint(x: 256 + cos(a) * r1, y: 256 + sin(a) * r1))
         ctx.strokePath()
@@ -186,7 +219,7 @@ final class OutdoorSet {
 
   /// A shared exterior hull texture (panel seams, rivet rows, scuffed bare-metal edges, dust climbing from the ground,
   /// a service stripe), drawn over the same Poly Haven plate grain the interior panels use. 1024 x 512.
-  static func hullTexture(seed: UInt64 = 77, tint: PlatformColor = PlatformColor(red: 0.80, green: 0.77, blue: 0.72, alpha: 1), stripe: Bool = true) -> PlatformImage {
+  static func hullTexture(seed: UInt64 = 77, tint: PlatformColor = PlatformColor(red: 0.80, green: 0.77, blue: 0.72, alpha: 1), stripe: Bool = true, wear: Bool = false) -> PlatformImage {
     Bitmap.image(size: CGSize(width: 1024, height: 512), scale: 1, opaque: true) { ctx in
       var rng = Tex.RNG(s: seed)
       ctx.setFillColor(tint.cgColor)
@@ -240,6 +273,24 @@ final class OutdoorSet {
         ctx.setFillColor(PlatformColor(red: 0.62, green: 0.43, blue: 0.29, alpha: a).cgColor)
         ctx.fill(CGRect(x: 0, y: CGFloat(y), width: 1024, height: 1))
       }
+      if wear {
+        // Landing wear: engine soot along the foot of the hull, long dust streaks climbing from the ground (tan, uneven),
+        // and a few dark drips running down from the seams.
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let soot = CGGradient(colorsSpace: cs, colors: [PlatformColor(red: 0.05, green: 0.04, blue: 0.035, alpha: 0).cgColor, PlatformColor(red: 0.05, green: 0.04, blue: 0.035, alpha: 0.62).cgColor] as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(soot, start: CGPoint(x: 0, y: 330), end: CGPoint(x: 0, y: 512), options: [])
+        for _ in 0..<150 {
+          let x = rng.next() * 1024, len = 50 + rng.next() * 230, w = 3 + rng.next() * 13
+          let tan = 0.10 + 0.26 * rng.next()
+          ctx.setFillColor(PlatformColor(red: 0.70, green: 0.50, blue: 0.34, alpha: tan).cgColor)
+          ctx.fill(CGRect(x: x, y: 512 - len, width: w, height: len))
+        }
+        for _ in 0..<36 {
+          let x = rng.next() * 1024, y = rng.next() * 200
+          ctx.setFillColor(PlatformColor(red: 0.10, green: 0.08, blue: 0.06, alpha: 0.10 + 0.14 * rng.next()).cgColor)
+          ctx.fill(CGRect(x: x, y: y, width: 2 + rng.next() * 4, height: 60 + rng.next() * 160))
+        }
+      }
     }
   }
 
@@ -250,7 +301,7 @@ final class OutdoorSet {
     let yaw = atan2(-toCrates.y, toCrates.x) // local +X points at the crates
     let y0 = h(l.x, l.y)
     let rig = SCNNode()
-    let hull = imageMat(Self.hullTexture(), repeatX: 3, repeatY: 1)
+    let hull = imageMat(Self.hullTexture(wear: true), repeatX: 3, repeatY: 1)
     let cone = imageMat(Self.hullTexture(seed: 91, tint: PlatformColor(red: 0.86, green: 0.83, blue: 0.78, alpha: 1), stripe: false), repeatX: 3, repeatY: 1)
     let steel = mat(PlatformColor(white: 0.30, alpha: 1), rough: 0.5)
     let darkM = mat(PlatformColor(red: 0.10, green: 0.09, blue: 0.09, alpha: 1))
@@ -325,7 +376,7 @@ final class OutdoorSet {
     always.addChildNode(baked)
     // A faint warm exhaust glow on the ground under the engines (a lit sprite, depth-tested).
     let g = SCNPlane(width: 10, height: 10)
-    g.materials = [Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.58, blue: 0.22, alpha: 1), strength: 0.28)]
+    g.materials = [Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.58, blue: 0.22, alpha: 1), strength: 0.12)]
     let gn = SCNNode(geometry: g)
     gn.simdPosition = SIMD3(l.x, y0 + 0.2, l.y)
     gn.simdEulerAngles.x = -.pi / 2
@@ -333,12 +384,74 @@ final class OutdoorSet {
     always.addChildNode(gn)
   }
 
+  /// Warm light at the door: a glow pool spilling onto the ground in front of it, and a footpath of low lamp bollards with
+  /// their own small pools running in from the pad's direction (all one decal mesh plus one baked bollard node).
+  private func buildDoorLight() {
+    let img = Bitmap.image(size: CGSize(width: 128, height: 128), scale: 1, opaque: false) { ctx in
+      let cols = [PlatformColor(red: 1.0, green: 0.70, blue: 0.32, alpha: 0.85).cgColor, PlatformColor(red: 1.0, green: 0.58, blue: 0.24, alpha: 0.35).cgColor, PlatformColor(red: 1.0, green: 0.5, blue: 0.2, alpha: 0).cgColor] as CFArray
+      let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cols, locations: [0, 0.5, 1])!
+      ctx.drawRadialGradient(g, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 64, options: [])
+    }
+    let wm = SCNMaterial()
+    wm.lightingModel = .constant
+    wm.diffuse.contents = img
+    wm.diffuse.mipFilter = .linear
+    wm.diffuse.wrapS = .clamp
+    wm.diffuse.wrapT = .clamp
+    wm.blendMode = .add
+    wm.isDoubleSided = true
+    wm.writesToDepthBuffer = false
+    var items: [Blob.Item] = [
+      .init(center: SIMD2(0, Spots.doorFaceZ - 2.6), rx: 4.6, rz: 4.2, yaw: 0),
+      .init(center: SIMD2(0, Spots.doorFaceZ - 1.2), rx: 2.6, rz: 2.0, yaw: 0),
+    ]
+    let posts = Spots.doorPath
+    for p in Spots.doorLights { items.append(.init(center: p, rx: 1.7, rz: 1.7, yaw: 0)) }
+    if let g = Blob.geometry(items, lift: 0.14, height: hOpt) {
+      g.materials = [wm]
+      let n = SCNNode(geometry: g)
+      n.renderingOrder = 38
+      outdoorOnly.addChildNode(n)
+    }
+    // A faint pale path strip under the lamps.
+    let strip = Bitmap.image(size: CGSize(width: 64, height: 8), scale: 1, opaque: false) { ctx in
+      for x in 0..<64 {
+        let u = abs(CGFloat(x) / 63 - 0.5) * 2
+        ctx.setFillColor(PlatformColor(red: 0.90, green: 0.70, blue: 0.50, alpha: 0.26 * (1 - u * u)).cgColor)
+        ctx.fill(CGRect(x: CGFloat(x), y: 0, width: 1, height: 8))
+      }
+    }
+    let path = Drape.ribbon(points: posts, width: 1.8, vPerMeter: 0.1, lift: 0.1, step: 1.0, height: hOpt)
+    outdoorOnly.addChildNode(decal(path, decalMat(strip), order: 35))
+    // Bollards: a short dark post with a lit warm cap, one each side in turn.
+    let post = mat(PlatformColor(white: 0.22, alpha: 1))
+    let cap = mat(PlatformColor(white: 0.1, alpha: 1), emissive: PlatformColor(red: 1.0, green: 0.76, blue: 0.40, alpha: 1))
+    let group = SCNNode()
+    for q in Spots.doorLights {
+      let gy = h(q.x, q.y)
+      let stem = SCNNode(geometry: SCNCylinder(radius: 0.06, height: 1.4))
+      stem.geometry?.materials = [post]
+      stem.position = SCNVector3(q.x, gy + 0.7, q.y)
+      group.addChildNode(stem)
+      let lamp = SCNNode(geometry: SCNBox(width: 0.28, height: 0.2, length: 0.28, chamferRadius: 0.05))
+      lamp.geometry?.materials = [cap]
+      lamp.position = SCNVector3(q.x, gy + 1.5, q.y)
+      group.addChildNode(lamp)
+    }
+    let flat = group.flattenedClone()
+    flat.name = "door-path"
+    outdoorOnly.addChildNode(flat)
+  }
+
   private func buildPad() {
     let l = Spots.lander
     let g = Drape.patch(center: l, half: 9.5, yaw: 0, cell: 0.6, lift: 0.07, height: hOpt)
     always.addChildNode(decal(g, decalMat(Self.padTexture()), order: 30))
-    let s = Drape.patch(center: l, half: 8.5, yaw: 0.6, cell: 0.7, lift: 0.1, height: hOpt)
-    always.addChildNode(decal(s, decalMat(Self.scorchTexture()), order: 31))
+    let s = Drape.patch(center: l, half: 12.5, yaw: 0.6, cell: 0.9, lift: 0.1, height: hOpt)
+    always.addChildNode(decal(s, decalMat(Self.scorchTexture()), order: 32))
+    // Dust ring: blown out around the pad, over the pad edge and the regolith.
+    let ring = Drape.patch(center: l, half: 14, yaw: 0.3, cell: 1.0, lift: 0.12, height: hOpt)
+    always.addChildNode(decal(ring, decalMat(Self.dustRingTexture()), order: 33))
     buildLander(at: l)
     // Pad lamp posts (emissive tops: they carry the pad through the storm).
     let post = mat(PlatformColor(white: 0.35, alpha: 1))
@@ -579,6 +692,8 @@ final class OutdoorSet {
       if simd_distance(p, Spots.outcrop) < 2.6 || simd_distance(p, Spots.scientist) < 1.6 { return true }
       if simd_distance(p, Spots.fieldCenter) < 0 { return true }
       for s in [Spots.start.pos, Spots.pad.pos, Spots.science.pos, Spots.solar.pos, Spots.door.pos] where simd_distance(p, s) < 1.1 { return true }
+      for s in Spots.doorPath + Spots.doorLights where simd_distance(p, s) < 2.2 { return true }                  // the lit footpath
+      if abs(p.x) < 3.2 && p.y > -11.5 && p.y < -5 { return true }                                // the door apron
       return false
     }
     for (i, s) in spots.enumerated() {
@@ -706,6 +821,7 @@ final class OutdoorSet {
       lamp.position = SCNVector3(sx, gy + 2.85, Spots.doorFaceZ - 0.08)
       group.addChildNode(lamp)
     }
+    buildDoorLight()
     // Hover highlight: an amber additive halo around the door.
     let halo = SCNPlane(width: 2.5, height: 3.3)
     let hm = SCNMaterial()

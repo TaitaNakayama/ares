@@ -22,9 +22,14 @@ enum Spots {
   static let pad = Spot(pos: [15, -43], look: [26, -55])
   static let science = Spot(pos: [1, -34], look: [-2.6, -36.2])
   static let solar = Spot(pos: [-11, -22], look: [-22, -35])
-  static let door = Spot(pos: [0, -9], look: [0, -5.5])
+  static let door = Spot(pos: [0, -11], look: [0, -5.5]) // 2 m further back than round 2, so the habitat and door read in context
   /// Where the glide ends before the fade (about 1 m from the door).
   static let doorStep = Spot(pos: [0, -6.7], look: [0, -5.5])
+
+  /// The lit footpath to the door: from the pad's direction, curving in, ending just short of the doorstep (world x, z).
+  static let doorPath: [SIMD2<Float>] = [[14, -15], [10, -13.2], [7, -11.3], [4.4, -9.2], [2.2, -7.6], [0.4, -6.7]]
+  /// Lamp posts along it: two on the pad-side run and a pair on each side of the final approach (these four are in the door view).
+  static let doorLights: [SIMD2<Float>] = [[10.4, -14.3], [6.4, -11.9], [3.0, -8.6], [-3.0, -8.6], [2.4, -6.9], [-2.4, -6.9]]
 
   static func spot(_ station: String?) -> Spot? {
     switch station {
