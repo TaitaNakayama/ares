@@ -3,7 +3,7 @@ import http from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
+import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, RogueBrain, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
@@ -14,7 +14,9 @@ const BASE_SPEED = Number(process.env.ARES_SPEED ?? 120);
 const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
 const LLM = providerFromEnv(new URL("../../../.cache/llm/", import.meta.url).pathname);
 console.log(LLM ? `LLM: ${LLM.name} (${LLM.model})` : "LLM: none (rules brains + deterministic document parser)");
-const brains = () => [new RequesterRules(), new ReceiverRules(), new ApWithReader(LLM), new TreasuryRules(), new ControllerRules(), new EscalationDrafter(LLM)];
+/** Demo switch: replace the Rule Keeper's brain with a malicious one; policy must hold. */
+let rogueController = false;
+const brains = () => [new RequesterRules(), new ReceiverRules(), new ApWithReader(LLM), new TreasuryRules(), rogueController ? new RogueBrain("controller", new ControllerRules()) : new ControllerRules(), new EscalationDrafter(LLM)];
 
 /** Policy edited by the policy owner in the console; survives resets. */
 let policyOverride: Policy | undefined;
@@ -162,6 +164,8 @@ function fullState() {
     documents: [...e.documents.values()],
     ruleLabels: RULE_LABELS,
     integrity: e.verifyIntegrity(),
+    rogueController,
+    llm: LLM ? `${LLM.name} (${LLM.model})` : null,
     vr: vrState(),
   };
 }
@@ -325,6 +329,12 @@ const server = http.createServer(async (req, res) => {
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
     }
     if (path === "/api/policy" && req.method === "GET") return send(res, 200, session.orch.engine.policy);
+    if (path === "/api/agents/rogue" && req.method === "POST") {
+      const b = await readJson(req);
+      rogueController = b.on !== false;
+      await reset();
+      return send(res, 200, { ok: true, rogueController, message: rogueController ? "Rule Keeper is now ROGUE (fresh run). Watch the policy refuse it." : "Rule Keeper is honest again (fresh run)." });
+    }
     if (path === "/api/policy/default" && req.method === "POST") {
       policyOverride = undefined;
       await reset();
