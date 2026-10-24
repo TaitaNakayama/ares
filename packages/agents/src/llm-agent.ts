@@ -81,6 +81,8 @@ export interface LlmOutcome {
   reason?: string;
   /** Ollama only: prompt tokens read on this call (small = the prefix cache worked) and tokens generated. */
   usage?: { promptTokens: number; promptMs: number; evalTokens: number; evalMs: number };
+  /** What the model returned, for diagnosis: tool names and the first words of any prose. */
+  raw?: string;
 }
 
 const sayTool: ToolDef = {
@@ -225,7 +227,7 @@ export class LlmBrain implements Brain {
     const ruleLine = ruleIntents.find((i) => (actions[0] ? i.type === actions[0].type : i.say))?.say ?? ruleIntents.find((i) => i.say)?.say;
     const mood = ruleIntents.find((i) => i.mood)?.mood ?? moodFor(actions[0]?.type);
     const spoken = verdict === "ok" ? line! : ruleLine ?? (actions[0] ? `Proposing: ${actions[0].type.replace(/_/g, " ")}.` : undefined);
-    this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, usage: res.usage, result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
+    this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, usage: res.usage, raw: `${res.toolCalls.map((c) => c.name).join(",") || "-"} ${res.text.slice(0, 160)}`.trim(), result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
     this.note(true);
 
     // Rules as the floor for the human handoff: if the rules brain would escalate now and the model neither

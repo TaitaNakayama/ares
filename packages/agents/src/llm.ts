@@ -59,7 +59,8 @@ export class OpenAIProvider implements LlmProvider {
         { role: "user", content: req.user },
       ],
       tools: (req.tools ?? []).map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.parameters })),
-      tool_choice: req.tools?.length ? "auto" : undefined,
+      // With tools present the model must answer through one (say counts): plain prose can't be acted on.
+      tool_choice: req.tools?.length ? "required" : undefined,
       max_output_tokens: req.maxOutputTokens ?? 800,
     };
     const ctrl = new AbortController();
