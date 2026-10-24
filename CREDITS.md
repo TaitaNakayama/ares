@@ -57,6 +57,12 @@ Textures (1k: diffuse, GL normal, roughness, AO; JPEG):
 | metal_plate_02 | Rob Tuytel | Worn metal panels |
 | painted_metal_shutter | Dario Barresi, Rico Cilliers, Charlotte Baglioni | Painted panel with wear |
 
+**Used in the scene (interior polish round 1, `vr/Shared/Room.swift`, `Tex.swift`, `Dressing.swift`; files copied flat into `vr/AresVR/Resources/interior/`):**
+- Models (.usdc, re-textured in code with the 1k diffuse JPG): `steel_frame_shelves_01` (storage rack), `plastic_crate_02` (crates on the rack), `Barrel_01` (two barrels), `medical_box` (on the rack), `metal_toolbox` (side table), `seeding_tray_01` and `potted_plant_04` (hydroponics corner under the magenta grow lights).
+- Textures (1k diffuse JPG, composited in code with painted colour, seams, rivets and scuffs): `painted_metal_shutter` (wall panel relief), `metal_plate_02` (grime and scuffs on walls, ceiling and floor), `rubber_tiles` (floor). The `*_nor_gl_1k.jpg` maps are bundled but not wired yet.
+- Kenney Food Kit `mug.obj` + `colormap.png` (coffee mug on the side table).
+- Original, drawn in code (no third-party art): the two mission patches (invented ARES / JEZERO BASE and SOL ONE-HUNDRED CREW), the crew locker name tapes (invented names T. VASQUEZ and M. LINDQVIST, not real people), the whiteboard sol plan and sticky notes (fictional), console key panels, equipment faces (O2 SCRUBBER B, WATER RECYCLER), the pressure-door warning stripes, vent grilles and stencilled signs.
+
 ## Kenney (CC0 1.0), `vr/Assets/models/kenney/`
 
 Author: Kenney, https://www.kenney.nl . Licence: Creative Commons Zero, CC0 1.0, http://creativecommons.org/publicdomain/zero/1.0/ (text kept as `LICENSE-*.txt` in each folder). Credit is not required.
@@ -73,6 +79,6 @@ Author: Kenney, https://www.kenney.nl . Licence: Creative Commons Zero, CC0 1.0,
 "Ultimate Modular Sci-Fi - Feb 2021" by Quaternius (https://quaternius.com), downloaded from https://opengameart.org/content/lowpoly-modular-sci-fi-environments . Licence: CC0 1.0 Universal, per the included `LICENSE-quaternius.txt` and the OpenGameArt page. OBJ files only. Used for: interior modules, crates, shelves, vents, pipes, wall and floor tiles, doors, computers.
 
 ## Not found / not downloaded
-- Solar panels, lockers, whiteboard, cable tray, warning-stripe texture: no verified CC0 model located in the time available (Poly Haven has none; the Kenney and Quaternius kits above contain no solar panel or locker). UNVERIFIED sources were not downloaded. Build these from primitives with the metal textures above.
+- Solar panels, lockers, whiteboard, cable tray, warning-stripe texture (lockers, whiteboard, cable trays and stripes are now built from primitives and code-drawn textures, see "Used in the scene" above): no verified CC0 model located in the time available (Poly Haven has none; the Kenney and Quaternius kits above contain no solar panel or locker). UNVERIFIED sources were not downloaded. Build these from primitives with the metal textures above.
 - Poly Haven `modular_electric_cables` (42k triangles) was found and removed as too heavy.
 - Ultimate Space Kit by Quaternius: the Sketchfab page says CC-BY while the description says CC0 (conflict), and the contents were not confirmed. UNVERIFIED, not downloaded.

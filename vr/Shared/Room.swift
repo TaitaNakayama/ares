@@ -28,9 +28,9 @@ enum Room {
     func slice(_ m: SCNMaterial, y0: Float, y1: Float) -> SCNMaterial {
       let c = m.copy() as! SCNMaterial
       let f = (y1 - y0) / height
-      c.diffuse.contentsTransform = SCNMatrix4MakeScale(1, CGFloat(f), 1)
+      c.diffuse.contentsTransform = SCNMatrix4MakeScale(1, SCNFloat(f), 1)
       c.diffuse.wrapT = .clamp
-      c.diffuse.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, CGFloat(f), 1), SCNMatrix4MakeTranslation(0, CGFloat(y0 / height), 0))
+      c.diffuse.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, SCNFloat(f), 1), SCNMatrix4MakeTranslation(0, SCNFloat(y0 / height), 0))
       return c
     }
     let sillPanels = panels.map { slice($0, y0: 0, y1: sill) }
