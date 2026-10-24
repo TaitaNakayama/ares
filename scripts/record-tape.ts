@@ -30,6 +30,8 @@ async function record(choice: string): Promise<{ frames: Frame[]; decideAt: numb
   await sleep(14000);
   await post("/api/director/next");
   for (let i = 0; i < 120 && !(latest?.waiting?.length); i++) await sleep(500);
+  if (!latest?.waiting?.length) throw new Error(`no escalation appeared (${frames.length} frames, beat ${latest?.beat})`);
+  console.log(`  ${choice}: escalation after ${Math.round((Date.now() - t0) / 1000)} s`);
   await sleep(4000); // time to read the options
   const w = latest.waiting[0];
   const opt = w.options.find((o: any) => o.id.startsWith(choice)) ?? w.options[0];

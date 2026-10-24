@@ -49,6 +49,8 @@ final class Link: NSObject, @unchecked Sendable {
   private var current: URL?
   private let lock = NSLock()
   private var everConnected = false
+  /// Debug: play the tape while staying connected (so captures still work).
+  private var forcedReplay = false
   // Offline replay (bundled tape recorded from the live server).
   private struct Frame { let t: Double; let state: VRState }
   private var tapePrefix: [Frame] = []
@@ -184,7 +186,7 @@ final class Link: NSObject, @unchecked Sendable {
 
   private func handle(_ s: String) {
     everConnected = true
-    if isReplay { DispatchQueue.main.async { self.exitReplay() } }
+    if isReplay && !forcedReplay { DispatchQueue.main.async { self.exitReplay() } }
     let wasConnecting: Bool = { if case .connected = status { return false }; return true }()
     if wasConnecting, let t = task {
       lock.lock()
@@ -194,7 +196,14 @@ final class Link: NSObject, @unchecked Sendable {
     }
     guard let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = obj["type"] as? String else { return }
     switch type {
+    case "force_replay":
+      let on = obj["on"] as? Bool ?? true
+      DispatchQueue.main.async {
+        self.forcedReplay = on
+        if on { self.exitReplay(); self.enterReplay() } else { self.exitReplay() }
+      }
     case "vr_state", "hello":
+      if forcedReplay { break }
       let key = type == "hello" ? "vr" : "state"
       if let st = obj[key], let d = try? JSONSerialization.data(withJSONObject: st), let v = try? JSONDecoder().decode(VRState.self, from: d) {
         lock.lock()

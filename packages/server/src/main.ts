@@ -89,7 +89,7 @@ function wire(s: Session): () => void {
   });
 }
 
-const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer"]);
+const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay"]);
 function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
@@ -385,6 +385,11 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/headset/recenter" && req.method === "POST") {
       broadcast({ type: "recenter" });
       return send(res, 200, { ok: true, clients: clients.size });
+    }
+    if (path === "/api/headset/replay" && req.method === "POST") {
+      const b = await readJson(req);
+      broadcast({ type: "force_replay", on: b.on !== false });
+      return send(res, 200, { ok: true });
     }
     if (path === "/api/headset/scan" && req.method === "POST") {
       broadcast({ type: "scan_viewer" });
