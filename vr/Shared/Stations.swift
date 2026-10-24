@@ -57,9 +57,11 @@ final class OutdoorDirector {
       outdoorRobots[role] = r
       // Outdoors the judge is 5 to 30 m away: tags and bubbles are 2.5x their indoor size (the robot puts its bubble to the
       // right when it stands at x < 0, so the tail is then on the left).
-      r.node.childNode(withName: "nametag", recursively: true).map { tag in
-        tag.scale = SCNVector3(Self.labelScale, Self.labelScale, Self.labelScale)
-        tag.pivot = SCNMatrix4MakeTranslation(0, -(0.17 / 2) * (1 - 1 / Self.labelScale), 0)
+      if let tag = r.node.childNode(withName: "nametag", recursively: true) {
+        let k = SCNFloat(Self.labelScale)
+        tag.scale = SCNVector3(k, k, k)
+        let lift: SCNFloat = -0.085 * (1 - 1 / k)
+        tag.pivot = SCNMatrix4MakeTranslation(0, lift, 0)
       }
       r.bubble.enlarge(Self.labelScale, tailLeft: p.x < 0)
     }

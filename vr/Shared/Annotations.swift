@@ -263,8 +263,11 @@ enum Consequence: Hashable {
 extension SpeechBubble {
   /// `tailLeft`: the speaker is to the bubble's left (the tail edge stays fixed there).
   func enlarge(_ k: CGFloat, tailLeft: Bool) {
-    node.scale = SCNVector3(k, k, k)
-    let dx = (Self.w / 2) * (1 - 1 / k) * (tailLeft ? -1 : 1)
-    node.pivot = SCNMatrix4MakeTranslation(dx, -(Self.h / 2) * (1 - 1 / k), 0)
+    let kk = SCNFloat(k)
+    let inv: SCNFloat = 1 / kk
+    let sign: SCNFloat = tailLeft ? -1 : 1
+    let halfW = SCNFloat(Self.w / 2), halfH = SCNFloat(Self.h / 2)
+    node.scale = SCNVector3(kk, kk, kk)
+    node.pivot = SCNMatrix4MakeTranslation(halfW * (1 - inv) * sign, -halfH * (1 - inv), 0)
   }
 }
