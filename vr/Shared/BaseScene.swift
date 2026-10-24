@@ -16,7 +16,7 @@ final class BaseScene {
   /// Mono 16:9 camera for the demo video (only rendered while recording).
   let videoCam = SCNNode()
   /// Eye height: the world is shifted down so the head sits 1.6 m above the floor.
-  let viewOffset: simd_float4x4 = {
+  var viewOffset: simd_float4x4 = {
     var m = matrix_identity_float4x4
     m.columns.3 = SIMD4(0, -1.6, 0, 1)
     return m
@@ -40,7 +40,7 @@ final class BaseScene {
   private let interactiveMask = 1 << 3
   private let reticleHolder = SCNNode()
   private let reticle = SCNNode()
-  private let outside: Outside
+  let outside: Outside
   private let screens: WallScreens
   private var robots: [String: Robot] = [:]
   private let debug = TextPanel(width: 1.6, height: 0.6, pixelsPerMeter: 600)
