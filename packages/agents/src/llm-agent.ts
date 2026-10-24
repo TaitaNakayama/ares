@@ -147,8 +147,8 @@ export class LlmBrain implements Brain {
     if (!point) return this.rules.react(input, ctx);
     // Safe mode: rules by choice, not a fallback.
     if (this.router.mode === "rules") return this.ruleIntents(input, ctx);
-    const fallback = async (reason: string, layer?: "local" | "cloud", ms?: number): Promise<Intent[]> => {
-      this.history.push({ at: Date.now(), point, layer, ms, result: "fallback", reason });
+    const fallback = async (reason: string, layer?: "local" | "cloud", ms?: number, raw?: string): Promise<Intent[]> => {
+      this.history.push({ at: Date.now(), point, layer, ms, result: "fallback", reason, raw });
       this.router.stats.rulesFallbacks++;
       const out = await this.ruleIntents(input, ctx);
       for (const it of out) it.rationale = `${it.rationale} [rules: ${reason}]`;
@@ -168,7 +168,8 @@ export class LlmBrain implements Brain {
           system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`,
           user: `STATE:\n${summary}\n\nEVENT:\n${facts}`,
           tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))),
-          maxOutputTokens: isReport ? 300 : 160,
+          // An escalation with proposed options, or a report, needs room; a plain action with a line does not.
+          maxOutputTokens: isReport ? 400 : tools.includes("escalate") || tools.includes("report_issue") ? 450 : 200,
         },
         { prefer: isReport ? "cloud" : "local", localTimeoutMs: isReport ? this.reportTimeoutMs : this.actionTimeoutMs, cloudTimeoutMs: isReport ? this.reportTimeoutMs : this.actionTimeoutMs },
       );
@@ -213,7 +214,7 @@ export class LlmBrain implements Brain {
     const rulesAct = ruleIntents.some((i) => i.type !== "__say");
     if (actions.length === 0 && rulesAct) {
       this.note(false);
-      return fallback(dropped.length ? `invalid tool call (${dropped.join(" | ")})` : "no action proposed");
+      return fallback(dropped.length ? `invalid tool call (${dropped.join(" | ")})` : "no action proposed", res.layer, res.ms, `${res.toolCalls.map((c) => c.name).join(",") || "-"} ${res.text.slice(0, 160)}`.trim());
     }
     if (actions.length > 3) {
       // A turn is a few related actions at most (e.g. request verification, then escalate).

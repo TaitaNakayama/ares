@@ -72,16 +72,18 @@ export class OpenAIProvider implements LlmProvider {
         body: JSON.stringify(body),
         signal: ctrl.signal,
       });
-      const j = (await r.json()) as { output?: { type: string; name?: string; arguments?: string; content?: { type: string; text?: string }[] }[]; error?: { message: string } };
+      const j = (await r.json()) as { output?: { type: string; name?: string; arguments?: string; content?: { type: string; text?: string }[] }[]; error?: { message: string }; status?: string; incomplete_details?: { reason?: string } };
       if (!r.ok) throw new Error(`OpenAI ${r.status}: ${j.error?.message ?? "error"}`);
       const toolCalls: LlmResponse["toolCalls"] = [];
       let text = "";
+      if (j.status === "incomplete") text += `[incomplete: ${j.incomplete_details?.reason ?? "?"}] `;
       for (const o of j.output ?? []) {
         if (o.type === "function_call" && o.name) {
           try {
             toolCalls.push({ name: o.name, args: JSON.parse(o.arguments ?? "{}") });
           } catch {
-            // malformed arguments are dropped; the caller falls back
+            // Malformed (usually truncated) arguments are dropped; say so, so the history shows why the caller fell back.
+            text += `[malformed ${o.name} arguments: ${(o.arguments ?? "").slice(0, 80)}] `;
           }
         }
         if (o.type === "message") for (const c of o.content ?? []) if (c.type === "output_text" && c.text) text += c.text;
