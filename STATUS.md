@@ -4,7 +4,7 @@ _Updated Fri 2026-10-23 22:35 PT_
 
 ## Works
 - **Engine** (world-agnostic): double-entry ledger, policy engine, three-way match, escalations, verifications, audit trail, trace-to-source, per-actor credentials.
-  - Opus adversarial review, three rounds: 21 + 17 + 19 findings, all fixed, including the two low-severity items (E7, E9).
+  - Opus adversarial review, three rounds: 21 + 17 + 17 findings, all fixed, including the two low-severity items (E7, E9).
   - 73 tests pass, plus 45 blocked-exploit repros and a property-based fuzz.
 - **Agents:** rule brains for all five roles. The orchestrator binds each agent's identity, so the LLM can never choose its own. Rogue mode swaps in a malicious Rule Keeper; a test proves every attempt is refused.
 - **Mars world:**

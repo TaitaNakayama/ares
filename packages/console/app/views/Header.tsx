@@ -29,7 +29,9 @@ export function Header({ state, vr, live, error, refresh }: Props) {
         </div>
         <div className="facts">
           <Fact k="Seed" v={state.seed} />
-          <Fact k="Policy" v={`${pol.name} v${pol.version}`} />
+          {(state as unknown as { policyCustom?: boolean }).policyCustom
+            ? <Fact k="Policy" v="CUSTOM (Policy tab → Restore default)" tone="warn" />
+            : <Fact k="Policy" v={`${pol.name} v${pol.version}`} />}
           <Fact k="Sim time" v={vr.time} />
           <Fact k="Speed" v={state.paused ? "paused" : `${state.speed}x${vr.timelapse ? " (time-lapse)" : ""}`} />
           <Fact k="Link" v={live ? "live" : error ? "offline" : "polling"} tone={live ? "ok" : "warn"} />

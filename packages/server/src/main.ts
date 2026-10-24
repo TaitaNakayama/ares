@@ -185,6 +185,7 @@ function fullState() {
     ruleLabels: RULE_LABELS,
     integrity: e.verifyIntegrity(),
     rogueController,
+    policyCustom: policyOverride !== undefined,
     headset: { connected: [...clients].filter((c) => vrClients.has(c) && c.readyState === 1).length, stats: vrStats },
     llm: LLM ? `${LLM.name} (${LLM.model})` : null,
     vr: vrState(),
