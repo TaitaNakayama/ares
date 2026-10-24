@@ -97,7 +97,7 @@ function actionTool(name: keyof typeof ACTION_SCHEMAS): ToolDef {
 }
 
 const SYSTEM_PREFIX =
-  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. Prefer one action tool call plus one short `say` line (under 140 characters, plain, in character, no markdown).";
+  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. Prefer one action tool call plus one short `say` line (under 140 characters, plain, in character, no markdown; write money as dollars like $632,276.58, never raw cents).";
 
 export class LlmBrain implements Brain {
   readonly role: AgentRole;
@@ -485,7 +485,7 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
     }
     case "invoice_submitted": {
       const inv = d.invoice as Invoice;
-      return `Invoice ${inv.id} submitted for approval: ${invoiceLine(inv, ctx)}. The three-way match passed policy.`;
+      return `Invoice ${inv.id} submitted for approval: ${invoiceLine(inv, ctx)}. The three-way match passed policy, and the submitted amount is already the matched amount: approving pays only for what was received, at the agreed price, to the verified account. Standing procedure: approve a submitted invoice whose match passed; reject only one that policy held for a price above the agreement or a missing order.`;
     }
     case "invoice_held": {
       const inv = d.invoice as Invoice;
