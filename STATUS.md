@@ -150,3 +150,9 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
 
 ## Sound
 - Procedural audio in `vr/Shared/Sound.swift` (one AVAudioEngine, no new assets): interior hum with a 0.1 Hz wobble; wind that follows tau and gusts (muffled inside the room); a two-note chime per agent line pitched per role; a soft tick when an agent starts thinking; a deeper two-tone when the commander decides. Muted in the Mac spectator. Headset ran at 60 fps with it; the sound itself still needs an ear check on the phone.
+
+## Outdoor part 1 (Tier 2, built Sat 07:50-08:30)
+The judge starts outside on the real Jezero terrain and walks pad, science, solar, door, then enters. Code: `vr/Shared/Stations.swift` (director: part, walk, fade, visibility), `Walk.swift` (station spots and the 1.4 m/s glide), `OutdoorSet.swift` (pad, lander, pallets, scan beam, outcrop, flags, footprints and tyre tracks, habitat shell with pressure door, tunnel and second module, per-station rock chunks), `Scientist.swift`, `CloseUp.swift`, `Rocks.swift` (batched pebbles, grit texture, terrain height field, draped decals); `Outside.swift` places things on the real mesh and handles ground-level fog, dust cap and the fill plain; the spectator follows head position as well as orientation (`vr_pose` now carries `p`, `wy` scene yaw, `cu` close-up open). Evidence: `docs/evidence/polish/outdoor-*.jpg`.
+- Part 1 with `director/autoplay`: 39 s to "inside" (server timer). Legs are 16-18 m, about 12 s each at walking pace.
+- Draw calls: rocks are one node per station (4 chunks, 140 rocks each, hidden beyond 42 m); habitat, decals and props are merged per material. Storm outside: fog closes to ~420 m, dust capped at ~1500 live particles (larger, fewer).
+- Not verified on the phone unless listed in the final report; see the report for fps per station.

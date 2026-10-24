@@ -67,7 +67,7 @@ final class OutdoorSet {
     m.diffuse.wrapS = .repeat
     m.diffuse.wrapT = .repeat
     m.diffuse.mipFilter = .linear
-    m.diffuse.contentsTransform = SCNMatrix4MakeScale(CGFloat(repeatX), CGFloat(repeatY), 1)
+    m.diffuse.contentsTransform = SCNMatrix4MakeScale(SCNFloat(repeatX), SCNFloat(repeatY), 1)
     m.specular.contents = PlatformColor(white: 0.12, alpha: 1)
     m.shininess = 0.15
     return m
