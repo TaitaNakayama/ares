@@ -1,0 +1,22 @@
+// Audit: which beats of the demo story call the LLM, and for what.
+import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, TreasuryRules, type LlmProvider } from "@ares/agents";
+import { MarsWorld } from "@ares/world-mars";
+process.loadEnvFile(new URL("../.env", import.meta.url).pathname);
+const real = providerFromEnv(new URL("../.cache/llm/", import.meta.url).pathname)!;
+let beat = "prologue";
+const calls: string[] = [];
+const llm: LlmProvider = { name: real.name, model: real.model, complete: async (req) => { const r = await real.complete(req); calls.push(`beat ${beat}: ${req.tools?.length ? `tool call (${req.tools.map((t) => t.name).join(",")})` : "free text"} -> ${r.cached ? "cached" : "live"}: ${(r.text || JSON.stringify(r.toolCalls)).slice(0, 160).replace(/\n/g, " ")}`); return r; } };
+const world = new MarsWorld({ seed: "ares-demo", mode: "demo" });
+const orch = new Orchestrator({ world, brains: [new RequesterRules(), new ReceiverRules(), new ApWithReader(llm), new TreasuryRules(), new ControllerRules(), new EscalationDrafter(llm)], fmtTime: world.fmtTime });
+const e = orch.engine;
+await orch.runUntil(world.start);
+beat = "1"; orch.scheduleAll(world.beatDelivery(e)); await orch.runUntil(e.now + 2 * 3600e3);
+beat = "2-5"; orch.scheduleAll(world.beatStorm(e)); await orch.runUntil(e.now + 2 * 3600e3);
+const esc = [...e.escalations.values()].find((x) => x.status === "awaiting_decision" && x.to === "local_authority")!;
+beat = "6"; await orch.submitHuman("local_authority", { type: "decide", params: { escalationId: esc.id, optionId: esc.options.find((o) => o.id.startsWith("buy-"))!.id } });
+beat = "7"; await orch.runUntil(e.now + 6 * 3600e3);
+const bySource = new Map<string, number>();
+for (const p of e.proposals) bySource.set(p.source ?? "?", (bySource.get(p.source ?? "?") ?? 0) + 1);
+console.log(`LLM calls: ${calls.length}`); for (const c of calls) console.log("  " + c);
+console.log("proposals by recorded source:", Object.fromEntries(bySource));
+console.log("escalation note shown in console:", JSON.stringify(e.escalations.get(esc.id)?.message ?? "").slice(0, 400));
