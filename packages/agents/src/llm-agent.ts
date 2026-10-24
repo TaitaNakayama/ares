@@ -43,6 +43,7 @@ const DECISION_POINTS: Record<AgentRole, Record<string, DecisionTool[]>> = {
   },
   controller: {
     "world:rfq_closed": ["approve_requisition", "reject_quote", "request_verification", "escalate", "say"],
+    "engine:verification_requested": ["escalate", "say"],
     "engine:invoice_submitted": ["approve_invoice", "reject_invoice", "say"],
     "engine:invoice_held": ["reject_invoice", "request_verification", "say"],
     "engine:verification_answered": ["hold_vendor", "approve_requisition", "say"],
@@ -111,6 +112,8 @@ export class LlmBrain implements Brain {
   /** Rolling window of recent failures (timeouts, errors, denials): 2 of the last 4 trips the breaker for 60 s. */
   private recent: boolean[] = [];
   private breakerUntil = 0;
+  /** The rules' escalation held back while a verification the model asked for gives it a focused chance to escalate with its own options. */
+  private pendingFloor?: Intent;
   private lastLlmIntents = new WeakSet<Intent>();
 
   constructor(opts: LlmBrainOptions) {
@@ -147,7 +150,7 @@ export class LlmBrain implements Brain {
       this.router.stats.rulesFallbacks++;
       const out = await this.ruleIntents(input, ctx);
       for (const it of out) it.rationale = `${it.rationale} [rules: ${reason}]`;
-      return out;
+      return [...out, ...this.takePendingFloor(point, out)];
     };
     if (Date.now() < this.breakerUntil) return fallback("breaker open");
 
@@ -232,10 +235,17 @@ export class LlmBrain implements Brain {
     // Rules as the floor for the human handoff: if the rules brain would escalate now and the model neither
     // escalated nor approved, the escalation still happens, labeled as rules.
     const floor = ruleIntents.find((i) => i.type === "escalate");
-    if (floor && !actions.some((a) => a.type === "escalate" || a.type === "approve_requisition" || a.type === "reject_requisition")) {
-      actions.push({ ...floor, via: "rules", rationale: `${floor.rationale} [rules: escalation floor]`, say: undefined, short: undefined });
-      dropped.push("escalation added by rules");
+    const decided = actions.some((a) => a.type === "escalate" || a.type === "approve_requisition" || a.type === "reject_requisition");
+    if (floor && !decided) {
+      if (actions.some((a) => a.type === "request_verification")) {
+        // The model asked Earth first; it gets one focused turn (verification_requested) to escalate with its own options.
+        this.pendingFloor = { ...floor, via: "rules", rationale: `${floor.rationale} [rules: escalation floor]`, say: undefined, short: undefined };
+      } else {
+        actions.push({ ...floor, via: "rules", rationale: `${floor.rationale} [rules: escalation floor]`, say: undefined, short: undefined });
+        dropped.push("escalation added by rules");
+      }
     }
+    actions.push(...this.takePendingFloor(point, actions));
     // The line goes with the first action; the others are silent proposals (the engine narrates refusals).
     actions.forEach((it, i) => {
       if (i === 0) {
@@ -302,6 +312,14 @@ export class LlmBrain implements Brain {
       this.history.push({ at: Date.now(), point: "ask", result: "fallback", reason: (err as Error).message });
     }
     return { text: fallback, via: "rules" };
+  }
+
+  /** At the verification_requested turn, the held-back rules escalation goes through unless the model escalated itself. */
+  private takePendingFloor(point: string, actions: Intent[]): Intent[] {
+    if (point !== "engine:verification_requested" || !this.pendingFloor) return [];
+    const floor = this.pendingFloor;
+    this.pendingFloor = undefined;
+    return actions.some((a) => a.type === "escalate") ? [] : [floor];
   }
 
   /** Called by the orchestrator with the engine's verdict on one of our intents. */
@@ -496,6 +514,16 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
       const inv = d.invoice as Invoice;
       const already = [...e.payments.values()].filter((p) => p.invoiceId === inv.id && p.status !== "cancelled").reduce((s, p) => s + p.amount, 0);
       return `Invoice ${inv.id} approved for ${inv.approvedAmount ?? 0} cents (${formatCents(inv.approvedAmount ?? 0)}); ${already} cents already scheduled. Vendor ${e.vendors.get(inv.vendorId)?.name}. Decide what to schedule now.`;
+    }
+    case "verification_requested": {
+      const v = d.verification as { id: string; vendorId: string; subject: { kind: string; id: string } };
+      const replyAt = d.expectedReplyAt as number | undefined;
+      const q = v.subject.kind === "quote" ? e.quotes.get(v.subject.id) : undefined;
+      const req = q?.requisitionId ? e.requisitions.get(q.requisitionId) : undefined;
+      const minsReply = replyAt ? Math.round((replyAt - e.now) / 60_000) : undefined;
+      const minsLeft = req ? Math.round((req.orderBy - e.now) / 60_000) : undefined;
+      const cmdLimit = e.limitFor("local_authority");
+      return `Verification ${v.id} is out to Earth for vendor ${v.vendorId} (${e.vendors.get(v.vendorId)?.name}) on ${v.subject.kind} ${v.subject.id}${minsReply !== undefined ? `; the answer is expected in about ${minsReply} minutes` : ""}.${req ? ` Requisition ${req.id} (${req.qty} x ${req.sku}) must be ordered within ${minsLeft} minutes.` : ""} If the deadline comes before Earth's answer, or no clean quote covers the full need within your limit, escalate to the commander now with the reason and up to three concrete options, each with the exact action (e.g. approve_requisition of a clean quote for its available quantity, within the commander's limit of ${cmdLimit} cents = ${formatCents(cmdLimit)}). Otherwise say briefly that you are waiting.`;
     }
     case "verification_answered": {
       const v = d.verification as { id: string; status: string; vendorId: string; subject: { kind: string; id: string }; answer: string };
