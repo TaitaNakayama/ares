@@ -1,6 +1,6 @@
 # STATUS
 
-_Updated Fri 2026-10-23 20:12 PT_
+_Updated Fri 2026-10-23 20:55 PT_
 
 ## Works
 - **Engine** (world-agnostic): double-entry ledger, policy engine, three-way match, escalations, verifications, audit trail, trace-to-source, per-actor credentials.
@@ -20,8 +20,14 @@ _Updated Fri 2026-10-23 20:12 PT_
 - **Native VR app (AresVR):** stereo through the Cardboard distortion at 60 fps on the iPhone 16 Pro, gaze reticle, tap handling, live link over the hotspot.
 
 ## In progress
-- Spike A viewer check, with you.
-- Control room scene: window plus terrain, tau-driven sky, three wall screens, robots, decision cards bound to live escalations.
+- Spike A viewer check, with you. The full control room build is installed and renders at 60 fps (remote capture).
+- Opus review of the native renderer.
+
+## Done since the last update
+- Control room scene: window onto Jezero terrain, tau-driven sky, fog and sun, panels and drill, five robots with expressive faces and speech bubbles, three wall screens, 2x2 decision cards.
+- Offline replay tape (4 branches), recorded from the live server.
+- LLM layer (OpenAI Responses API, cached) plus a deterministic parser. Judges can paste any invoice text in the console.
+- Honest eval: subtle overpricing recall 35-67% depending on policy; false-flag trade-off in docs/evidence/eval-sweep.txt.
 
 ## Needs you
 - Viewer checklist for the Ares app (in the terminal).
