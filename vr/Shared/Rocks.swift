@@ -25,15 +25,18 @@ struct SplitMix {
 /// (one draw call). Batching is the measured-safe way (spike C-17: loose nodes would cost ~1 draw per rock).
 enum RockField {
   private static let variants: [SCNGeometry] = {
-    // One shared material for every pebble: the dusted-rock map (Poly Haven moon_dusted_01, 1k) tinted to the regolith palette.
+    // One shared material for every pebble: the SAME map as the outcrop boulders (Poly Haven moon_rock_02, 1k), so the rocks
+    // read as one family, with only a faint warm dust tint (the boulders are untinted).
     let mat = SCNMaterial()
     mat.lightingModel = .lambert
-    if let img = Tex.cg("moon_dusted_01_diff_1k") {
+    if let img = Tex.cg("moon_rock_02_diff_1k") {
       mat.diffuse.contents = img
       mat.diffuse.wrapS = .repeat
       mat.diffuse.wrapT = .repeat
       mat.diffuse.mipFilter = .linear
-      mat.multiply.contents = PlatformColor(red: 1.0, green: 0.70, blue: 0.52, alpha: 1)
+      mat.diffuse.minificationFilter = .linear
+      mat.diffuse.magnificationFilter = .linear
+      mat.multiply.contents = PlatformColor(red: 1.0, green: 0.90, blue: 0.80, alpha: 1)
     } else {
       mat.diffuse.contents = PlatformColor(red: 0.43, green: 0.30, blue: 0.22, alpha: 1)
     }
@@ -66,6 +69,19 @@ enum RockField {
     let sy = Float(0.5 + 0.25 * rng.unit()), sx = Float(0.9 + 0.3 * rng.unit())
     var pos: [SCNVector3] = [], nor: [SCNVector3] = [], col: [SIMD4<Float>] = [], uv: [CGPoint] = []
     let off = Float(rng.unit())
+    // Vertex normals (average of the faces around each vertex), blended 65% into the face normal so a hint of facet remains
+    // but the shading matches the smooth scanned boulders.
+    var acc = [SIMD3<Float>](repeating: .zero, count: v.count)
+    let shaped: [SIMD3<Float>] = (0..<v.count).map { i in
+      var q = v[i] * radii[i]
+      q.y = max(q.y * sy, -0.12)
+      q.x *= sx
+      return q
+    }
+    for tri in f {
+      let fn = simd_cross(shaped[tri[1]] - shaped[tri[0]], shaped[tri[2]] - shaped[tri[0]])
+      for i in tri { acc[i] += fn }
+    }
     for tri in f {
       let p = tri.map { i -> SIMD3<Float> in
         var q = v[i] * radii[i]
@@ -74,13 +90,15 @@ enum RockField {
         return q
       }
       let n = simd_normalize(simd_cross(p[1] - p[0], p[2] - p[0]))
-      let shade = Float(0.78 + 0.3 * rng.unit())
-      for q in p {
-        pos.append(SCNVector3(q.x, q.y, q.z)); nor.append(SCNVector3(n.x, n.y, n.z)); col.append(SIMD4(shade, shade, shade, 1))
+      let shade = Float(0.86 + 0.16 * rng.unit())
+      for (k, q) in p.enumerated() {
+        let sm = simd_normalize(acc[tri[k]])
+        let nn = simd_normalize(sm * 0.65 + n * 0.35)
+        pos.append(SCNVector3(q.x, q.y, q.z)); nor.append(SCNVector3(nn.x, nn.y, nn.z)); col.append(SIMD4(shade, shade, shade, 1))
         // Box-projected UVs on the dominant axis of the face (a pebble is about one metre, so one tile is about a metre).
         let an = SIMD3(abs(n.x), abs(n.y), abs(n.z))
         let (u, w) = an.y >= an.x && an.y >= an.z ? (q.x, q.z) : (an.x >= an.z ? (q.z, q.y) : (q.x, q.y))
-        uv.append(CGPoint(x: CGFloat(u * 0.9 + off), y: CGFloat(w * 0.9 + off)))
+        uv.append(CGPoint(x: CGFloat(u * 1.3 + off), y: CGFloat(w * 1.3 + off)))
       }
     }
     let colData = col.withUnsafeBufferPointer { Data(buffer: $0) }
