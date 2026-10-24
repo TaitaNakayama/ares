@@ -7,7 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { ApWithReader, ControllerRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type AgentRole, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
-import { MarsWorld } from "@ares/world-mars";
+import { MarsWorld, SCIENCE_REF } from "@ares/world-mars";
 
 // Optional repo-root .env (e.g. OPENAI_API_KEY); real environment variables win.
 const ENV_FILE = new URL("../../../.env", import.meta.url).pathname;
@@ -177,8 +177,8 @@ function wire(s: Session): () => void {
   });
 }
 
-const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay", "thinking"]);
-const SPECTATOR_TYPES = new Set(["vr_state", "narration", "reset", "headset", "vr_choice", "spectator_capture", "thinking"]);
+const VR_TYPES = new Set(["vr_state", "capture", "reset", "record", "recenter", "scan_viewer", "force_replay", "thinking", "scene"]);
+const SPECTATOR_TYPES = new Set(["vr_state", "narration", "reset", "headset", "vr_choice", "spectator_capture", "thinking", "scene"]);
 function broadcast(msg: { type: string; [k: string]: unknown }): void {
   const text = JSON.stringify(msg);
   for (const c of clients) {
@@ -244,6 +244,8 @@ function vrState() {
     storyBeats: 7,
     thinking: [...s.thinking],
     agentMode: router.mode,
+    /** Two-part demo: where the judge is and which outdoor station the story is at; the scientist's real reference image. */
+    scene: { part: s.world.part, station: s.world.station ?? null, science: SCIENCE_REF },
     timelapse: s.isTimelapse,
     time: s.world.fmtTime(e.now),
     sol: t.sol,
@@ -295,18 +297,50 @@ function fullState() {
 
 // ---------------------------------------------------------------- director
 
+/** Part 1 outside: pad (beat 1) -> science -> solar (beat 2 starts) -> door -> inside. Part 2 continues with the agents and the commander. */
 async function directorNext(): Promise<string> {
   const s = session;
   const e = s.orch.engine;
-  if (s.world.beat === 0) {
-    s.orch.scheduleAll(s.world.beatDelivery(e));
-    return "beat 1: delivery + invoice";
+  const w = s.world;
+  if (w.part === "outside") {
+    if (!w.station) {
+      s.orch.scheduleAll(w.beatPad(e));
+      return "part 1, landing pad: the cargo lander (beat 1: short delivery)";
+    }
+    if (w.station === "pad") {
+      s.orch.scheduleAll(w.beatScience(e));
+      return "part 1, science site: sampling the delta rock";
+    }
+    if (w.station === "science") {
+      s.orch.scheduleAll(w.beatSolar(e));
+      return "part 1, solar field: panel check, then the storm warning (beat 2)";
+    }
+    if (w.station === "solar") {
+      s.orch.scheduleAll(w.beatDoor());
+      // Resilience: if the judge doesn't tap the door, the story goes inside anyway.
+      autoplayTimer.push(setTimeout(() => { if (session === s && s.world.part === "outside") void enterBase("auto"); }, 25_000));
+      scheduleVrState();
+      return "part 1, the door: gaze at the base door and press to go inside (auto in 25 s)";
+    }
+    return await enterBase("director");
   }
-  if (s.world.beat === 1) {
-    s.orch.scheduleAll(s.world.beatStorm(e));
+  if (w.beat < 2) {
+    s.orch.scheduleAll(w.beatStorm(e));
     return "beat 2: dust storm";
   }
   return "no further scripted beats; the rest is up to the agents and the commander";
+}
+
+/** The judge enters the base (door tap from the headset, the console, or the director's timer). */
+async function enterBase(by: string): Promise<string> {
+  const s = session;
+  if (s.world.part === "inside") return "already inside";
+  if (s.world.beat < 2) s.orch.scheduleAll(s.world.beatStorm(s.orch.engine)); // entered early: the storm still comes
+  s.world.enter();
+  broadcast({ type: "scene", part: "inside", by });
+  scheduleVrState();
+  console.log(`[scene] inside (${by})`);
+  return "part 2: inside the base";
 }
 
 /**
@@ -322,8 +356,12 @@ async function autoplay(fallbackChoice?: string, decideAfterMs = 25_000): Promis
   stopAutoplay();
   await reset();
   const at = (ms: number, fn: () => void) => autoplayTimer.push(setTimeout(fn, ms));
-  at(4_000, () => void directorNext());
-  at(20_000, () => void directorNext());
+  // Part 1 in about 40 s real time, then inside; the pacing of the agents' lines does the rest.
+  at(3_000, () => void directorNext()); // pad
+  at(15_000, () => void directorNext()); // science
+  at(25_000, () => void directorNext()); // solar + storm warning
+  at(33_000, () => void directorNext()); // door
+  at(39_000, () => void enterBase("autoplay"));
   if (fallbackChoice) {
     const poll = setInterval(async () => {
       const esc = [...session.orch.engine.escalations.values()].find((x) => x.status === "awaiting_decision" && x.to === "local_authority");
@@ -603,6 +641,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
     if (path === "/api/director/next" && req.method === "POST") return send(res, 200, { ok: true, message: await directorNext() });
+    if (path === "/api/director/enter" && req.method === "POST") return send(res, 200, { ok: true, message: await enterBase("console") });
     if (path === "/api/director/autoplay" && req.method === "POST") {
       const b = await readJson(req);
       await autoplay(typeof b.choice === "string" ? b.choice : undefined, Number(b.decideAfterMs ?? 25_000));
@@ -688,6 +727,10 @@ wss.on("connection", (ws, req) => {
         if (process.env.ARES_LOG_VR) console.log("[vr]", JSON.stringify(m));
       }
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
+      if (m.type === "vr_enter" && (headset || local)) {
+        void enterBase("headset");
+        return;
+      }
       if (m.type === "vr_ask" && typeof m.role === "string" && (headset || local)) {
         // The commander looked at an agent and tapped: it explains itself live from the current state.
         if ((["requester", "receiver", "ap", "treasury", "controller"] as string[]).includes(m.role)) void session.orch.ask(m.role as AgentRole, typeof m.question === "string" ? m.question.slice(0, 300) : undefined).catch((e: Error) => console.log(`[ask] ${e.message}`));

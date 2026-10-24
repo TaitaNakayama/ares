@@ -8,6 +8,16 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+/**
+ * The real Perseverance close-up the scientist's view shows (credited on screen). Filled from CREDITS.md
+ * once the imagery is sourced; until then the lines avoid the specific numbers.
+ */
+export const SCIENCE_REF: { scientist: string; instrument: string; sol?: number; target?: string; credit: string; image?: string; source?: string } = {
+  scientist: "Science Officer Okonkwo",
+  instrument: "the WATSON camera",
+  credit: "NASA/JPL-Caltech/MSSS",
+};
+
 /** Octavia E. Butler Landing, Jezero crater (research/03). */
 export const SITE = { lat: 18.4446, lonE: 77.4509, name: "Jezero Crater, near Octavia E. Butler Landing" };
 /** Base founding date used for sol numbering (SIMULATED). */
@@ -140,6 +150,9 @@ export class MarsWorld implements World {
   private lastPowerT: Time;
   private lastTelemetryT = -Infinity;
   // Demo state
+  /** Two-part demo: the judge starts outside (landing pad -> science site -> solar field -> door), then goes inside. */
+  part: "outside" | "inside" = "outside";
+  station: "pad" | "science" | "solar" | "door" | undefined;
   tau = 0.6;
   private stormFrom?: { t: Time; tau0: number; tau1: number; durMs: number };
   beat = 0;
@@ -593,6 +606,52 @@ export class MarsWorld implements World {
     });
     const t0 = this.start - 31 * DAY;
     return [{ at: t0, event: { type: "need", sku: "FLT-HEPA", qty: 36, orderBy: t0 + 10 * DAY, reason: "Routine resupply: air filter stock covers 40 sols.", context: {} } }];
+  }
+
+  /** Part 1, station 1: the cargo lander at the pad. The short delivery (beat 1) is seen physically. */
+  beatPad(engine: Engine): ScheduledWorldEvent[] {
+    this.station = "pad";
+    return this.beatDelivery(engine);
+  }
+
+  /**
+   * Part 1, station 2: a crew scientist sampling the delta rock. Not one of the five agents; the lines are
+   * the world's, with the real Perseverance reference the close-up view shows (SCIENCE_REF, credited).
+   */
+  beatScience(engine: Engine): ScheduledWorldEvent[] {
+    this.station = "science";
+    const t = engine.now;
+    const r = SCIENCE_REF;
+    const where = r.target ? ` at ${r.target}` : "";
+    return [
+      { at: t, event: { type: "narration", agentRole: "scientist", name: r.scientist, text: `Taking a sample of the delta rock${where}. Look at me and press to see what Perseverance saw up close.`, short: "Sampling the delta rock. Tap me for the close-up.", mood: "happy" } },
+      { at: t + 2 * MIN, event: { type: "narration", agentRole: "scientist", name: r.scientist, text: r.sol ? `Perseverance abraded a patch like this on sol ${r.sol} with ${r.instrument}; ours goes to the lab tonight.` : `Perseverance imaged rock like this with ${r.instrument}; our sample goes to the lab tonight.`, short: "Our sample goes to the lab tonight.", mood: "calm" } },
+    ];
+  }
+
+  /** Part 1, station 3: the Engineer checks the solar field, then sees the storm rising over the rim (beat 2 starts). */
+  beatSolar(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
+    this.station = "solar";
+    const t = engine.now;
+    const before = this.power.state(this.tauAt(t));
+    const storm = this.beatStorm(engine, rampMs);
+    const after = this.power.state(4.6);
+    return [
+      { at: t, event: { type: "narration", agentRole: "requester", text: `Panels read ${Math.round(before.solarKWhPerSol)} kWh per sol at tau ${this.tauAt(t).toFixed(1)}; load is ${Math.round(before.loadKWhPerSol)}. Dust coating is light.`, short: `Solar ${Math.round(before.solarKWhPerSol)} kWh/sol. Panels fine.`, mood: "calm" } },
+      { at: t + 2 * MIN, event: { type: "narration", agentRole: "requester", text: `Dust storm rising over the crater rim: tau climbing toward 4.6. Solar will drop to about ${Math.round(after.solarKWhPerSol)} kWh per sol. Commander, get inside.`, short: "Dust storm coming. Commander, get inside!", mood: "worried" } },
+      ...storm,
+    ];
+  }
+
+  /** Part 1, station 4: the judge is at the door; `enter()` when they tap it (or the director auto-enters). */
+  beatDoor(): ScheduledWorldEvent[] {
+    this.station = "door";
+    return [];
+  }
+
+  enter(): void {
+    this.part = "inside";
+    this.station = undefined;
   }
 
   /** Beat 1: the filters arrive (34 of 36) and the vendor bills 36. */

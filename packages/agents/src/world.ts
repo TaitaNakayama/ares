@@ -36,7 +36,8 @@ export type WorldEvent =
   /** Simulated outside party acting through the engine (e.g. remote authority answering). */
   | { type: "external"; actorId: string; action: string; params: unknown; summary: string; short?: string }
   | { type: "telemetry"; data: Record<string, unknown> }
-  | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood }
+  /** A spoken line from the world. `agentRole` may name a non-agent speaker (e.g. "scientist") with a `name`. */
+  | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood; name?: string }
   /** Free-text report of something no catalog event covers (a broken pump, an injury, a supplier failing). Routed to one agent role. */
   | { type: "report"; id: string; from: string; text: string; to?: AgentRole };
 

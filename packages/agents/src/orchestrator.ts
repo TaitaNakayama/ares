@@ -208,7 +208,8 @@ export class Orchestrator {
     }
     if (event.type === "narration") {
       const actor = [...this.engine.actors.values()].find((a) => a.role === event.agentRole);
-      if (actor) this.narrate(actor.id, event.text, event.mood ?? "calm", undefined, event.short);
+      // Non-agent speakers (crew, a scientist) narrate under their role name; they never act.
+      this.narrate(actor?.id ?? event.agentRole, event.text, event.mood ?? "calm", undefined, event.short, actor ? undefined : event.name ?? event.agentRole);
       return;
     }
     if (event.type === "external") {
@@ -279,14 +280,14 @@ export class Orchestrator {
     await this.pace();
   }
 
-  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult, short?: string): void {
+  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult, short?: string, speakerName?: string): void {
     const actor = this.engine.actors.get(actorId);
     const n: Narration = {
       seq: ++this.narrSeq,
       at: this.engine.now,
       actorId,
-      role: actor?.role ?? "system",
-      name: actor?.displayName ?? actorId,
+      role: actor?.role ?? (speakerName ? actorId : "system"),
+      name: actor?.displayName ?? speakerName ?? actorId,
       text,
       short: short ?? (text.length > 70 ? `${text.slice(0, 67)}...` : text),
       mood,
