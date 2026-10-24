@@ -133,6 +133,8 @@ final class Outside {
   func setOutdoor(_ on: Bool) {
     guard on != outdoor else { return }
     outdoor = on
+    // Back inside: the emitter returns to its window-view spot, otherwise the grit it followed the judge with blows through the room.
+    if !on { dustNode.position = SCNVector3(-10, 3, -30); dust.reset() }
     drillSign.node.isHidden = on
     setDetail(on)
     applyDust(tau: lastTau)
