@@ -84,7 +84,15 @@ export const ACTION_SCHEMAS = {
   block_vendor: z.object({ vendorId: z.string(), reason: z.string() }),
   release_vendor: z.object({ vendorId: z.string(), reason: z.string() }),
   request_verification: z.object({ vendorId: z.string(), subject: refSchema }),
-  escalate: z.object({ subject: refSchema, reason: z.string() }),
+  escalate: z.object({
+    subject: refSchema,
+    reason: z.string(),
+    /** Options the escalating agent proposes for the human, each with the exact action it would take if chosen. The engine keeps only those that pass policy for that human. */
+    options: z
+      .array(z.object({ label: z.string().min(1).max(80), detail: z.string().max(240).optional(), action: z.object({ type: z.string(), params: z.unknown() }).optional() }))
+      .max(4)
+      .optional(),
+  }),
 
   // any agent: something no catalog action covers (safety, an item we don't stock, a judgment call).
   // It always becomes an escalation to the local human authority.
@@ -135,7 +143,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   block_vendor: "Block a supplier permanently: no orders or payments.",
   release_vendor: "Release a supplier from hold after its details on file were re-verified out of band.",
   request_verification: "Ask the remote authority to verify a supplier's changed bank details out of band (call-back on file).",
-  escalate: "Escalate a decision to a human authority with the reason.",
+  escalate: "Hand a decision to the human authority with the reason. You may propose up to 3 options, each with the exact action (type and params) you would take if the human chooses it; only options that pass policy for that human are kept, next to the standard ones.",
   decide: "Choose one option of an escalation.",
   answer_verification: "Report the result of an out-of-band verification.",
 };

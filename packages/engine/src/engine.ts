@@ -101,6 +101,8 @@ export interface EscalationOption {
   leverId?: string;
   costCents: Cents;
   withinAuthority: boolean;
+  /** Set when an agent proposed this option (it passed a policy dry run for the deciding human). */
+  proposedBy?: string;
   recommended?: boolean;
 }
 
@@ -1243,7 +1245,7 @@ export class Engine {
         break;
       }
       case "escalate": {
-        created = this.createEscalation(a.params.subject, a.params.reason, [], p.actorId, p.rationale);
+        created = this.createEscalation(a.params.subject, a.params.reason, [], p.actorId, p.rationale, a.params.options);
         break;
       }
       case "schedule_payment": {
@@ -1407,7 +1409,7 @@ export class Engine {
     this.createEscalation(subject, reason, failed.map((r) => ruleToFlag(r.rule)).filter((x): x is FlagCode => !!x), actorId);
   }
 
-  private createEscalation(subject: Ref, reason: string, flags: FlagCode[], actorId: string, message?: string): Ref {
+  private createEscalation(subject: Ref, reason: string, flags: FlagCode[], actorId: string, message?: string, proposed?: { label: string; detail?: string; action?: { type: string; params: unknown } }[]): Ref {
     // Only the requisition's order-by date routes. An invoice's due date comes from the document
     // itself, so it is shown but can't move the decision away from the remote authority.
     const routeBy = subject.kind === "requisition" ? this.requisitions.get(subject.id)?.orderBy : undefined;
@@ -1418,7 +1420,8 @@ export class Engine {
     const urgent = routeBy !== undefined && remoteAnswerAt > routeBy;
     // A report (something no catalog action covers) always goes to the human on site.
     const to: HumanRole = subject.kind === "report" || urgent ? "local_authority" : "remote_authority";
-    const options = this.buildOptions(subject, to);
+    const standard = this.buildOptions(subject, to);
+    const options = [...standard, ...this.proposedOptions(proposed ?? [], to, actorId, standard)];
     const esc: Escalation = {
       id: this.ids.next("ESC"),
       subject,
@@ -1516,6 +1519,37 @@ export class Engine {
       opts.push({ id: "dismiss", label: "No action now", detail: "Acknowledge the report without acting on it.", actions: [], costCents: 0, withinAuthority: true });
     }
     return opts.filter((o) => o.withinAuthority);
+  }
+
+  /**
+   * Options an agent proposed for the human: each one's action is dry-run through the full policy
+   * as if that human proposed it now; only clean ones survive, and the decide step re-checks them.
+   */
+  private proposedOptions(proposed: { label: string; detail?: string; action?: { type: string; params: unknown } }[], to: HumanRole, by: string, standardOptions: EscalationOption[]): EscalationOption[] {
+    const human = [...this.actors.values()].find((a) => a.role === to);
+    if (!human) return [];
+    const out: EscalationOption[] = [];
+    const standard = new Set(standardOptions.map((o) => JSON.stringify(o.actions)));
+    for (const [i, o] of proposed.slice(0, 3).entries()) {
+      let actions: EscalationOption["actions"] = [];
+      let cost = 0;
+      if (o.action) {
+        const parsed = parseAction(o.action.type, o.action.params);
+        if (!parsed.ok) continue;
+        const rules = this.evaluate({ id: "dry-run", actorId: human.id, role: to, action: parsed.action, source: "human", at: this.now });
+        if (!rules.every((r) => r.ok)) continue;
+        actions = [{ type: parsed.action.type, params: parsed.action.params }];
+        const pa = parsed.action;
+        if (pa.type === "approve_requisition") {
+          const q = this.quotes.get(pa.params.quoteId);
+          const req = this.requisitions.get(pa.params.requisitionId);
+          if (q && req) cost = q.unitPrice * (pa.params.qty ?? Math.min(req.qty, q.qtyAvailable));
+        } else if (pa.type === "approve_invoice") cost = this.amountOf({ kind: "invoice", id: pa.params.invoiceId });
+      }
+      if (standard.has(JSON.stringify(actions)) && actions.length) continue; // already a standard option
+      out.push({ id: `agent-${i + 1}`, label: o.label, detail: o.detail ?? (actions.length ? `${actions[0]!.type.replace(/_/g, " ")} (proposed by ${this.actors.get(by)?.displayName ?? by})` : `Proposed by ${this.actors.get(by)?.displayName ?? by}; no system action.`), actions, costCents: cost, withinAuthority: true, proposedBy: by });
+    }
+    return out;
   }
 
   private supersedeEscalations(subject: Ref, actorId: string): void {
