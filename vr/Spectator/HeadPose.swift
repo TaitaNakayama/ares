@@ -15,6 +15,8 @@ final class HeadPose: @unchecked Sendable {
     var p: SIMD3<Float>?
     var yaw: Float?
     var closeUp = false
+    /// The reality check (real panorama) is showing in the headset.
+    var reality = false
   }
 
   private let lock = NSLock()
@@ -31,7 +33,7 @@ final class HeadPose: @unchecked Sendable {
     var pos: SIMD3<Float>?
     if let pa = m["p"] as? [Double], pa.count == 3 { pos = SIMD3(Float(pa[0]), Float(pa[1]), Float(pa[2])) }
     lock.lock()
-    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX, p: pos, yaw: (m["wy"] as? Double).map(Float.init), closeUp: m["cu"] as? Bool ?? false)
+    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX, p: pos, yaw: (m["wy"] as? Double).map(Float.init), closeUp: m["cu"] as? Bool ?? false, reality: m["rc"] as? Bool ?? false)
     lock.unlock()
   }
 

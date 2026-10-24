@@ -340,10 +340,10 @@ final class Link: NSObject, @unchecked Sendable {
   /// the decision card under the reticle, whether cards are up, the eye's horizontal field of view.
   /// `pos` is the head position in the scene (the walk outside), `yaw` the scene yaw applied to the head
   /// (so the spectator camera is `Rot(yaw) * q` at `pos`), `closeUp` whether the science close-up is open.
-  func sendPose(_ q: simd_quatf, gaze: Int?, cards: Bool, fovX: Float, pos: SIMD3<Float> = SIMD3(0, 1.6, 0), yaw: Float = 0, closeUp: Bool = false) {
+  func sendPose(_ q: simd_quatf, gaze: Int?, cards: Bool, fovX: Float, pos: SIMD3<Float> = SIMD3(0, 1.6, 0), yaw: Float = 0, closeUp: Bool = false, reality: Bool = false) {
     guard case .connected = status, let t = task else { return }
     let v = q.vector
-    let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"p\":[%.3f,%.3f,%.3f],\"wy\":%.4f,\"cu\":%@,\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, pos.x, pos.y, pos.z, yaw, closeUp ? "true" : "false", gaze ?? -1, cards ? "true" : "false", fovX)
+    let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"p\":[%.3f,%.3f,%.3f],\"wy\":%.4f,\"cu\":%@,\"rc\":%@,\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, pos.x, pos.y, pos.z, yaw, closeUp ? "true" : "false", reality ? "true" : "false", gaze ?? -1, cards ? "true" : "false", fovX)
     t.send(.string(s)) { _ in }
   }
 

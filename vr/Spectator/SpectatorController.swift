@@ -40,6 +40,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   // Debug fallback only: a mouse-driven camera while no headset is connected. Compiled out of the demo build.
   private var mouseYaw: Float = 0
   private var closeUpShown = false
+  private var realityShown = false
   private var mousePitch: Float = 0
   #endif
 
@@ -99,7 +100,10 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       guard let self else { return }
       if self.world.director.closeUp.isOpen { self.world.setCloseUpMirror(false) } else { self.world.openCloseUpAtHead() }
     }
+    scnView.onKey = { c in if c == "r" { RealityCheck.toggle() } } // debug: reality check
     #endif
+    RealityCheck.shared.install(world: world)
+    RealityCheck.shared.onTextureReady = { [weak self] n in self?.scnView.prepare([n], completionHandler: nil) }
     timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
     RunLoop.main.add(timer!, forMode: .common)
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.postStats() }
@@ -172,7 +176,15 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     if mode == .live, let p = sample.p { world.director.externalHead = (p, sample.yaw ?? 0) } else { world.director.externalHead = nil }
     world.update(time: now - start, headView: simd_float4x4(headQ).inverse, fps: fps, link: link)
     if mode == .live { world.setCloseUpMirror(sample.closeUp) }
+    // Reality check: the headset's `rc` flag (mono mirror); the sphere and caption follow the spectator camera's own position.
+    if mode == .live { RealityCheck.shared.set(sample.reality) }
+    RealityCheck.shared.update(now: now - start, eye: cam.simdPosition, forward: cam.simdWorldFront)
     #if DEBUG
+    // Captures: `--reality` toggles the reality check once outside and the walk is over.
+    if CommandLine.arguments.contains("--reality"), world.director.isOutside, !world.director.isWalking, now - start > 3, !realityShown, RealityCheck.shared.isAllowed {
+      realityShown = true
+      RealityCheck.toggle()
+    }
     // Captures: `--closeup` opens the science close-up once the story is at the science site and the walk is over.
     if CommandLine.arguments.contains("--closeup"), world.director.station == "science", !world.director.isWalking, !world.director.closeUp.isOpen, now - start > 2, !closeUpShown {
       closeUpShown = true
@@ -344,6 +356,8 @@ final class SpectatorSCNView: SCNView {
   var onClick: (() -> Void)?
   override func mouseDragged(with event: NSEvent) { onDrag?(event.deltaX, event.deltaY) }
   override func mouseDown(with event: NSEvent) { onClick?() }
+  var onKey: ((String) -> Void)?
+  override func keyDown(with event: NSEvent) { if let c = event.charactersIgnoringModifiers { onKey?(c) } }
   #endif
   override var acceptsFirstResponder: Bool { true }
 }

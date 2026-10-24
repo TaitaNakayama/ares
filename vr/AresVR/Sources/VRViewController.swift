@@ -48,6 +48,9 @@ final class VRViewController: UIViewController, MTKViewDelegate {
   /// Spike C-17: ground-level judge outside, near-field detail (only with the --ground flag).
   private var groundSpike: GroundSpike?
 
+  private static var autoCloseUp = ProcessInfo.processInfo.arguments.contains("--closeup")
+  private static var autoReality = ProcessInfo.processInfo.arguments.contains("--reality")
+
   override var prefersStatusBarHidden: Bool { true }
   override var prefersHomeIndicatorAutoHidden: Bool { true }
   override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
@@ -63,7 +66,10 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     v.preferredFramesPerSecond = 60
     v.isMultipleTouchEnabled = true
     v.delegate = self
-    v.onTouchDown = { [weak self] in self?.world.tap() }
+    v.onTouchDown = { [weak self] in
+      // The reality check owns the button while it is up: one tap returns to the simulated world.
+      if RealityCheck.shared.isActive { RealityCheck.toggle() } else { self?.world.tap() }
+    }
     let lp = UILongPressGestureRecognizer(target: self, action: #selector(longPress(_:)))
     lp.minimumPressDuration = 2.0
     // Two fingers: the viewer's lever is a single touch, so a judge holding it can't open the camera.
@@ -80,6 +86,10 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     scnRenderer.scene = world.scene
     scnRenderer.pointOfView = world.eyes[0]
     scnRenderer.isJitteringEnabled = false
+    // Real stereo close-up: each eye's camera masks out the other eye's quad (the video camera is mono: left frame).
+    CloseUpPanel.configureEyeCameras(left: world.eyes[0], right: world.eyes[1], mono: [world.videoCam])
+    RealityCheck.shared.install(world: world)
+    RealityCheck.shared.onTextureReady = { [weak self] n in self?.scnRenderer.prepare([n], completionHandler: nil) }
     // Compile every material's shaders up front (hidden cards included) so the first
     // storm or decision doesn't hitch in the headset.
     var all: [Any] = []
@@ -190,13 +200,28 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     }
     groundSpike?.update(time: now, fps: fps)
     world.update(time: now, headView: headView, fps: fps, link: link)
+    do {
+      let wf = (headView * world.viewOffset).inverse
+      let f = -simd_normalize(SIMD3(wf.columns.2.x, wf.columns.2.y, wf.columns.2.z))
+      RealityCheck.shared.update(now: now, eye: SIMD3(wf.columns.3.x, wf.columns.3.y, wf.columns.3.z), forward: f)
+      // `--reality` (debug): toggle the reality check once, 4 s after the judge is outside and standing still.
+      // `--closeup` (debug): open the science close-up once the judge stands at the science site.
+      if Self.autoCloseUp, now > 6, world.director.station == "science", !world.director.isWalking, !world.director.closeUp.isOpen {
+        Self.autoCloseUp = false
+        world.openCloseUpAtHead()
+      }
+      if Self.autoReality, now > 6, world.director.isOutside, !world.director.isWalking, RealityCheck.shared.isAllowed {
+        Self.autoReality = false
+        RealityCheck.toggle()
+      }
+    }
 
     // Stream the judge's real head to the Mac spectator at 30 Hz: world-from-head rotation (inverse of the view).
     poseFrame &+= 1
     if poseFrame % 2 == 0 {
       let q = simd_normalize(simd_quatf(rawHeadView.inverse))
       let fovX = 2 * atan(1 / cardboard.projection[0].columns.0.x) * 180 / .pi
-      link.sendPose(q, gaze: world.gazedCard, cards: world.cardsShown, fovX: fovX, pos: world.director.eye, yaw: world.director.yaw, closeUp: world.director.closeUp.isOpen)
+      link.sendPose(q, gaze: world.gazedCard, cards: world.cardsShown, fovX: fovX, pos: world.director.eye, yaw: world.director.yaw, closeUp: world.director.closeUp.isOpen, reality: RealityCheck.shared.wantOn)
     }
 
     world.head.simdTransform = (headView * world.viewOffset).inverse // world-from-head
