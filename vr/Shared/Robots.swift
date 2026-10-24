@@ -34,6 +34,21 @@ final class Robot {
   private var dots: [SCNNode] = []
   private let dotMat = SCNMaterial()
   private var halo: SCNNode!
+    private var shells: [SCNMaterial] = []
+  private var rimBase: Float = 0.55
+  private var nextGlance: TimeInterval = 3
+  private var glanceTo: Float = 0
+  private var glance: Float = 0
+  private var lean: Float = 0
+  /// Fresnel rim in the agent colour: one surface shader modifier on the shell, no extra geometry or lights.
+  private static let rimShader = """
+  #pragma arguments
+  float rimK;
+  float3 rimColor;
+  #pragma body
+  float f = pow(1.0 - saturate(dot(normalize(_surface.normal), normalize(_surface.view))), 2.6);
+  _surface.emission.rgb += rimColor * (f * rimK);
+  """
   /// Reticle is on this robot (set by the scene): the nametag offers "tap to ask".
   var hovered = false
   /// Speech bubble: lives in the scene root (not under the robot) so the robot's yaw does not turn it.
@@ -57,10 +72,10 @@ final class Robot {
     buildFace()
     // Halo ring under the body: cheap glow instead of bloom.
     haloMat.lightingModel = .constant
-    haloMat.diffuse.contents = color.withAlphaComponent(0.8)
+    haloMat.diffuse.contents = color.withAlphaComponent(0.55)
     haloMat.blendMode = .add
     haloMat.writesToDepthBuffer = false
-    halo = SCNNode(geometry: SCNTorus(ringRadius: 0.2, pipeRadius: 0.012))
+    halo = SCNNode(geometry: SCNTorus(ringRadius: 0.2, pipeRadius: 0.009))
     halo.geometry?.materials = [haloMat]
     halo.position = SCNVector3(0, -0.32, 0)
     node.addChildNode(halo)
@@ -72,11 +87,30 @@ final class Robot {
   private func shell() -> SCNMaterial {
     let m = SCNMaterial()
     m.lightingModel = .blinn
+    m.shaderModifiers = [.surface: Robot.rimShader]
+    setRim(m, color: color, k: rimBase)
+    shells.append(m)
     // Shell lightly tinted toward the role colour so each robot reads at a glance.
     let (r, g, b, _) = color.rgba()
     m.diffuse.contents = PlatformColor(red: 0.80 + 0.18 * r, green: 0.80 + 0.18 * g, blue: 0.80 + 0.18 * b, alpha: 1)
-    m.specular.contents = PlatformColor(white: 0.6, alpha: 1)
-    m.shininess = 0.6
+    m.specular.contents = PlatformColor(white: 0.35, alpha: 1)  // satin: broad, soft highlight
+    m.shininess = 0.28
+    return m
+  }
+
+  private func setRim(_ m: SCNMaterial, color c: PlatformColor, k: Float) {
+    let (r, g, b, _) = c.rgba()
+    m.setValue(SCNVector3(r, g, b), forKey: "rimColor")
+    m.setValue(NSNumber(value: k), forKey: "rimK")
+  }
+
+  /// Small brushed-metal part (collar, joint).
+  private func metal() -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .blinn
+    m.diffuse.contents = PlatformColor(white: 0.46, alpha: 1)
+    m.specular.contents = PlatformColor(white: 0.9, alpha: 1)
+    m.shininess = 0.55
     return m
   }
 
@@ -153,6 +187,16 @@ final class Robot {
       c.position = SCNVector3(0, 0.2, 0)
       body.addChildNode(c)
     }
+    // Brushed-metal emitter collar under the shell, where the halo hangs from.
+    let low: Float = ["requester": -0.17, "receiver": -0.16, "ap": -0.26, "treasury": -0.21][role] ?? -0.21
+    let collar = SCNNode(geometry: SCNCylinder(radius: 0.055, height: 0.035))
+    collar.geometry?.materials = [metal()]
+    collar.position = SCNVector3(0, low, 0)
+    body.addChildNode(collar)
+    let joint = SCNNode(geometry: SCNTorus(ringRadius: 0.055, pipeRadius: 0.008))
+    joint.geometry?.materials = [metal()]
+    joint.position = SCNVector3(0, low - 0.018, 0)
+    body.addChildNode(joint)
   }
 
   private func buildFace() {
@@ -172,6 +216,17 @@ final class Robot {
     }
     face.position = SCNVector3(0, role == "ap" ? 0.08 : 0.02, z)
     body.addChildNode(face)
+    // Glass: a faint diagonal specular streak over the plate (additive, no light needed).
+    let glassMat = SCNMaterial()
+    glassMat.lightingModel = .constant
+    glassMat.blendMode = .add
+    glassMat.writesToDepthBuffer = false
+    glassMat.diffuse.contents = PlatformColor(white: 0.16, alpha: 1)
+    let streak = SCNNode(geometry: SCNPlane(width: 0.035, height: 0.2))
+    streak.geometry?.materials = [glassMat]
+    streak.simdEulerAngles.z = -0.5
+    streak.position = SCNVector3(-0.07, 0.01, 0.006)
+    face.addChildNode(streak)
     eyeMat.lightingModel = .constant
     eyeMat.diffuse.contents = PlatformColor.white
     for (e, x) in [(eyeL, Float(-0.05)), (eyeR, Float(0.05))] {
@@ -214,13 +269,14 @@ final class Robot {
     var eyeColor = PlatformColor.white
     var sy: Float = 1, rotL: Float = 0, rotR: Float = 0, dy: Float = 0
     var faceGlow = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
-    var halo = color.withAlphaComponent(0.8)
+    var halo = color.withAlphaComponent(0.55)
+    var rimC = color
     switch m {
     case "worried":
       eyeColor = PlatformColor(red: 1.0, green: 0.82, blue: 0.55, alpha: 1); sy = 0.85; rotL = -0.35; rotR = 0.35; dy = 0.006
     case "suspicious":
       eyeColor = PlatformColor(red: 1.0, green: 0.30, blue: 0.25, alpha: 1); sy = 0.32; rotL = 0.18; rotR = -0.18
-      faceGlow = PlatformColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.9)
+      faceGlow = PlatformColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.8); rimC = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1)
     case "attentive":
       eyeColor = PlatformColor(red: 0.75, green: 0.95, blue: 1.0, alpha: 1); sy = 1.18
     case "happy":
@@ -231,6 +287,7 @@ final class Robot {
     eyeMat.diffuse.contents = eyeColor
     faceMat.diffuse.contents = faceGlow
     haloMat.diffuse.contents = halo
+    for m in shells { setRim(m, color: rimC, k: rimBase) }
     eyeL.scale = SCNVector3(1, sy, 1)
     eyeR.scale = SCNVector3(1, sy, 1)
     eyeL.simdEulerAngles.z = rotL
@@ -252,7 +309,7 @@ final class Robot {
     self.outcome = outcome
     spokeAt = now
     setMood(outcome == "deny" ? "attentive" : mood)
-    haloMat.diffuse.contents = (mood == "suspicious" ? PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : color).withAlphaComponent(1)
+    haloMat.diffuse.contents = (mood == "suspicious" ? PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : color).withAlphaComponent(0.9)
     body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
   }
 
@@ -318,8 +375,32 @@ final class Robot {
     // Nametag billboard: always faces the viewer, upright (the parent yaw is undone).
     nametag.node.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
     if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
+    // Lean toward the commander and brighten the rim while speaking; pulse when the action went through.
+    let dt = Float(now - spokeAt)
+    lean += ((speaking && !text.isEmpty ? 1 : 0) - lean) * 0.06
+    body.simdEulerAngles.x = 0.1 * lean
+    var pulse: Float = 0
+    if outcome == "allow" { pulse = 0.9 * max(0, 1 - dt / 1.5) * (0.5 + 0.5 * sin(dt * 7 - 1.57)) }
+    else if outcome == "deny" { pulse = 0.35 * max(0, 1 - dt / 2.8) * (0.5 + 0.5 * sin(dt * 3.2 - 1.57)) }
+    let boost = 0.7 * max(0, 1 - dt / 1.2) + 0.25 * lean
+    let rim = rimBase + boost + pulse
+    for m in shells { m.setValue(NSNumber(value: rim), forKey: "rimK") }
+    if !thinking {
+      let hs = 1 + 0.25 * pulse
+      halo.scale = SCNVector3(hs, hs, hs)
+    }
+    // Eyes glance: toward the commander (or the speaker's side) when engaged, otherwise drift now and then.
+    if now > nextGlance {
+      nextGlance = now + Double.random(in: 1.5...4.5)
+      glanceTo = Float.random(in: 0...1) < 0.4 ? 0 : Float.random(in: -1...1)
+    }
+    var gx = glanceTo
+    if speaking || needsCommander { gx = max(-1, min(1, sin(yawUser - node.simdEulerAngles.y) * 3)) }
+    glance += (gx - glance) * 0.15
+    eyeL.simdPosition.x = -0.05 + 0.012 * glance
+    eyeR.simdPosition.x = 0.05 + 0.012 * glance
     if now > nextBlink {
-      nextBlink = now + 2.5 + Double((sin(t * 7.1 + phase) + 1) * 2)
+      nextBlink = now + Double.random(in: 3...7)
       let s = eyeL.scale.y
       let blink = SCNAction.sequence([.customAction(duration: 0.07) { n, _ in n.scale.y = s * 0.1 }, .wait(duration: 0.07), .customAction(duration: 0.01) { n, _ in n.scale.y = s }])
       eyeL.runAction(blink)
