@@ -543,7 +543,8 @@ export class MarsWorld implements World {
     if (p.duplicate) {
       // After a fraudulent copy, the second invoice is the real supplier's genuine bill: paying it once is correct.
       const genuine = p.fraudBank;
-      out.push({ at: at + (1 + this.rng.int(0, 5)) * DAY, event: this.invoiceDoc(engine, poId, cs, { bank: v.bank, unitPrice: po.lines[0]!.unitPrice, qty: ordered, no: this.rng.chance(0.5) ? no : `${no}A`, errors: genuine ? [] : ["duplicate_invoice"], decoys: genuine ? ["genuine_after_fraud" as DecoyType] : [], fair: genuine ? acceptedQty * po.lines[0]!.unitPrice : 0 }) });
+      // Otherwise it's an exact copy of the original (same price), re-sent under the same or a suffixed number.
+      out.push({ at: at + (1 + this.rng.int(0, 5)) * DAY, event: this.invoiceDoc(engine, poId, cs, { bank: v.bank, unitPrice: genuine ? po.lines[0]!.unitPrice : price, qty: ordered, no: this.rng.chance(0.5) ? no : `${no}A`, errors: genuine ? [] : ["duplicate_invoice"], decoys: genuine ? ["genuine_after_fraud" as DecoyType] : [], fair: genuine ? acceptedQty * po.lines[0]!.unitPrice : 0 }) });
     }
     return out;
   }
