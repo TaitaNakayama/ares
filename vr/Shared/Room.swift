@@ -197,6 +197,7 @@ enum Room {
       fill.position = SCNVector3(side * 2.7, 1.8, -1.2)
       root.addChildNode(fill)
     }
+    Dressing.build(into: root)
   }
 
   static func mat(_ c: PlatformColor, rough: CGFloat) -> SCNMaterial {
