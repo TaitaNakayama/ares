@@ -171,7 +171,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     if subtitles.tick(now: now) { overlay.subtitles.items = subtitles.visible }
 
     let waiting = st?.waiting?.first
-    let opts = (waiting?.options ?? []).prefix(4).map { DecisionCardView.Option(id: $0.id, label: $0.label, detail: $0.detail ?? "") }
+    let opts = (waiting?.options ?? []).prefix(4).map { DecisionCardView.Option(id: $0.id, label: $0.label, detail: $0.detail ?? "", proposedBy: $0.proposedBy) }
     let gazed = mode == .live ? sample.gaze : nil
     if overlay.card.update(waitingReason: waiting?.reason, options: Array(opts), gazed: gazed, chosen: chosen, now: now) { overlay.needsLayout = true }
 

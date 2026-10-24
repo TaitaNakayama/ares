@@ -56,7 +56,7 @@ final class BaseScene {
   private let cardRoot = SCNNode()
   private var cards: [SCNNode] = []
   private var cardPanels: [TextPanel] = []
-  private var cardTargets: [(esc: String, opt: String, label: String, detail: String)] = []
+  private var cardTargets: [(esc: String, opt: String, label: String, detail: String, by: String)] = []
   private var hovered: SCNNode?
   private var taps = 0
   private var lastTapText = "—"
@@ -283,19 +283,22 @@ final class BaseScene {
     let opts = Array((waiting?.options ?? []).prefix(cards.count))
     showCards(waiting != nil && !opts.isEmpty && now >= hideUntil)
     cardTargets = (0..<cards.count).map { i in
-      if i < opts.count, let w = waiting { return (w.id, opts[i].id, opts[i].label, Self.firstSentence(opts[i].detail ?? "")) }
-      return ("", "", "", "")
+      if i < opts.count, let w = waiting { return (w.id, opts[i].id, opts[i].label, Self.firstSentence(opts[i].detail ?? ""), opts[i].proposedBy ?? "") }
+      return ("", "", "", "", "")
     }
     for (i, p) in cardPanels.enumerated() {
       let t = cardTargets[i]
       cards[i].isHidden = t.esc.isEmpty
       let isHover = hovered === cards[i]
-      p.update(key: "\(t.label)|\(t.detail)|\(isHover)") { ctx, size in
+      p.update(key: "\(t.label)|\(t.detail)|\(t.by)|\(isHover)") { ctx, size in
         Draw.fill(ctx, CGRect(origin: .zero, size: size), isHover ? PlatformColor(red: 0.17, green: 0.13, blue: 0.06, alpha: 1) : PlatformColor(red: 0.06, green: 0.07, blue: 0.10, alpha: 1))
         ctx.setStrokeColor((isHover ? Palette.amber : PlatformColor(white: 1, alpha: 0.3)).cgColor)
         ctx.setLineWidth(isHover ? 16 : 5)
         ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 8, dy: 8))
         _ = Draw.text(t.label, at: CGPoint(x: 40, y: 30), size: 58, weight: .heavy, color: isHover ? Palette.amber : Palette.text, width: size.width - 80, maxLines: 2)
+        if !t.by.isEmpty {
+          _ = Draw.text("proposed by \(t.by)", at: CGPoint(x: 40, y: 168), size: 35, weight: .bold, color: RobotCrew.color(forAgent: t.by) ?? Palette.violet, width: size.width - 80)
+        }
         _ = Draw.text(t.detail, at: CGPoint(x: 40, y: 210), size: 44, weight: .semibold, color: Palette.dim, width: size.width - 80, maxLines: 3)
         if isHover { _ = Draw.text("Press the button to choose", at: CGPoint(x: 40, y: size.height - 76), size: 42, weight: .heavy, color: Palette.amber) }
       }

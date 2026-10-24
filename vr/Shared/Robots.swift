@@ -329,6 +329,11 @@ final class Robot {
 }
 
 enum RobotCrew {
+  /// The colour of the agent with this display name (e.g. "Rule Keeper"); nil for an unknown name.
+  static func color(forAgent name: String) -> PlatformColor? {
+    layout.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }.map { Palette.role($0.role) }
+  }
+
   /// Angle (deg, 0 = straight ahead), distance and height for each role.
   static let layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] = [
     ("requester", "Engineer", -48, 2.45, 1.38),
