@@ -1,4 +1,5 @@
 import SceneKit
+import simd
 #if os(macOS)
 import AppKit
 #else
@@ -34,6 +35,8 @@ final class WallScreens {
     let bn = SCNNode(geometry: bezel)
     bn.position = SCNVector3(0, 0, -0.025)
     n.addChildNode(bn)
+    let wt = n.simdWorldTransform
+    ScreenRects.all.append(.init(center: SIMD3(wt.columns.3.x, wt.columns.3.y, wt.columns.3.z), right: simd_normalize(SIMD3(wt.columns.0.x, wt.columns.0.y, wt.columns.0.z)), w: Float(bw), h: Float(bh)))
   }
 
   private static func wallGlow(deg: Float, y: Float, w: CGFloat, h: CGFloat) -> SCNNode {
@@ -46,6 +49,7 @@ final class WallScreens {
   }
 
   init(root: SCNNode) {
+    ScreenRects.all = []
     for (panel, deg) in [(power, Float(-63)), (money, Float(63))] {
       let n = panel.node
       // Flat panels on a curved wall: mount inside the curve so the edges don't sink into it.
@@ -145,7 +149,7 @@ final class WallScreens {
       if tauH.count > 1 {
         Kit.spark(ctx, CGRect(x: c4.minX + 250, y: c4.minY + 40, width: c4.width - 284, height: c4.height - 80), tauH, lo: 0, hi: max(4, (tauH.max() ?? 0) * 1.1), color: Palette.amber)
       }
-      _ = Draw.text("Solar model: Opportunity rover, 2018 dust storm (JPL)", at: CGPoint(x: 28, y: size.height - 62), size: Kit.Size.credit, weight: .semibold, color: Palette.dim, width: size.width - 56)
+      Kit.footer("Solar model: Opportunity rover, 2018 storm (JPL)", size: size)
     }
   }
 
@@ -195,7 +199,7 @@ final class WallScreens {
         Kit.textRight(Self.short(p.amountText ?? ""), right: c5.maxX - 28, y: y, size: Kit.Size.label, weight: .heavy, color: Palette.gold, width: 340)
         y += 60
       }
-      _ = Draw.text("Suppliers, prices and budget are SIMULATED", at: CGPoint(x: 28, y: size.height - 62), size: Kit.Size.credit, weight: .semibold, color: Palette.dim, width: size.width - 56)
+      Kit.footer("Suppliers, prices and budget are SIMULATED", size: size)
     }
   }
 
@@ -289,7 +293,7 @@ final class WallScreens {
       if let e = sunEl { row("Sun", e >= 0 ? String(format: "%.0f° above horizon", e) : String(format: "%.0f° below horizon", -e), Palette.gold) }
       ctx.setFillColor(PlatformColor(white: 0, alpha: 0.62).cgColor)
       ctx.fill(CGRect(x: 6, y: size.height - 66, width: size.width - 12, height: 56))
-      _ = Draw.text("NASA/JPL-Caltech/USGS/University of Arizona, PIA23976", at: CGPoint(x: 28, y: size.height - 58), size: 31, weight: .semibold, color: Palette.dim, width: size.width - 56)
+      Kit.footer("NASA/JPL-Caltech/USGS/U. Arizona, PIA23976", size: size, y: size.height - 58, max: 38)
     }
   }
 

@@ -157,24 +157,54 @@ enum Tex {
   // ---------------------------------------------------------------- ceiling
 
   static func ceilingImage() -> PlatformImage {
-    let size = CGSize(width: 512, height: 512)
+    let n: CGFloat = 1024
+    let size = CGSize(width: n, height: n)
     return Bitmap.image(size: size, scale: 1, opaque: true) { c in
       c.setFillColor(PlatformColor(red: 0.62, green: 0.58, blue: 0.53, alpha: 1).cgColor)
       c.fill(CGRect(origin: .zero, size: size))
       if let g = cg("metal_plate_02_diff_1k") {
         c.saveGState()
         c.setBlendMode(.softLight)
-        Tex.draw(c, g, in: CGRect(x: 0, y: 0, width: 512, height: 512))
+        Tex.draw(c, g, in: CGRect(x: 0, y: 0, width: n, height: n))
         c.restoreGState()
       }
-      c.setStrokeColor(PlatformColor(red: 0.12, green: 0.1, blue: 0.08, alpha: 0.5).cgColor)
-      c.setLineWidth(2)
+      // Panel grid (1 m panels), seams with a lighter lip, rivets at the corners.
+      c.setStrokeColor(PlatformColor(red: 0.12, green: 0.1, blue: 0.08, alpha: 0.55).cgColor)
+      c.setLineWidth(3)
+      let step = n / 8
       for i in 0...8 {
-        let p = CGFloat(i) * 64
-        c.move(to: CGPoint(x: p, y: 0)); c.addLine(to: CGPoint(x: p, y: 512))
-        c.move(to: CGPoint(x: 0, y: p)); c.addLine(to: CGPoint(x: 512, y: p))
+        let p = CGFloat(i) * step
+        c.move(to: CGPoint(x: p, y: 0)); c.addLine(to: CGPoint(x: p, y: n))
+        c.move(to: CGPoint(x: 0, y: p)); c.addLine(to: CGPoint(x: n, y: p))
       }
       c.strokePath()
+      c.setStrokeColor(PlatformColor(white: 1, alpha: 0.10).cgColor)
+      c.setLineWidth(2)
+      for i in 0...8 {
+        let p = CGFloat(i) * step + 4
+        c.move(to: CGPoint(x: p, y: 0)); c.addLine(to: CGPoint(x: p, y: n))
+        c.move(to: CGPoint(x: 0, y: p)); c.addLine(to: CGPoint(x: n, y: p))
+      }
+      c.strokePath()
+      c.setFillColor(PlatformColor(white: 0.2, alpha: 0.55).cgColor)
+      for i in 0..<8 { for j in 0..<8 {
+        for (dx, dy) in [(CGFloat(14), CGFloat(14)), (step - 14, 14), (14, step - 14), (step - 14, step - 14)] {
+          c.fillEllipse(in: CGRect(x: CGFloat(i) * step + dx - 3, y: CGFloat(j) * step + dy - 3, width: 6, height: 6))
+        }
+      } }
+      // Grime streaks.
+      var rng = RNG(s: 7)
+      for _ in 0..<40 {
+        let x = rng.next() * n, y = rng.next() * n
+        c.setFillColor(PlatformColor(red: 0.1, green: 0.08, blue: 0.06, alpha: 0.05 + rng.next() * 0.07).cgColor)
+        c.fillEllipse(in: CGRect(x: x, y: y, width: 40 + rng.next() * 120, height: 20 + rng.next() * 50))
+      }
+      // Darker edge gradient toward the walls (the disc spans the full texture).
+      let cs = CGColorSpaceCreateDeviceRGB()
+      let cols = [CGColor(red: 0.04, green: 0.03, blue: 0.02, alpha: 0), CGColor(red: 0.04, green: 0.03, blue: 0.02, alpha: 0.10), CGColor(red: 0.04, green: 0.03, blue: 0.02, alpha: 0.72)] as CFArray
+      if let g = CGGradient(colorsSpace: cs, colors: cols, locations: [0.5, 0.72, 1.0]) {
+        c.drawRadialGradient(g, startCenter: CGPoint(x: n / 2, y: n / 2), startRadius: 0, endCenter: CGPoint(x: n / 2, y: n / 2), endRadius: n / 2 * 1.02, options: [.drawsAfterEndLocation])
+      }
     }
   }
 
@@ -236,6 +266,35 @@ enum Tex {
         let r = CGRect(x: inset, y: inset, width: 128 - inset * 2, height: 128 - inset * 2)
         c.setFillColor(PlatformColor(red: 0.015, green: 0.01, blue: 0.008, alpha: 0.115).cgColor)
         c.addPath(CGPath(roundedRect: r, cornerWidth: 26, cornerHeight: 26, transform: nil))
+        c.fillPath()
+      }
+    }
+  }
+
+  /// Soft round drop shadow for floating pads (radial falloff, 128 px).
+  static func discShadow() -> PlatformImage {
+    let size = CGSize(width: 128, height: 128)
+    return Bitmap.image(size: size, scale: 1) { c in
+      let cs = CGColorSpaceCreateDeviceRGB()
+      let cols = [CGColor(red: 0.01, green: 0.008, blue: 0.006, alpha: 0.9), CGColor(red: 0.01, green: 0.008, blue: 0.006, alpha: 0.45), CGColor(red: 0.01, green: 0.008, blue: 0.006, alpha: 0)] as CFArray
+      if let g = CGGradient(colorsSpace: cs, colors: cols, locations: [0, 0.55, 1]) {
+        c.drawRadialGradient(g, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 62, options: [])
+      }
+    }
+  }
+
+  /// Contact shadow: a rounded rect, dark across the core, fading over `fx` / `fy` (fractions of the width / height) at the
+  /// edge. 128 px; the caller sizes the plane so the fade is the same ~0.2 m on every footprint.
+  static func contact(fx: CGFloat, fy: CGFloat) -> PlatformImage {
+    let size = CGSize(width: 128, height: 128)
+    return Bitmap.image(size: size, scale: 1) { c in
+      let layers = 48
+      for i in 0..<layers {
+        let t = CGFloat(i) / CGFloat(layers - 1)
+        let ix = 2 + t * fx * 124, iy = 2 + t * fy * 124
+        let r = CGRect(x: ix, y: iy, width: 128 - ix * 2, height: 128 - iy * 2)
+        c.setFillColor(PlatformColor(red: 0.012, green: 0.008, blue: 0.006, alpha: 0.075).cgColor)
+        c.addPath(CGPath(roundedRect: r, cornerWidth: min(r.width, r.height) * 0.3, cornerHeight: min(r.width, r.height) * 0.3, transform: nil))
         c.fillPath()
       }
     }
