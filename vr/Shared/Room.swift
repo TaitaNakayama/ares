@@ -158,7 +158,7 @@ enum Room {
     tubeMat.diffuse.contents = PlatformColor(red: 0.98, green: 0.74, blue: 0.46, alpha: 1)
     let halo = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.70, blue: 0.40, alpha: 1), strength: 0.40)
     let wallPool = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.68, blue: 0.38, alpha: 1), strength: 0.26)
-    let floorPool = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.66, blue: 0.36, alpha: 1), strength: 0.20)
+    let floorPool = Tex.glowMaterial(PlatformColor(red: 1.0, green: 0.66, blue: 0.36, alpha: 1), strength: 0.36)
     for k in 0..<8 {
       let deg = Float(k) * 45 + 22.5
       let yaw = -deg * .pi / 180
@@ -193,11 +193,11 @@ enum Room {
       wh.addChildNode(wp)
       sprites.addChildNode(wh)
       // warm pool on the floor
-      let fp = SCNNode(geometry: SCNPlane(width: 2.6, height: 1.9))
+      let fp = SCNNode(geometry: SCNPlane(width: 3.2, height: 2.4))
       fp.geometry?.materials = [floorPool]
       fp.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
       let fh = SCNNode()
-      fh.position = ring(deg, r: 3.0, y: 0.012)
+      fh.position = ring(deg, r: 3.1, y: 0.012)
       fh.simdEulerAngles.y = yaw
       fh.addChildNode(fp)
       sprites.addChildNode(fh)

@@ -149,6 +149,7 @@ enum Dressing {
     whiteboard(lit)
     door(lit, emis)
     sideTable(lit)
+    floorCables(lit)
     let decals = SCNNode()
     groundDecals(decals)
 
@@ -717,8 +718,8 @@ enum Dressing {
       (166, 3.62, 0, 0, 1.5, 0.9),         // side table
     ]
     for (deg, r, x, z, w, d) in spots {
-      let h = holder(deg, r: r, y: 0.006)
-      let n = SCNNode(geometry: SCNPlane(width: w * 1.2 + 0.2, height: d * 1.35 + 0.2))
+      let h = holder(deg, r: r, y: 0.008)
+      let n = SCNNode(geometry: SCNPlane(width: w * 1.25 + 0.5, height: d * 1.4 + 0.55))
       n.geometry?.materials = [blob]
       n.eulerAngles.x = -.pi / 2
       n.position = SCNVector3(x, 0, z)
@@ -728,8 +729,8 @@ enum Dressing {
     // Console arc: one long soft shadow strip under the desks.
     var a: Float = -34
     while a < 34 {
-      let h = holder(a + 2.5, r: 2.78, y: 0.006)
-      let n = SCNNode(geometry: SCNPlane(width: 0.75, height: 0.7))
+      let h = holder(a + 2.5, r: 2.78, y: 0.008)
+      let n = SCNNode(geometry: SCNPlane(width: 0.9, height: 0.95))
       n.geometry?.materials = [blob]
       n.eulerAngles.x = -.pi / 2
       n.position = SCNVector3(0, 0, 0.1)
@@ -763,6 +764,76 @@ enum Dressing {
     lay(scuff, deg: -160, r: 2.6, w: 1.6, d: 1.6, spin: 2.8)
     lay(scuff, deg: 60, r: 3.2, w: 1.4, d: 1.4, spin: 0.9)
     lay(scuff, deg: -60, r: 3.1, w: 1.4, d: 1.4, spin: 1.9)
+    // More scuffs across the central floor, and a worn ring around the commander's seat.
+    lay(scuff, deg: 0, r: 1.3, w: 1.8, d: 1.8, spin: 0.3)
+    lay(scuff, deg: 90, r: 1.4, w: 1.7, d: 1.7, spin: 1.3)
+    lay(scuff, deg: -90, r: 1.5, w: 1.7, d: 1.7, spin: 2.4)
+    lay(scuff, deg: 180, r: 1.2, w: 1.9, d: 1.9, spin: 0.8)
+    lay(scuff, deg: 45, r: 2.2, w: 1.6, d: 1.6, spin: 2.2)
+    lay(scuff, deg: -45, r: 2.1, w: 1.6, d: 1.6, spin: 0.6)
+    lay(scuff, deg: 135, r: 2.3, w: 1.5, d: 1.5, spin: 1.7)
+    lay(scuff, deg: -135, r: 2.2, w: 1.5, d: 1.5, spin: 2.9)
+    lay(worn, deg: 0, r: 0.0, w: 2.2, d: 2.2, spin: 0.2)
+    // Floor drain grille at the centre (a flat lit-looking decal, plus its shadow lip).
+    let drainH = holder(0, r: 0, y: 0.009)
+    let drainN = SCNNode(geometry: SCNPlane(width: 0.75, height: 0.75))
+    drainN.geometry?.materials = [Tex.decalMaterial(Tex.drain())]
+    drainN.eulerAngles.x = -.pi / 2
+    drainH.addChildNode(drainN)
+    out.addChildNode(drainH)
+    // Worn path from the airlock to the commander's seat.
+    let path = Tex.decalMaterial(Tex.pathWear())
+    let a0x = Float(Room.ring(126, r: 3.35, y: 0).x), a0z = Float(Room.ring(126, r: 3.35, y: 0).z)
+    let a1x: Float = 0.35, a1z: Float = 0.2
+    let dx = a1x - a0x, dz = a1z - a0z
+    let len = CGFloat(sqrt(dx * dx + dz * dz))
+    let pn = SCNNode(geometry: SCNPlane(width: len, height: 1.1))
+    pn.geometry?.materials = [path]
+    pn.eulerAngles.x = -.pi / 2
+    let ph = SCNNode()
+    ph.position = SCNVector3(SCNFloat((a0x + a1x) / 2), 0.006, SCNFloat((a0z + a1z) / 2))
+    ph.simdEulerAngles.y = atan2(-dz, dx)
+    ph.addChildNode(pn)
+    out.addChildNode(ph)
+  }
+
+  /// Two cable runs from the console front across the floor to the central junction hatch, with clamps.
+  private static func floorCables(_ out: SCNNode) {
+    let rubber = solid(PlatformColor(white: 0.06, alpha: 1))
+    let blueRun = solid(PlatformColor(red: 0.13, green: 0.24, blue: 0.40, alpha: 1))
+    let clamp = solid(PlatformColor(red: 0.62, green: 0.50, blue: 0.14, alpha: 1))
+    let plate = solid(PlatformColor(red: 0.30, green: 0.30, blue: 0.29, alpha: 1))
+    // Junction hatch just in front of the drain.
+    out.addChildNode(box(0.38, 0.03, 0.30, plate, at: SCNVector3(0.55, 0.015, 0.45), chamfer: 0.01))
+    out.addChildNode(box(0.22, 0.012, 0.16, clamp, at: SCNVector3(0.55, 0.034, 0.45)))
+    let runs: [(Float, SCNMaterial, Float)] = [(-14, rubber, 0.55), (13, blueRun, -0.45)]
+    for (deg, m, bow) in runs {
+      let start = Room.ring(deg, r: 2.68, y: 0)
+      let p0x = Float(start.x), p0z = Float(start.z)
+      let p2x: Float = 0.55, p2z: Float = 0.45
+      let mx: Float = (p0x + p2x) / 2 + bow
+      let mz: Float = (p0z + p2z) / 2
+      var px = p0x, pz = p0z
+      let n = 14
+      for i in 1...n {
+        let t = Float(i) / Float(n)
+        let u = 1 - t
+        let x: Float = u * u * p0x + 2 * u * t * mx + t * t * p2x
+        let z: Float = u * u * p0z + 2 * u * t * mz + t * t * p2z
+        let dx = x - px, dz = z - pz
+        let l = CGFloat(sqrt(dx * dx + dz * dz))
+        let yaw = atan2(-dz, dx)
+        let seg = box(l + 0.01, 0.028, 0.04, m, at: SCNVector3(SCNFloat((px + x) / 2), 0.014, SCNFloat((pz + z) / 2)))
+        seg.simdEulerAngles.y = yaw
+        out.addChildNode(seg)
+        if i % 4 == 0 && i < n {
+          let c = box(0.07, 0.04, 0.09, clamp, at: SCNVector3(SCNFloat(x), 0.016, SCNFloat(z)))
+          c.simdEulerAngles.y = yaw
+          out.addChildNode(c)
+        }
+        px = x; pz = z
+      }
+    }
   }
 
   // ---------------------------------------------------------------- side table: first aid, toolbox, mug
