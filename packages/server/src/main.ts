@@ -175,6 +175,38 @@ async function directorNext(): Promise<string> {
   return "no further scripted beats; the rest is up to the agents and the commander";
 }
 
+/**
+ * Autoplay: runs the beats on a timer for rehearsals and recordings. It waits for the
+ * commander's choice in the headset; `fallbackChoice` decides after `decideAfterMs` if nobody does.
+ */
+let autoplayTimer: NodeJS.Timeout[] = [];
+function stopAutoplay(): void {
+  for (const t of autoplayTimer) clearTimeout(t);
+  autoplayTimer = [];
+}
+async function autoplay(fallbackChoice?: string, decideAfterMs = 25_000): Promise<void> {
+  stopAutoplay();
+  await reset();
+  const at = (ms: number, fn: () => void) => autoplayTimer.push(setTimeout(fn, ms));
+  at(4_000, () => void directorNext());
+  at(20_000, () => void directorNext());
+  if (fallbackChoice) {
+    const poll = setInterval(async () => {
+      const esc = [...session.orch.engine.escalations.values()].find((x) => x.status === "awaiting_decision" && x.to === "local_authority");
+      if (!esc) return;
+      clearInterval(poll);
+      at(decideAfterMs, async () => {
+        if (esc.status !== "awaiting_decision") return;
+        const opt = esc.options.find((o) => o.id.startsWith(fallbackChoice)) ?? esc.options[0];
+        if (!opt) return;
+        await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: esc.id, optionId: opt.id }, source: "console" });
+        session.timelapse();
+      });
+    }, 1000);
+    autoplayTimer.push(poll as unknown as NodeJS.Timeout);
+  }
+}
+
 async function reset(seed?: string): Promise<void> {
   unsubscribe();
   session = new Session(seed ?? session.seed, PACE_MS);
@@ -319,7 +351,17 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
     if (path === "/api/director/next" && req.method === "POST") return send(res, 200, { ok: true, message: await directorNext() });
+    if (path === "/api/director/autoplay" && req.method === "POST") {
+      const b = await readJson(req);
+      await autoplay(typeof b.choice === "string" ? b.choice : undefined, Number(b.decideAfterMs ?? 25_000));
+      return send(res, 200, { ok: true, message: `autoplay started${b.choice ? `; auto-choosing "${b.choice}" if the commander doesn't` : ""}` });
+    }
+    if (path === "/api/director/stop" && req.method === "POST") {
+      stopAutoplay();
+      return send(res, 200, { ok: true });
+    }
     if (path === "/api/director/reset" && req.method === "POST") {
+      stopAutoplay();
       const b = await readJson(req);
       await reset(typeof b.seed === "string" && b.seed ? b.seed : undefined);
       return send(res, 200, { ok: true, seed: session.seed });
