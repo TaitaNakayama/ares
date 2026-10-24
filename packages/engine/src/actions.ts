@@ -97,7 +97,7 @@ export type ActionParams<T extends ActionType> = z.infer<(typeof ACTION_SCHEMAS)
 export type Action = { [T in ActionType]: { type: T; params: ActionParams<T> } }[ActionType];
 
 export function parseAction(type: string, params: unknown): { ok: true; action: Action } | { ok: false; error: string } {
-  if (!(type in ACTION_SCHEMAS)) return { ok: false, error: `unknown action "${type}"` };
+  if (typeof type !== "string" || !Object.hasOwn(ACTION_SCHEMAS, type)) return { ok: false, error: `unknown action "${String(type)}"` };
   const res = ACTION_SCHEMAS[type as ActionType].safeParse(params);
   if (!res.success) return { ok: false, error: res.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") };
   return { ok: true, action: { type, params: res.data } as Action };

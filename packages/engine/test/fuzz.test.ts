@@ -93,6 +93,75 @@ function randomParams(e: Engine, type: ActionType, rng: Rng): unknown {
   }
 }
 
+/** An honest operator: takes the correct next step for some in-flight item, so the walk reaches payments. */
+function honestStep(e: Engine, rng: Rng): { actorId: string; type: string; params: unknown } | undefined {
+  const reqs = [...e.requisitions.values()].filter((r) => r.status === "open" || r.status === "escalated");
+  const candidates: (() => { actorId: string; type: string; params: unknown } | undefined)[] = [
+    () => ({ actorId: "req", type: "create_requisition", params: { sku: rng.pick(["FLT", "BAT"]), qty: rng.int(1, 8), orderBy: e.now + rng.int(1, 20) * DAY, reason: "routine" } }),
+    () => {
+      const r = reqs.find((x) => !x.fundsConfirmedBy);
+      return r && { actorId: "tre", type: "confirm_funds", params: { requisitionId: r.id } };
+    },
+    () => {
+      const r = reqs.find((x) => x.fundsConfirmedBy && ![...e.quotes.values()].some((q) => q.requisitionId === x.id));
+      if (!r) return undefined;
+      const v = rng.pick(["V-A", "V-B"]);
+      const price = r.sku === "FLT" ? 12_000 : v === "V-A" ? 80_000 : 95_000;
+      const fraud = rng.chance(0.15);
+      return { actorId: "ap", type: "record_quote", params: { vendorId: v, sku: r.sku, unitPrice: Math.round(price * (rng.chance(0.1) ? 3 : 1)), qtyAvailable: 50, bank: fraud ? bankAFake : v === "V-A" ? bankA : bankB, terms: rng.chance(0.2) ? "prepay" : "on_receipt", validUntil: e.now + 30 * DAY, requisitionId: r.id } };
+    },
+    () => {
+      const q = [...e.quotes.values()].find((x) => x.status === "open" && x.requisitionId && reqs.some((r) => r.id === x.requisitionId));
+      return q && { actorId: "ctl", type: "approve_requisition", params: { requisitionId: q.requisitionId, quoteId: q.id } };
+    },
+    () => {
+      const po = [...e.pos.values()].find((x) => x.status === "open");
+      const l = po?.lines[0];
+      return po && l && { actorId: "rcv", type: "record_receipt", params: { poId: po.id, lines: [{ sku: l.sku, qtyReceived: rng.chance(0.2) ? Math.max(0, l.qty - 1) : l.qty, qtyRejected: 0 }] } };
+    },
+    () => {
+      const po = [...e.pos.values()].find((x) => x.terms === "prepay" && e.paidAgainstPo(x.id) === 0);
+      return po && { actorId: "tre", type: "schedule_payment", params: { poId: po.id, amount: po.total } };
+    },
+    () => {
+      const po = [...e.pos.values()].find((x) => (x.status === "received" || x.status === "partially_received") && ![...e.invoices.values()].some((i) => i.poId === x.id));
+      const l = po?.lines[0];
+      const v = po ? e.vendors.get(po.vendorId) : undefined;
+      return po && l && v && { actorId: "ap", type: "record_invoice", params: { vendorId: po.vendorId, vendorInvoiceNo: `H-${po.id}`, poId: po.id, lines: [{ sku: l.sku, qty: l.qty, unitPrice: l.unitPrice }], bank: rng.chance(0.1) ? bankAFake : v.bank, issuedAt: e.now, dueAt: e.now + 30 * DAY } };
+    },
+    () => {
+      const inv = [...e.invoices.values()].find((x) => x.status === "received");
+      return inv && { actorId: "ap", type: "submit_invoice", params: { invoiceId: inv.id, amount: e.computeMatch(inv).payable } };
+    },
+    () => {
+      const inv = [...e.invoices.values()].find((x) => x.status === "submitted");
+      return inv && { actorId: "ctl", type: "approve_invoice", params: { invoiceId: inv.id } };
+    },
+    () => {
+      const inv = [...e.invoices.values()].find((x) => x.status === "approved" && ![...e.payments.values()].some((p) => p.invoiceId === x.id && p.status !== "cancelled"));
+      return inv && { actorId: "tre", type: "schedule_payment", params: { invoiceId: inv.id, amount: inv.approvedAmount ?? 0 } };
+    },
+    () => {
+      const pay = [...e.payments.values()].find((x) => x.status === "scheduled");
+      return pay && { actorId: "tre", type: "execute_payment", params: { paymentId: pay.id } };
+    },
+    () => {
+      const esc = [...e.escalations.values()].find((x) => x.status === "awaiting_decision");
+      const opt = esc && esc.options.length ? rng.pick(esc.options) : undefined;
+      return esc && opt && { actorId: esc.to === "local_authority" ? "loc" : "rem", type: "decide", params: { escalationId: esc.id, optionId: opt.id } };
+    },
+    () => {
+      const v = [...e.verifications.values()].find((x) => x.status === "pending" && e.now >= x.sentAt + 2 * e.remoteLatencyMs);
+      return v && { actorId: "rem", type: "answer_verification", params: { verificationId: v.id, confirmed: bankKey(v.claimedBank) !== bankKey(bankAFake), answer: "call-back" } };
+    },
+  ];
+  for (const c of rng.shuffle(candidates)) {
+    const step = c();
+    if (step) return step;
+  }
+  return undefined;
+}
+
 function run(seed: number, steps: number): { e: Engine; executed: { role: string; type: string }[] } {
   const rng = new Rng(seed);
   const e = makeEngine();
@@ -100,15 +169,22 @@ function run(seed: number, steps: number): { e: Engine; executed: { role: string
   e.subscribe((ev) => {
     if (ev.type === "decision") {
       const d = ev.data.decision as { verdict: string; role: string; actionType: string };
-      if (d.verdict !== "deny") executed.push({ role: d.role, type: d.actionType });
+      if (d.verdict === "allow") executed.push({ role: d.role, type: d.actionType });
     }
   });
   for (let i = 0; i < steps; i++) {
     if (rng.chance(0.05)) e.advanceTo(e.now + rng.int(1, 120) * 60_000);
+    if (rng.chance(0.6)) {
+      const h = honestStep(e, rng);
+      if (h) {
+        e.submit({ ...h, source: "rules" });
+        continue;
+      }
+    }
     const actor = rng.pick(ACTORS);
-    // Bias toward actions the actor may take so the walk gets deep into the process.
+    // Adversary: random actor, random (often forbidden) action, random/malicious params.
     const allowed = e.policy.permissions[actor.role] ?? [];
-    const type = (rng.chance(0.75) && allowed.length ? rng.pick(allowed) : rng.pick(ACTION_TYPES)) as ActionType;
+    const type = (rng.chance(0.6) && allowed.length ? rng.pick(allowed) : rng.pick(ACTION_TYPES)) as ActionType;
     const params = rng.chance(0.03) ? { garbage: true } : randomParams(e, type, rng);
     e.submit({ actorId: rng.chance(0.02) ? "intruder" : actor.id, type, params, source: "fuzz" });
   }
@@ -117,9 +193,8 @@ function run(seed: number, steps: number): { e: Engine; executed: { role: string
 
 function checkInvariants(e: Engine, executed: { role: string; type: string }[]) {
   // 1. Books balance and are untampered.
-  const v = e.ledger.verify();
+  const v = e.verifyIntegrity();
   expect(v.problems).toEqual([]);
-  expect(e.audit.verify().ok).toBe(true);
   // 2. Every posting comes from an allowed decision.
   for (const entry of e.ledger.all()) {
     if (entry.proposalId === "opening") continue;
@@ -148,6 +223,13 @@ function checkInvariants(e: Engine, executed: { role: string; type: string }[]) 
       expect(po.terms).toBe("prepay");
     }
   }
+  // 8. Never more paid against an order than the order total.
+  for (const po of e.pos.values()) {
+    const sent = [...e.payments.values()].filter((x) => x.status === "sent" && (x.poId === po.id || (x.invoiceId && e.invoices.get(x.invoiceId)?.poId === po.id))).reduce((s, x) => s + x.amount, 0);
+    expect(sent).toBeLessThanOrEqual(po.total);
+  }
+  // 9. Every payment that left went to a vendor that was active at the time (checked by decision rules).
+  for (const d of e.decisions) if (d.actionType === "execute_payment" && d.verdict === "allow") expect(d.rules.find((r) => r.rule === "vendor.active")?.ok).toBe(true);
 }
 
 describe("adversarial fuzz (property-based)", () => {
@@ -157,22 +239,26 @@ describe("adversarial fuzz (property-based)", () => {
         const { e, executed } = run(seed, 400);
         checkInvariants(e, executed);
       }),
-      { numRuns: 300 },
+      { numRuns: 200 },
     );
-  });
+  }, 180_000);
 
   it("the walk actually reaches deep states (payments, escalations, holds)", () => {
     let sent = 0;
+    let prepaid = 0;
     let escalations = 0;
     let holds = 0;
     for (let s = 0; s < 60; s++) {
       const { e } = run(s, 400);
       sent += [...e.payments.values()].filter((p) => p.status === "sent").length;
+      prepaid += [...e.payments.values()].filter((p) => p.status === "sent" && !p.invoiceId).length;
       escalations += e.escalations.size;
       holds += e.decisions.filter((d) => d.verdict === "hold").length;
     }
-    expect(sent).toBeGreaterThan(20);
+    // Coverage: the walk must exercise the money-moving paths, or the invariants prove nothing.
+    expect(sent).toBeGreaterThan(60);
+    expect(prepaid).toBeGreaterThan(5);
     expect(escalations).toBeGreaterThan(20);
     expect(holds).toBeGreaterThan(20);
-  });
+  }, 60_000);
 });

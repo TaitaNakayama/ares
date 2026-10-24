@@ -1,7 +1,7 @@
 import { ACTION_TYPES, parseAction, type Action, type ActionParams, type ActionType } from "./actions.ts";
 import { AuditLog } from "./audit.ts";
-import { Ledger, PostingAuthorization, type JournalEntryInput, type PostingLine } from "./ledger.ts";
-import { combineVerdict, parsePolicy, RULE_LABELS, type Policy, type RuleResult, type Verdict } from "./policy.ts";
+import { Ledger, type JournalEntryInput, type PostingLine } from "./ledger.ts";
+import { combineVerdict, freezePolicy, parsePolicy, RULE_LABELS, type Policy, type RuleResult, type Verdict } from "./policy.ts";
 import {
   bankKey,
   HUMAN_ROLES,
@@ -51,10 +51,17 @@ export interface EngineConfig {
   /** One-way message latency to the remote authority. */
   remoteLatencyMs: number;
   levers?: Lever[];
+  /**
+   * When true, every submit must carry the credential issued for its actor
+   * (see issueCredential). Hosts that let LLMs or remote clients drive actors turn this on,
+   * so a caller holding one role's credential can't act as another.
+   */
+  requireCredentials?: boolean;
 }
 
 export interface ProposalInput {
   actorId: string;
+  credential?: string;
   type: string;
   params: unknown;
   rationale?: string;
@@ -161,8 +168,11 @@ interface ScheduledInbound {
 
 const ENGINE_SECRET = Symbol("engine-ledger-secret");
 
+/** Actions whose executor implements hold/escalate side effects (flags, escalations) without moving money. */
+const BLOCKED_SIDE_EFFECTS = new Set<string>(["submit_invoice", "approve_requisition", "approve_invoice", "confirm_funds", "schedule_payment"]);
+
 export class Engine {
-  policy: Policy;
+  #policy: Policy;
   now: Time;
   remoteLatencyMs: number;
   readonly burnPerDayCents: Cents;
@@ -178,7 +188,7 @@ export class Engine {
   readonly quotes = new Map<string, Quote & { status: "open" | "held" | "used" | "rejected"; flags: FlagCode[] }>();
   readonly pos = new Map<string, PurchaseOrder>();
   readonly receipts = new Map<string, GoodsReceipt>();
-  readonly invoices = new Map<string, Invoice & { flags: FlagCode[]; submittedBy?: string }>();
+  readonly invoices = new Map<string, Invoice & { flags: FlagCode[]; submittedBy?: string; voidedAsFraud?: boolean }>();
   readonly payments = new Map<string, Payment>();
   readonly verifications = new Map<string, Verification>();
   readonly escalations = new Map<string, Escalation>();
@@ -195,15 +205,22 @@ export class Engine {
   private readonly listeners: ((e: EngineEvent) => void)[] = [];
   private inbound: ScheduledInbound[] = [];
   private eventSeq = 0;
+  private depth = 0;
+  private flushing = false;
+  private pendingEvents: EngineEvent[] = [];
+  readonly #requireCredentials: boolean;
+  readonly #credentials = new Map<string, string>();
+  #credSeq = 0;
   /** Origin of each record, so a ledger entry can be traced back to its proposal and document. */
   private readonly origin = new Map<string, { proposalId: string; decisionId: string; sourceRef?: string }>();
 
   constructor(cfg: EngineConfig) {
-    this.policy = parsePolicy(cfg.policy);
+    this.#policy = freezePolicy(parsePolicy(cfg.policy));
+    this.#requireCredentials = cfg.requireCredentials ?? false;
     this.now = cfg.startTime;
     this.remoteLatencyMs = cfg.remoteLatencyMs;
     this.burnPerDayCents = cfg.burnPerDayCents;
-    for (const a of cfg.actors) this.actors.set(a.id, a);
+    for (const a of cfg.actors) this.actors.set(a.id, { ...a });
     for (const v of cfg.vendors) this.vendors.set(v.id, { ...v, bank: { ...v.bank } });
     for (const i of cfg.items) this.items.set(i.sku, i);
     this.contracts = cfg.contracts.map((c) => ({ ...c }));
@@ -213,7 +230,9 @@ export class Engine {
 
     if (cfg.openingCash > 0) {
       const decisionId = this.ids.next("DEC");
-      this.audit.append(this.now, "decision", "system", `Opening balance ${formatCents(cfg.openingCash)}`, { decisionId });
+      const opening: Decision = { id: decisionId, proposalId: "opening", actorId: "system", role: "system", actionType: "opening_balance", verdict: "allow", rules: [], summary: `Opening balance ${formatCents(cfg.openingCash)}`, at: this.now };
+      this.decisions.push(opening);
+      this.audit.append(this.now, "decision", "system", opening.summary, opening);
       this.postEntry(
         {
           memo: "Opening cash balance",
@@ -232,6 +251,19 @@ export class Engine {
     }
   }
 
+  get policy(): Policy {
+    return this.#policy;
+  }
+
+  /** Issue the one credential for an actor. Can be called once per actor; the host hands it to that actor's session. */
+  issueCredential(actorId: string): string {
+    if (!this.actors.has(actorId)) throw new Error(`unknown actor ${actorId}`);
+    if (this.#credentials.has(actorId)) throw new Error(`credential for ${actorId} already issued`);
+    const c = `cred-${++this.#credSeq}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    this.#credentials.set(actorId, c);
+    return c;
+  }
+
   // ---------------------------------------------------------------- events
 
   subscribe(fn: (e: EngineEvent) => void): () => void {
@@ -242,10 +274,28 @@ export class Engine {
     };
   }
 
+  /**
+   * Events are delivered only after the current submit has fully executed, so a listener
+   * can never act between a decision and its execution (no re-entrancy). Payloads are copies.
+   */
   private emit(type: string, data: Record<string, unknown>): void {
-    const e: EngineEvent = { seq: ++this.eventSeq, at: this.now, type, data };
+    const e: EngineEvent = { seq: ++this.eventSeq, at: this.now, type, data: structuredClone(data) };
     this.events.push(e);
-    for (const l of this.listeners) l(e);
+    this.pendingEvents.push(e);
+    if (this.depth === 0) this.flush();
+  }
+
+  private flush(): void {
+    if (this.flushing) return;
+    this.flushing = true;
+    try {
+      while (this.pendingEvents.length) {
+        const e = this.pendingEvents.shift()!;
+        for (const l of [...this.listeners]) l(e);
+      }
+    } finally {
+      this.flushing = false;
+    }
   }
 
   eventsSince(seq: number): EngineEvent[] {
@@ -257,6 +307,16 @@ export class Engine {
   /** Move the clock forward, delivering escalations and inbound messages that are due. */
   advanceTo(t: Time): SubmitResult[] {
     if (t < this.now) return [];
+    this.depth++;
+    try {
+      return this.advanceInner(t);
+    } finally {
+      this.depth--;
+      if (this.depth === 0) this.flush();
+    }
+  }
+
+  private advanceInner(t: Time): SubmitResult[] {
     const results: SubmitResult[] = [];
     for (;;) {
       const nextEsc = [...this.escalations.values()].filter((e) => e.status === "in_transit" && e.deliverAt <= t).sort((a, b) => a.deliverAt - b.deliverAt)[0];
@@ -291,10 +351,13 @@ export class Engine {
     this.remoteLatencyMs = ms;
   }
 
+  /** Only the remote authority (policy owner) may change policy; the change is validated and audited. */
   setPolicy(input: unknown, actorId: string): Policy {
-    const next = parsePolicy(input);
-    const prev = this.policy;
-    this.policy = next;
+    const actor = this.actors.get(actorId);
+    if (!actor || actor.role !== "remote_authority") throw new Error(`policy can only be changed by the remote authority, not "${actorId}"`);
+    const next = freezePolicy(parsePolicy(input));
+    const prev = this.#policy;
+    this.#policy = next;
     this.audit.append(this.now, "policy", actorId, `Policy changed: ${prev.name} v${prev.version} -> ${next.name} v${next.version}`, { prev, next });
     this.emit("policy_changed", { policy: next });
     return next;
@@ -311,6 +374,28 @@ export class Engine {
   // ---------------------------------------------------------------- submit
 
   submit(input: ProposalInput): SubmitResult {
+    this.depth++;
+    try {
+      return this.submitInner(input);
+    } catch (err) {
+      // Never throw at a caller: deny and audit instead.
+      const rules = [fail("engine.error", (err as Error).message, "deny")];
+      const decision = this.recordDecision(undefined, String(input?.actorId), "system", String(input?.type), rules);
+      this.audit.append(this.now, "proposal", String(input?.actorId), `Proposal failed: ${(err as Error).message}`, { type: String(input?.type) });
+      return { decision, executed: false, error: (err as Error).message };
+    } finally {
+      this.depth--;
+      if (this.depth === 0) this.flush();
+    }
+  }
+
+  private submitInner(input: ProposalInput): SubmitResult {
+    if (this.#requireCredentials && (!input.credential || this.#credentials.get(input.actorId) !== input.credential)) {
+      const rules = [fail("actor.authenticated", `caller is not authenticated as "${input.actorId}"`, "deny")];
+      const decision = this.recordDecision(undefined, String(input.actorId), "system", String(input.type), rules);
+      this.audit.append(this.now, "proposal", "unauthenticated", `Rejected unauthenticated proposal ${String(input.type)} as ${String(input.actorId)}`, { type: String(input.type) });
+      return { decision, executed: false, error: rules[0]!.detail };
+    }
     const actor = this.actors.get(input.actorId);
     const source = input.source ?? "rules";
     const parsed = parseAction(input.type, input.params);
@@ -344,6 +429,8 @@ export class Engine {
     }
     const decision = this.recordDecision(proposal, actor.id, actor.role, proposal.action.type, rules);
     if (decision.verdict === "deny") return { proposal, decision, executed: false };
+    // Only `allow` executes, except actions whose executor records the hold/escalation itself.
+    if (decision.verdict !== "allow" && !BLOCKED_SIDE_EFFECTS.has(proposal.action.type)) return { proposal, decision, executed: false };
 
     const created = this.execute(proposal, decision);
     return { proposal, decision, executed: true, created };
@@ -377,7 +464,7 @@ export class Engine {
 
   /** Every check for a proposal. Does not change state. */
   evaluate(p: Proposal): RuleResult[] {
-    const allowed = this.policy.permissions[p.role] ?? [];
+    const allowed = this.#policy.permissions[p.role] ?? [];
     const rbac = allowed.includes(p.action.type)
       ? pass("rbac.permitted", `${p.role} may ${p.action.type}`)
       : fail("rbac.permitted", `role ${p.role} is not allowed to ${p.action.type}`, "deny");
@@ -415,6 +502,7 @@ export class Engine {
         const r: RuleResult[] = [];
         r.push(this.vendors.has(a.params.vendorId) ? pass("state.valid", "known vendor") : fail("state.valid", `unknown vendor ${a.params.vendorId}`, "deny"));
         for (const l of a.params.lines) if (!this.items.has(l.sku)) r.push(fail("state.valid", `unknown item ${l.sku}`, "deny"));
+        if (new Set(a.params.lines.map((l) => l.sku)).size !== a.params.lines.length) r.push(fail("state.valid", "an item appears on more than one line; one line per item", "deny"));
         return r;
       }
       case "submit_invoice": {
@@ -422,7 +510,7 @@ export class Engine {
         if (!inv) return [fail("state.valid", `no invoice ${a.params.invoiceId}`, "deny")];
         if (inv.status !== "received" && inv.status !== "held") return [fail("state.valid", `invoice is ${inv.status}`, "deny")];
         const m = this.computeMatch(inv);
-        const r = [...m.rules, ...this.invoiceDocRules(inv)];
+        const r = [...m.rules, ...this.invoiceDocRules(inv), this.prepayInFlightRule(inv)];
         r.push(
           a.params.amount === m.payable
             ? pass("match.amount_within_payable", `amount ${formatCents(a.params.amount)} equals matched payable`)
@@ -447,14 +535,21 @@ export class Engine {
       case "reject_requisition": {
         const req = this.requisitions.get(a.params.requisitionId);
         if (!req) return [fail("state.valid", `no requisition ${a.params.requisitionId}`, "deny")];
-        return [["open", "escalated"].includes(req.status) ? pass("state.valid", `status ${req.status}`) : fail("state.valid", `request is ${req.status}`, "deny")];
+        return [
+          ["open", "escalated"].includes(req.status) ? pass("state.valid", `status ${req.status}`) : fail("state.valid", `request is ${req.status}`, "deny"),
+          this.escalationRoutingRule(p, { kind: "requisition", id: req.id }),
+        ];
       }
       case "approve_invoice":
         return this.approveInvoiceRules(p, a.params);
       case "reject_invoice": {
         const inv = this.invoices.get(a.params.invoiceId);
         if (!inv) return [fail("state.valid", `no invoice ${a.params.invoiceId}`, "deny")];
-        return [inv.status !== "paid" && inv.status !== "rejected" ? pass("state.valid", `status ${inv.status}`) : fail("state.valid", `invoice is ${inv.status}`, "deny")];
+        // Once approved (AP credited) an invoice is settled or reversed with a credit note, never just rejected.
+        return [
+          ["received", "submitted", "held"].includes(inv.status) ? pass("state.valid", `status ${inv.status}`) : fail("state.valid", `invoice is ${inv.status}; use a credit note`, "deny"),
+          this.escalationRoutingRule(p, { kind: "invoice", id: inv.id }),
+        ];
       }
       case "reject_quote": {
         const q = this.quotes.get(a.params.quoteId);
@@ -469,6 +564,7 @@ export class Engine {
         if (!v) return [fail("state.valid", `unknown vendor ${a.params.vendorId}`, "deny")];
         const claimed = this.bankOf(a.params.subject);
         if (!claimed) return [fail("state.valid", "subject has no bank details", "deny")];
+        if (this.vendorOf(a.params.subject) !== v.id) return [fail("state.valid", `${a.params.subject.id} was not sent by ${v.id}`, "deny")];
         const open = [...this.verifications.values()].some((x) => x.status === "pending" && x.vendorId === v.id && bankKey(x.claimedBank) === bankKey(claimed));
         return [
           bankKey(claimed) !== bankKey(v.bank) ? pass("state.valid", "bank details differ from master") : fail("state.valid", "bank details already match the master", "deny"),
@@ -487,7 +583,7 @@ export class Engine {
         if (!v) return [fail("state.valid", `no verification ${a.params.verificationId}`, "deny")];
         return [
           v.status === "pending" ? pass("state.valid", "pending") : fail("state.valid", `already ${v.status}`, "deny"),
-          this.now >= v.arrivesAt ? pass("verification.arrived", "request has arrived") : fail("verification.arrived", "request has not reached the remote party yet", "deny"),
+          this.now >= v.sentAt + 2 * this.remoteLatencyMs ? pass("verification.arrived", "a reply could have made the round trip") : fail("verification.arrived", "too early: a reply cannot have made the round trip yet", "deny"),
         ];
       }
     }
@@ -498,12 +594,13 @@ export class Engine {
     if (!po) return [fail("state.valid", `no purchase order ${params.poId}`, "deny")];
     const r: RuleResult[] = [];
     r.push(po.status === "open" || po.status === "partially_received" ? pass("state.valid", `PO is ${po.status}`) : fail("state.valid", `PO is ${po.status}`, "deny"));
+    if (new Set(params.lines.map((l) => l.sku)).size !== params.lines.length) r.push(fail("state.valid", "an item appears on more than one receipt line", "deny"));
     for (const l of params.lines) {
       if (!po.lines.some((pl) => pl.sku === l.sku)) r.push(fail("state.valid", `${l.sku} is not on ${po.id}`, "deny"));
       if (l.qtyRejected > l.qtyReceived) r.push(fail("state.valid", "rejected more than received", "deny"));
     }
     const req = this.requisitions.get(po.requisitionId);
-    if (this.policy.sod.requesterCannotReceive && req) {
+    if (this.#policy.sod.requesterCannotReceive && req) {
       r.push(req.requestedBy !== p.actorId ? pass("sod.requester_not_receiver", "receiver is not the requester") : fail("sod.requester_not_receiver", "requester cannot confirm receipt of their own order", "deny"));
     }
     return r;
@@ -518,18 +615,20 @@ export class Engine {
     r.push(
       bankKey(inv.bank) === bankKey(vendor.bank)
         ? pass("vendor.bank_matches_master", "bank details match vendor master")
-        : fail("vendor.bank_matches_master", `bank on invoice (${maskAccount(inv.bank)}) differs from verified master (${maskAccount(vendor.bank)})`, this.policy.vendorBankChange.action === "block" ? "deny" : "hold"),
+        : fail("vendor.bank_matches_master", `bank on invoice (${maskAccount(inv.bank)}) differs from verified master (${maskAccount(vendor.bank)})`, this.#policy.vendorBankChange.action === "block" ? "deny" : "hold"),
     );
-    const others = [...this.invoices.values()].filter((o) => o.id !== inv.id && o.vendorId === inv.vendorId && o.status !== "rejected");
-    const sameNo = others.find((o) => o.vendorInvoiceNo.trim().toLowerCase() === inv.vendorInvoiceNo.trim().toLowerCase());
+    const all = [...this.invoices.values()].filter((o) => o.id !== inv.id && o.vendorId === inv.vendorId);
+    const others = all.filter((o) => o.status !== "rejected");
+    // A number stays used even if that invoice was rejected, unless it was voided as a fraudulent copy.
+    const sameNo = all.filter((o) => !o.voidedAsFraud).find((o) => o.vendorInvoiceNo.trim().toLowerCase() === inv.vendorInvoiceNo.trim().toLowerCase());
     r.push(sameNo ? fail("dup.invoice_number", `invoice number ${inv.vendorInvoiceNo} already recorded as ${sameNo.id}`, "deny") : pass("dup.invoice_number", "invoice number is new"));
-    const windowMs = this.policy.duplicates.windowDays * DAY_MS;
+    const windowMs = this.#policy.duplicates.windowDays * DAY_MS;
     const sameAmt = others.find((o) => o.poId === inv.poId && o.total === inv.total && Math.abs(o.issuedAt - inv.issuedAt) <= windowMs);
     r.push(sameAmt ? fail("dup.same_amount", `same amount ${formatCents(inv.total)} on the same order already billed as ${sameAmt.id}`, "deny") : pass("dup.same_amount", "no identical invoice"));
     for (const l of inv.lines) {
       const c = this.contractFor(inv.vendorId, l.sku, inv.issuedAt);
       if (c) {
-        const cap = c.unitPrice * (1 + this.policy.match.priceTolerancePct / 100);
+        const cap = c.unitPrice * (1 + this.#policy.match.priceTolerancePct / 100);
         r.push(l.unitPrice <= cap ? pass("contract.price", `${l.sku} within contract ${c.id}`) : fail("contract.price", `${l.sku} billed ${formatCents(l.unitPrice)} vs contract ${formatCents(c.unitPrice)}`, "hold"));
       }
     }
@@ -560,11 +659,20 @@ export class Engine {
       rules.push(poReceipts.length > 0 ? pass("match.receipt_exists", `${poReceipts.length} receipt(s)`) : fail("match.receipt_exists", "nothing received yet", "hold"));
     }
 
-    const tol = this.policy.match.priceTolerancePct / 100;
+    const tol = this.#policy.match.priceTolerancePct / 100;
     const lines: MatchResult["lines"] = [];
     let matchedValue = 0;
     let grniRelief = 0;
+    // One line per SKU, so repeated lines can't each claim the full received quantity.
+    const bySku = new Map<string, { sku: string; qty: number; value: number }>();
     for (const l of inv.lines) {
+      const agg = bySku.get(l.sku) ?? { sku: l.sku, qty: 0, value: 0 };
+      agg.qty += l.qty;
+      agg.value += l.qty * l.unitPrice;
+      bySku.set(l.sku, agg);
+    }
+    const merged = [...bySku.values()].map((x) => ({ sku: x.sku, qty: x.qty, unitPrice: x.qty ? Math.round(x.value / x.qty) : 0 }));
+    for (const l of merged) {
       const pl = po.lines.find((x) => x.sku === l.sku);
       if (!pl) {
         rules.push(fail("match.po_exists", `${l.sku} is not on ${po.id}`, "hold"));
@@ -573,7 +681,7 @@ export class Engine {
       const receivable = Math.max(0, Math.min(accepted.get(l.sku) ?? 0, pl.qty) - (invoiced.get(l.sku) ?? 0));
       let payQty = l.qty;
       if (l.qty > receivable) {
-        if (this.policy.match.payReceivedQtyOnly) {
+        if (this.#policy.match.payReceivedQtyOnly) {
           payQty = receivable;
           rules.push(pass("match.qty_within_receipt", `${l.sku}: billed ${l.qty}, received ${receivable}; paying for ${receivable}`));
         } else {
@@ -586,7 +694,7 @@ export class Engine {
       rules.push(
         l.unitPrice <= cap
           ? pass("match.price_within_tolerance", `${l.sku}: ${formatCents(l.unitPrice)} vs PO ${formatCents(pl.unitPrice)}`)
-          : fail("match.price_within_tolerance", `${l.sku}: billed ${formatCents(l.unitPrice)} vs PO ${formatCents(pl.unitPrice)} (over ${this.policy.match.priceTolerancePct}% tolerance)`, "hold"),
+          : fail("match.price_within_tolerance", `${l.sku}: billed ${formatCents(l.unitPrice)} vs PO ${formatCents(pl.unitPrice)} (over ${this.#policy.match.priceTolerancePct}% tolerance)`, "hold"),
       );
       matchedValue += payQty * l.unitPrice;
       grniRelief += payQty * pl.unitPrice;
@@ -604,15 +712,15 @@ export class Engine {
     if (!inv) return [fail("state.valid", `no invoice ${params.invoiceId}`, "deny")];
     if (inv.status !== "submitted") return [fail("state.valid", `invoice is ${inv.status}, not submitted`, "deny")];
     const m = this.computeMatch(inv);
-    const r = [...m.rules, ...this.invoiceDocRules(inv)];
+    const r = [...m.rules, ...this.invoiceDocRules(inv), this.prepayInFlightRule(inv), this.escalationRoutingRule(p, { kind: "invoice", id: inv.id })];
     const amount = inv.approvedAmount ?? 0;
     r.push(amount === m.payable ? pass("match.amount_within_payable", "submitted amount still matches") : fail("match.amount_within_payable", `submitted ${formatCents(amount)} but matched payable is now ${formatCents(m.payable)}`, "deny"));
-    if (this.policy.sod.submitterCannotApprove) {
+    if (this.#policy.sod.submitterCannotApprove) {
       r.push(inv.submittedBy !== p.actorId ? pass("sod.submitter_not_approver", "approver did not submit it") : fail("sod.submitter_not_approver", "you submitted this invoice", "deny"));
     }
     const po = inv.poId ? this.pos.get(inv.poId) : undefined;
     const req = po ? this.requisitions.get(po.requisitionId) : undefined;
-    if (this.policy.sod.requesterCannotApprove && req) {
+    if (this.#policy.sod.requesterCannotApprove && req) {
       r.push(req.requestedBy !== p.actorId ? pass("sod.requester_not_approver", "approver is not the requester") : fail("sod.requester_not_approver", "you requested this purchase", "deny"));
     }
     r.push(this.limitRule(p.role, amount));
@@ -630,16 +738,24 @@ export class Engine {
     r.push(q.status === "open" || q.status === "held" ? pass("state.valid", `quote is ${q.status}`) : fail("state.valid", `quote is ${q.status}`, "deny"));
     r.push(q.sku === req.sku ? pass("state.valid", "quote is for the requested item") : fail("state.valid", `quote is for ${q.sku}, request is for ${req.sku}`, "deny"));
     r.push(q.validUntil >= this.now ? pass("state.valid", "quote still valid") : fail("state.valid", "quote expired", "deny"));
+    r.push(q.requisitionId === req.id ? pass("state.valid", "quote was requested for this purchase") : fail("state.valid", `quote ${q.id} belongs to ${q.requisitionId ?? "no request"}`, "deny"));
+    r.push(this.escalationRoutingRule(p, { kind: "requisition", id: req.id }));
     const qty = params.qty ?? req.qty;
     r.push(qty <= req.qty ? pass("state.valid", `qty ${qty} within request`) : fail("state.valid", `qty ${qty} exceeds requested ${req.qty}`, "deny"));
     r.push(qty <= q.qtyAvailable ? pass("state.valid", `supplier has ${q.qtyAvailable}`) : fail("state.valid", `supplier only has ${q.qtyAvailable}`, "deny"));
     r.push(req.fundsConfirmedBy ? pass("treasury.funds_confirmed", "funds confirmed") : fail("treasury.funds_confirmed", "treasury has not confirmed funds", "deny"));
-    if (this.policy.sod.requesterCannotApprove) {
+    if (this.#policy.sod.requesterCannotApprove) {
       r.push(req.requestedBy !== p.actorId ? pass("sod.requester_not_approver", "approver is not the requester") : fail("sod.requester_not_approver", "you requested this purchase", "deny"));
     }
     r.push(...this.quoteRules(q));
     const amount = qty * q.unitPrice;
-    r.push(this.limitRule(p.role, amount));
+    // Split-order guard: same approver role, vendor and item within the window count together.
+    const windowMs = this.#policy.approval.splitWindowDays * DAY_MS;
+    const recent = [...this.pos.values()]
+      .filter((po) => po.status !== "cancelled" && po.vendorId === q.vendorId && po.lines.some((l) => l.sku === q.sku) && this.now - po.createdAt <= windowMs)
+      .filter((po) => po.approvedBy.some((id) => this.actors.get(id)?.role === p.role))
+      .reduce((s, po) => s + po.total, 0);
+    r.push(this.limitRule(p.role, amount + recent, recent > 0 ? `incl. ${formatCents(recent)} approved for the same vendor and item in the last ${this.#policy.approval.splitWindowDays} days` : undefined));
     r.push(this.runwayRule(amount, `order ${formatCents(amount)}`));
     return r;
   }
@@ -653,14 +769,14 @@ export class Engine {
     r.push(
       bankKey(q.bank) === bankKey(vendor.bank)
         ? pass("vendor.bank_matches_master", "bank details match vendor master")
-        : fail("vendor.bank_matches_master", `quote asks payment to ${maskAccount(q.bank)}, master is ${maskAccount(vendor.bank)}`, this.policy.vendorBankChange.action === "block" ? "deny" : "hold"),
+        : fail("vendor.bank_matches_master", `quote asks payment to ${maskAccount(q.bank)}, master is ${maskAccount(vendor.bank)}`, this.#policy.vendorBankChange.action === "block" ? "deny" : "hold"),
     );
     const pa = this.priceCheck(q.vendorId, q.sku, q.unitPrice);
-    const material = (pa.median > 0 ? (q.unitPrice - pa.median) * q.qtyAvailable : 0) >= this.policy.materialityCents;
+    const material = (pa.median > 0 ? (q.unitPrice - pa.median) * q.qtyAvailable : 0) >= this.#policy.materialityCents;
     r.push(pa.anomalous && material ? fail("price.anomaly", pa.detail, "escalate") : pass("price.anomaly", pa.detail));
     const c = this.contractFor(q.vendorId, q.sku, this.now);
     if (c) {
-      const cap = c.unitPrice * (1 + this.policy.match.priceTolerancePct / 100);
+      const cap = c.unitPrice * (1 + this.#policy.match.priceTolerancePct / 100);
       r.push(q.unitPrice <= cap ? pass("contract.price", `within contract ${c.id}`) : fail("contract.price", `quote ${formatCents(q.unitPrice)} vs contract ${formatCents(c.unitPrice)}`, "escalate"));
     }
     return r;
@@ -670,17 +786,17 @@ export class Engine {
   priceCheck(vendorId: string, sku: string, unitPrice: Cents): { anomalous: boolean; z: number; ratio: number; median: number; n: number; detail: string } {
     let hist = this.priceHistory.filter((h) => h.vendorId === vendorId && h.sku === sku).map((h) => h.unitPrice);
     let scope = "this supplier";
-    if (hist.length < this.policy.priceAnomaly.minHistory) {
+    if (hist.length < this.#policy.priceAnomaly.minHistory) {
       hist = this.priceHistory.filter((h) => h.sku === sku).map((h) => h.unitPrice);
       scope = "all suppliers";
     }
-    if (hist.length < this.policy.priceAnomaly.minHistory) {
+    if (hist.length < this.#policy.priceAnomaly.minHistory) {
       return { anomalous: false, z: 0, ratio: 1, median: 0, n: hist.length, detail: `not enough history (${hist.length})` };
     }
     const med = median(hist);
     const z = robustLogZ(unitPrice, hist);
     const ratio = unitPrice / med;
-    const anomalous = z > this.policy.priceAnomaly.zThreshold || ratio > this.policy.priceAnomaly.ratioThreshold;
+    const anomalous = z > this.#policy.priceAnomaly.zThreshold || ratio > this.#policy.priceAnomaly.ratioThreshold;
     const detail = `${formatCents(unitPrice)} is ${ratio.toFixed(2)}x the median ${formatCents(Math.round(med))} of ${hist.length} past prices from ${scope} (z=${z.toFixed(1)})`;
     return { anomalous, z, ratio, median: med, n: hist.length, detail };
   }
@@ -691,6 +807,7 @@ export class Engine {
     let vendorId: string;
     let remaining: Cents;
     let approvers: string[];
+    let po: PurchaseOrder | undefined;
     if (params.invoiceId) {
       const inv = this.invoices.get(params.invoiceId);
       if (!inv) return [fail("state.valid", `no invoice ${params.invoiceId}`, "deny")];
@@ -698,8 +815,9 @@ export class Engine {
       vendorId = inv.vendorId;
       remaining = (inv.approvedAmount ?? 0) - this.paidOrScheduled({ invoiceId: inv.id });
       approvers = this.approversOf({ kind: "invoice", id: inv.id });
+      po = inv.poId ? this.pos.get(inv.poId) : undefined;
     } else {
-      const po = this.pos.get(params.poId as string);
+      po = this.pos.get(params.poId as string);
       if (!po) return [fail("state.valid", `no PO ${params.poId}`, "deny")];
       r.push(po.terms === "prepay" ? pass("payment.invoice_approved", "prepaid order approved") : fail("payment.invoice_approved", "order is not on prepayment terms; pay against an approved invoice", "deny"));
       r.push(po.status !== "cancelled" ? pass("state.valid", `PO is ${po.status}`) : fail("state.valid", "PO cancelled", "deny"));
@@ -708,9 +826,13 @@ export class Engine {
       approvers = po.approvedBy;
     }
     r.push(params.amount > 0 && params.amount <= remaining ? pass("payment.amount_within_approved", `${formatCents(params.amount)} of ${formatCents(remaining)} remaining`) : fail("payment.amount_within_approved", `${formatCents(params.amount)} exceeds remaining approved ${formatCents(remaining)}`, "deny"));
+    if (po) {
+      const paid = this.paidAgainstPo(po.id);
+      r.push(paid + params.amount <= po.total ? pass("payment.po_cap", `${formatCents(paid + params.amount)} of order total ${formatCents(po.total)}`) : fail("payment.po_cap", `would bring payments on ${po.id} to ${formatCents(paid + params.amount)}, over the order total ${formatCents(po.total)}`, "deny"));
+    }
     const vendor = this.vendors.get(vendorId);
-    if (vendor) r.push(this.vendorActiveRule(vendor));
-    if (this.policy.sod.approverCannotPay) {
+    if (vendor) r.push(this.vendorActiveRule(vendor, "deny"));
+    if (this.#policy.sod.approverCannotPay) {
       r.push(!approvers.includes(p.actorId) ? pass("sod.approver_not_payer", "payer did not approve") : fail("sod.approver_not_payer", "you approved this; someone else must pay", "deny"));
     }
     r.push(this.runwayRule(params.amount, "payment", true));
@@ -724,9 +846,9 @@ export class Engine {
     r.push(pay.status === "scheduled" ? pass("state.valid", "payment scheduled") : fail("state.valid", `payment is ${pay.status}`, "deny"));
     const vendor = this.vendors.get(pay.vendorId);
     if (!vendor) return [fail("state.valid", "unknown vendor", "deny")];
-    r.push(this.vendorActiveRule(vendor));
+    r.push(this.vendorActiveRule(vendor, "deny"));
     r.push(bankKey(pay.bank) === bankKey(vendor.bank) ? pass("payment.to_master_bank", `to verified account ${maskAccount(vendor.bank)}`) : fail("payment.to_master_bank", "payment account differs from the verified master", "deny"));
-    if (this.policy.sod.approverCannotPay) {
+    if (this.#policy.sod.approverCannotPay) {
       r.push(!pay.approvedBy.includes(p.actorId) ? pass("sod.approver_not_payer", "payer did not approve") : fail("sod.approver_not_payer", "you approved this; someone else must pay", "deny"));
     }
     const cash = this.ledger.balance("cash");
@@ -761,15 +883,36 @@ export class Engine {
     return r;
   }
 
-  private limitRule(role: Role, amount: Cents): RuleResult {
+  private limitRule(role: Role, amount: Cents, note?: string): RuleResult {
     const limit = this.limitFor(role);
+    const n = note ? ` (${note})` : "";
     return amount <= limit
-      ? pass("approval.limit", `${formatCents(amount)} within ${role} limit ${formatCents(limit)}`)
-      : fail("approval.limit", `${formatCents(amount)} exceeds ${role} limit ${formatCents(limit)}`, "escalate");
+      ? pass("approval.limit", `${formatCents(amount)} within ${role} limit ${formatCents(limit)}${n}`)
+      : fail("approval.limit", `${formatCents(amount)} exceeds ${role} limit ${formatCents(limit)}${n}`, "escalate");
+  }
+
+  /** While a subject is escalated, only its target authority may act on it, and only once delivered. */
+  private escalationRoutingRule(p: Proposal, subject: Ref): RuleResult {
+    const open = this.openEscalationFor(subject);
+    if (!open) return pass("escalation.routing", "not escalated");
+    if (p.role === open.to && open.status === "awaiting_decision") return pass("escalation.routing", `decided by ${open.to}`);
+    return fail("escalation.routing", `${subject.id} is escalated to ${open.to} (${open.status}); only that authority can act on it`, "deny");
+  }
+
+  private prepayInFlightRule(inv: Invoice): RuleResult {
+    const inFlight = inv.poId ? [...this.payments.values()].some((x) => x.poId === inv.poId && !x.invoiceId && x.status === "scheduled") : false;
+    return inFlight ? fail("payment.prepay_settled", "a prepayment on this order is still in flight; match after it settles", "hold") : pass("payment.prepay_settled", "no prepayment in flight");
+  }
+
+  /** Everything paid or scheduled against an order: prepayments plus payments of its invoices. */
+  paidAgainstPo(poId: string): Cents {
+    return [...this.payments.values()]
+      .filter((x) => x.status !== "cancelled" && (x.poId === poId || (x.invoiceId && this.invoices.get(x.invoiceId)?.poId === poId)))
+      .reduce((s, x) => s + x.amount, 0);
   }
 
   limitFor(role: Role): Cents {
-    const a = this.policy.approval;
+    const a = this.#policy.approval;
     if (role === "controller") return a.agentMaxCents;
     if (role === "local_authority") return a.localAuthorityMaxCents;
     if (role === "remote_authority") return a.remoteAuthorityMaxCents;
@@ -784,15 +927,15 @@ export class Engine {
   private runwayRule(amount: Cents, what: string, alreadyCommitted = false): RuleResult {
     const after = this.ledger.balance("cash") - this.openCommitments() - (alreadyCommitted ? 0 : amount);
     const days = this.burnPerDayCents > 0 ? after / this.burnPerDayCents : Infinity;
-    const min = this.policy.treasury.minRunwayDays;
+    const min = this.#policy.treasury.minRunwayDays;
     return days >= min
       ? pass("treasury.min_runway", `after ${what}: ${Math.floor(days)} days of runway (min ${min})`)
       : fail("treasury.min_runway", `after ${what}: only ${Math.floor(days)} days of runway (min ${min})`, "escalate");
   }
 
-  private vendorActiveRule(v: Vendor): RuleResult {
+  private vendorActiveRule(v: Vendor, holdEffect: "hold" | "deny" = "hold"): RuleResult {
     if (v.status === "active") return pass("vendor.active", `${v.name} active`);
-    return fail("vendor.active", `${v.name} is ${v.status}${v.statusReason ? `: ${v.statusReason}` : ""}`, v.status === "blocked" ? "deny" : "hold");
+    return fail("vendor.active", `${v.name} is ${v.status}${v.statusReason ? `: ${v.statusReason}` : ""}`, v.status === "blocked" ? "deny" : holdEffect);
   }
 
   // ---------------------------------------------------------------- execution
@@ -834,8 +977,10 @@ export class Engine {
         for (const l of g.lines) {
           const pl = po.lines.find((x) => x.sku === l.sku)!;
           const already = this.acceptedQty(po.id, l.sku);
-          const take = Math.max(0, Math.min(l.qtyReceived - l.qtyRejected, pl.qty - already));
+          const good = l.qtyReceived - l.qtyRejected;
+          const take = Math.max(0, Math.min(good, pl.qty - already));
           value += take * pl.unitPrice;
+          if (good > take) this.raise("qty_over_receipt", { kind: "po", id: po.id }, `${l.sku}: ${good - take} more than ordered arrived; not booked`, 0, p.actorId);
         }
         this.receipts.set(g.id, g);
         created = { kind: "receipt", id: g.id };
@@ -1040,8 +1185,8 @@ export class Engine {
         break;
       }
       case "schedule_payment": {
-        if (escalate) {
-          this.autoEscalate(params2ref(a.params), d, p.actorId);
+        if (held || escalate) {
+          if (escalate) this.autoEscalate(params2ref(a.params), d, p.actorId);
           break;
         }
         const inv = a.params.invoiceId ? this.invoices.get(a.params.invoiceId) : undefined;
@@ -1087,6 +1232,10 @@ export class Engine {
       case "decide": {
         const esc = this.escalations.get(a.params.escalationId)!;
         const opt = esc.options.find((o) => o.id === a.params.optionId)!;
+        // Sub-actions run while the escalation is still awaiting this authority's decision.
+        for (const sub of opt.actions) {
+          this.submit({ actorId: p.actorId, type: sub.type, params: sub.params, rationale: `Decision on ${esc.id}: ${opt.label}`, source: "human", credential: this.#credentials.get(p.actorId) });
+        }
         esc.status = "decided";
         esc.decision = { optionId: opt.id, by: p.actorId, at: this.now };
         this.audit.append(this.now, "escalation", p.actorId, `${this.actors.get(p.actorId)?.displayName} chose "${opt.label}" on ${esc.id}`, { escalationId: esc.id, option: opt });
@@ -1094,9 +1243,6 @@ export class Engine {
         if (opt.leverId) {
           this.audit.append(this.now, "lever", p.actorId, `Operational action: ${opt.label}`, { leverId: opt.leverId, escalationId: esc.id });
           this.emit("lever_activated", { leverId: opt.leverId, escalationId: esc.id, by: p.actorId });
-        }
-        for (const sub of opt.actions) {
-          this.submit({ actorId: p.actorId, type: sub.type, params: sub.params, rationale: `Decision on ${esc.id}: ${opt.label}`, source: "human" });
         }
         break;
       }
@@ -1126,7 +1272,10 @@ export class Engine {
           }
           if (v.subject.kind === "invoice") {
             const inv = this.invoices.get(v.subject.id);
-            if (inv) inv.status = "rejected";
+            if (inv) {
+              inv.status = "rejected";
+              inv.voidedAsFraud = true;
+            }
           }
         }
         this.audit.append(this.now, "verification", p.actorId, `Verification ${v.id}: ${v.status} (${a.params.answer})`, v);
@@ -1141,7 +1290,7 @@ export class Engine {
   // ---------------------------------------------------------------- escalation & verification
 
   private autoVerifyBank(subject: Ref, actorId: string): void {
-    if (this.policy.vendorBankChange.action !== "hold_and_verify") return;
+    if (this.#policy.vendorBankChange.action !== "hold_and_verify") return;
     const claimed = this.bankOf(subject);
     const vendorId = this.vendorOf(subject);
     if (!claimed || !vendorId) return;
@@ -1169,7 +1318,7 @@ export class Engine {
   }
 
   expectedVerificationReply(v: Verification): Time {
-    return v.sentAt + 2 * this.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
+    return v.sentAt + 2 * this.remoteLatencyMs + this.#policy.vendorBankChange.verificationProcessingMs;
   }
 
   private autoEscalate(subject: Ref, d: Decision, actorId: string): void {
@@ -1183,7 +1332,7 @@ export class Engine {
     const decideBy = subject.kind === "requisition" ? this.requisitions.get(subject.id)?.orderBy : subject.kind === "invoice" ? this.invoices.get(subject.id)?.dueAt : undefined;
     // Normally the remote authority decides. If it can't answer before the deadline,
     // the local authority decides instead, with options limited to its emergency limit.
-    const remoteAnswerAt = this.now + 2 * this.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
+    const remoteAnswerAt = this.now + 2 * this.remoteLatencyMs + this.#policy.vendorBankChange.verificationProcessingMs;
     const urgent = decideBy !== undefined && remoteAnswerAt > decideBy;
     const to: HumanRole = urgent ? "local_authority" : "remote_authority";
     const options = this.buildOptions(subject, to);
@@ -1226,7 +1375,7 @@ export class Engine {
       if (!req) return opts;
       const quotes = [...this.quotes.values()].filter((q) => q.requisitionId === req.id && (q.status === "open" || q.status === "held"));
       const pending = [...this.verifications.values()].filter((v) => v.status === "pending" && v.subject.kind === "quote" && quotes.some((q) => q.id === v.subject.id));
-      const replyAt = pending.length ? Math.max(...pending.map((v) => this.expectedVerificationReply(v))) : this.now + 2 * this.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
+      const replyAt = pending.length ? Math.max(...pending.map((v) => this.expectedVerificationReply(v))) : this.now + 2 * this.remoteLatencyMs + this.#policy.vendorBankChange.verificationProcessingMs;
       for (const q of quotes) {
         const rules = this.quoteRules(q);
         if (!rules.every((r) => r.ok)) continue;
@@ -1297,7 +1446,9 @@ export class Engine {
   // ---------------------------------------------------------------- helpers
 
   private postEntry(input: JournalEntryInput): void {
-    const auth = PostingAuthorization.mint(input.decisionId, ENGINE_SECRET, this.ledger);
+    const d = this.decisions.find((x) => x.id === input.decisionId);
+    if (d?.verdict !== "allow") throw new Error(`refusing to post: decision ${input.decisionId} is ${d?.verdict ?? "missing"}`);
+    const auth = this.ledger.authorize(input.decisionId, ENGINE_SECRET);
     const e = this.ledger.post(input, this.now, auth);
     this.audit.append(this.now, "execution", input.actorId, `Posted ${e.id}: ${e.memo}`, { entryId: e.id, hash: e.hash });
     this.emit("ledger_posted", { entry: e });
@@ -1525,7 +1676,20 @@ export class Engine {
     }
   }
 
+  /** Ledger + audit integrity, cross-checking the ledger head against the audit log. */
+  verifyIntegrity(): { ok: boolean; problems: string[] } {
+    const posted = this.audit.all().filter((r) => r.kind === "execution" && (r.data as { entryId?: string }).entryId);
+    const last = posted.at(-1)?.data as { hash?: string } | undefined;
+    const l = this.ledger.verify({ seq: posted.length, hash: last?.hash ?? "genesis" });
+    const a = this.audit.verify();
+    return { ok: l.ok && a.ok, problems: [...l.problems, ...a.problems] };
+  }
+
   snapshot() {
+    return structuredClone(this.snapshotLive());
+  }
+
+  private snapshotLive() {
     return {
       now: this.now,
       policy: this.policy,

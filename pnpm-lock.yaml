@@ -21,11 +21,29 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5))
 
+  packages/agents:
+    dependencies:
+      '@ares/engine':
+        specifier: workspace:*
+        version: link:../engine
+
   packages/engine:
     dependencies:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/world-mars:
+    dependencies:
+      '@ares/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@ares/engine':
+        specifier: workspace:*
+        version: link:../engine
+      astronomy-engine:
+        specifier: 2.1.19
+        version: 2.1.19
 
 packages:
 
@@ -290,6 +308,9 @@ packages:
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
+
+  astronomy-engine@2.1.19:
+    resolution: {integrity: sha512-8yWKNf7UeNbH458h3sAJ6ZgAjE5jTXp/mNNRFoC20j2SHwZIjAQeEsBB2Q3uCFRaTCCJRv33K2XhkhZQMXoX6w==}
 
   chai@6.3.0:
     resolution: {integrity: sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==}
@@ -696,6 +717,8 @@ snapshots:
   '@vitest/spy@5.0.5': {}
 
   assertion-error@2.0.1: {}
+
+  astronomy-engine@2.1.19: {}
 
   chai@6.3.0: {}
 

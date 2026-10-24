@@ -173,26 +173,22 @@ describe("controls", () => {
   });
 
   it("policy edit changes behaviour: lower agent limit forces escalation", () => {
-    const e = makeEngine({}, { approval: { agentMaxCents: 100_000, localAuthorityMaxCents: 1_500_000, remoteAuthorityMaxCents: 100_000_000 } });
+    const e = makeEngine({}, { approval: { agentMaxCents: 100_000, localAuthorityMaxCents: 1_500_000, remoteAuthorityMaxCents: 100_000_000, splitWindowDays: 7 } });
     const { reqId, quoteIds } = requisitionWithQuotes(e, "FLT", 36, [{ vendorId: "V-A", unitPrice: 12_000, qtyAvailable: 100, bank: bankA }]);
     expect(e.submit({ actorId: "ctl", type: "approve_requisition", params: { requisitionId: reqId, quoteId: quoteIds[0] } }).decision.verdict).toBe("escalate");
   });
 
-  it("segregation of duties holds even when a policy grants extra permissions", () => {
+  it("segregation of duties can't be configured away", () => {
     const e = makeEngine();
-    const p = structuredClone(e.policy);
+    const p = structuredClone(e.policy) as typeof e.policy & { permissions: Record<string, string[]> };
     p.permissions.controller = [...(p.permissions.controller ?? []), "create_requisition", "schedule_payment"];
-    e.setPolicy(p, "admin");
-    const r = e.submit({ actorId: "ctl", type: "create_requisition", params: { sku: "FLT", qty: 5, orderBy: T0 + 30 * DAY, reason: "self-dealing" } });
-    e.submit({ actorId: "tre", type: "confirm_funds", params: { requisitionId: r.created!.id } });
-    const q = e.submit({
-      actorId: "ap",
-      type: "record_quote",
-      params: { vendorId: "V-A", sku: "FLT", unitPrice: 12_000, qtyAvailable: 10, bank: bankA, terms: "on_receipt", validUntil: T0 + DAY, requisitionId: r.created!.id },
-    });
-    const appr = e.submit({ actorId: "ctl", type: "approve_requisition", params: { requisitionId: r.created!.id, quoteId: q.created!.id } });
-    expect(appr.decision.verdict).toBe("deny");
-    expect(appr.decision.rules.find((x) => x.rule === "sod.requester_not_approver")?.ok).toBe(false);
+    // Only the remote authority may edit policy at all.
+    expect(() => e.setPolicy(p, "ctl")).toThrow(/remote authority/);
+    // And even it can't give one role conflicting duties.
+    expect(() => e.setPolicy(p, "rem")).toThrow(/segregation of duties/);
+    const q = structuredClone(e.policy) as { sod: Record<string, boolean> };
+    q.sod.approverCannotPay = false;
+    expect(() => e.setPolicy(q, "rem")).toThrow();
   });
 
   it("forbidden actions are denied for every role", () => {

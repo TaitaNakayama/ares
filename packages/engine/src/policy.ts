@@ -11,6 +11,15 @@ const cents = z.number().int().nonnegative();
 const actionEnum = z.enum(ACTION_TYPES as [ActionType, ...ActionType[]]);
 const roleEnum = z.enum(["requester", "receiver", "ap", "treasury", "controller", "local_authority", "remote_authority", "system"]);
 
+/** No single role may hold two of these duties (segregation of duties). */
+const INCOMPATIBLE: [string, ActionType[], ActionType[]][] = [
+  ["approve and pay", ["approve_requisition", "approve_invoice"], ["schedule_payment", "execute_payment"]],
+  ["request and approve", ["create_requisition"], ["approve_requisition"]],
+  ["request and receive", ["create_requisition"], ["record_receipt"]],
+  ["submit and approve invoices", ["submit_invoice"], ["approve_invoice"]],
+  ["receive and pay", ["record_receipt"], ["schedule_payment", "execute_payment"]],
+];
+
 export const policySchema = z.object({
   name: z.string(),
   version: z.number().int(),
@@ -23,6 +32,8 @@ export const policySchema = z.object({
     localAuthorityMaxCents: cents,
     /** Limit of the remote human authority (e.g. CFO). */
     remoteAuthorityMaxCents: cents,
+    /** Approvals by the same role for the same vendor and item within this window add up (split-order guard). */
+    splitWindowDays: z.number().nonnegative(),
   }),
   match: z.object({
     /** Billed unit price may exceed the PO price by at most this percent. */
@@ -54,12 +65,21 @@ export const policySchema = z.object({
     /** Cash after any commitment must cover this many days of spending. */
     minRunwayDays: z.number().nonnegative(),
   }),
+  /** Segregation of duties is not optional: these must stay true. */
   sod: z.object({
-    requesterCannotApprove: z.boolean(),
-    submitterCannotApprove: z.boolean(),
-    approverCannotPay: z.boolean(),
-    requesterCannotReceive: z.boolean(),
+    requesterCannotApprove: z.literal(true),
+    submitterCannotApprove: z.literal(true),
+    approverCannotPay: z.literal(true),
+    requesterCannotReceive: z.literal(true),
   }),
+}).superRefine((p, ctx) => {
+  for (const [role, actions] of Object.entries(p.permissions)) {
+    for (const [what, a, b] of INCOMPATIBLE) {
+      if (actions.some((x) => a.includes(x)) && actions.some((x) => b.includes(x))) {
+        ctx.addIssue({ code: "custom", path: ["permissions", role], message: `role ${role} cannot both ${what} (segregation of duties)` });
+      }
+    }
+  }
 });
 
 export type Policy = z.infer<typeof policySchema>;
@@ -102,6 +122,7 @@ export const DEFAULT_POLICY: Policy = {
     agentMaxCents: 500_000,
     localAuthorityMaxCents: 1_500_000,
     remoteAuthorityMaxCents: 100_000_000,
+    splitWindowDays: 7,
   },
   match: { priceTolerancePct: 2, payReceivedQtyOnly: true },
   vendorBankChange: { action: "hold_and_verify", verificationProcessingMs: 20 * 60_000 },
@@ -119,6 +140,17 @@ export const DEFAULT_POLICY: Policy = {
 
 export function parsePolicy(input: unknown): Policy {
   return policySchema.parse(input);
+}
+
+export function freezePolicy(p: Policy): Policy {
+  const freeze = (o: unknown): unknown => {
+    if (o && typeof o === "object" && !Object.isFrozen(o)) {
+      Object.freeze(o);
+      for (const v of Object.values(o)) freeze(v);
+    }
+    return o;
+  };
+  return freeze(p) as Policy;
 }
 
 export type Verdict = "allow" | "deny" | "hold" | "escalate";
@@ -169,5 +201,11 @@ export const RULE_LABELS: Record<string, string> = {
   "state.valid": "Record exists and is in the right state",
   "escalation.authority": "Decision made by the authority it was escalated to",
   "escalation.delivered": "Escalation has reached its recipient",
+  "escalation.routing": "Escalated items are decided only by their target authority",
+  "payment.po_cap": "Total paid on an order stays within the order total",
+  "payment.prepay_settled": "No prepayment in flight on this order",
+  "actor.authenticated": "Caller is authenticated as this actor",
+  "schema.valid": "Proposal is well-formed",
+  "engine.error": "Proposal could be processed",
   "verification.arrived": "Verification request has reached the remote party",
 };
