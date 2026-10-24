@@ -147,3 +147,6 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
 
 ## Decisions since the plan
 - **Native iOS instead of Unity.** Unity's 2026-06-30 terms, §17.2(ff), bar AI agents and CLI tools from driving Unity without an authorized gateway. Native also builds and deploys fully headless.
+
+## Sound
+- Procedural audio in `vr/Shared/Sound.swift` (one AVAudioEngine, no new assets): interior hum with a 0.1 Hz wobble; wind that follows tau and gusts (muffled inside the room); a two-note chime per agent line pitched per role; a soft tick when an agent starts thinking; a deeper two-tone when the commander decides. Muted in the Mac spectator. Headset ran at 60 fps with it; the sound itself still needs an ear check on the phone.
