@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
@@ -66,6 +66,9 @@ class Session {
 let session = new Session(process.env.ARES_SEED ?? "ares-demo", PACE_MS);
 await session.prepare();
 const clients = new Set<WebSocket>();
+/** Headset sockets get only what the headset needs (small messages, no engine firehose). */
+const vrClients = new WeakSet<WebSocket>();
+let vrStats: Record<string, unknown> = {};
 let unsubscribe = wire(session);
 
 function wire(s: Session): () => void {
@@ -76,9 +79,14 @@ function wire(s: Session): () => void {
   });
 }
 
-function broadcast(msg: unknown): void {
+const VR_TYPES = new Set(["vr_state", "capture", "reset"]);
+function broadcast(msg: { type: string }): void {
   const text = JSON.stringify(msg);
-  for (const c of clients) if (c.readyState === 1) c.send(text);
+  for (const c of clients) {
+    if (c.readyState !== 1) continue;
+    if (vrClients.has(c) && !VR_TYPES.has(msg.type)) continue;
+    c.send(text);
+  }
 }
 
 let vrStateTimer: NodeJS.Timeout | undefined;
@@ -262,6 +270,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") return send(res, 204, {});
     if (path === "/api/state" && req.method === "GET") return send(res, 200, fullState());
     if (path === "/api/vr" && req.method === "GET") return send(res, 200, vrState());
+    if (path === "/api/vr/stats" && req.method === "GET") return send(res, 200, vrStats);
     if (path.startsWith("/api/trace/")) {
       const t = session.orch.engine.trace(decodeURIComponent(path.slice("/api/trace/".length)));
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
@@ -279,6 +288,22 @@ const server = http.createServer(async (req, res) => {
       const r = await session.orch.submitHuman(role, { type: "decide", params: { escalationId: b.escalationId, optionId: b.optionId }, source: "console" });
       if (r.executed && session.world.beat >= 2) session.timelapse();
       return send(res, 200, { verdict: r.decision.verdict, summary: r.decision.summary });
+    }
+    if (path === "/api/capture" && req.method === "POST") {
+      // The headset posts a JPEG of its current frame (debug: lets us check rendering remotely).
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const dir = new URL("../../../.cache/captures/", import.meta.url).pathname;
+      mkdirSync(dir, { recursive: true });
+      const name = `capture-${Date.now()}.jpg`;
+      writeFileSync(join(dir, name), Buffer.concat(chunks));
+      writeFileSync(join(dir, "latest.jpg"), Buffer.concat(chunks));
+      writeFileSync(join(dir, "latest.json"), JSON.stringify(Object.fromEntries(url.searchParams)));
+      return send(res, 200, { ok: true, name });
+    }
+    if (path === "/api/capture/request" && req.method === "POST") {
+      broadcast({ type: "capture" });
+      return send(res, 200, { ok: true, clients: clients.size });
     }
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
     if (path === "/api/director/next" && req.method === "POST") return send(res, 200, { ok: true, message: await directorNext() });
@@ -318,11 +343,17 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws, req) => {
   clients.add(ws);
   const client = new URL(req.url ?? "/", "http://x").searchParams.get("client") ?? "console";
+  if (client === "vr") vrClients.add(ws);
+  console.log(`[ws] ${client} connected from ${req.socket.remoteAddress} (${clients.size} clients)`);
   ws.send(JSON.stringify({ type: "hello", client, seed: session.seed, meta: session.orch.meta, state: client === "vr" ? undefined : fullState(), vr: vrState() }));
   ws.on("message", async (raw) => {
     try {
       const m = JSON.parse(String(raw)) as { type: string; escalationId?: string; optionId?: string };
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
+      if (m.type === "vr_stats") {
+        vrStats = { ...m, receivedAt: new Date().toISOString() };
+        if (process.env.ARES_LOG_VR) console.log("[vr]", JSON.stringify(m));
+      }
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
       if (m.type === "decide" && m.escalationId && m.optionId) {
         const r = await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: m.escalationId, optionId: m.optionId }, source: "human" });
@@ -333,7 +364,10 @@ wss.on("connection", (ws, req) => {
       ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
     }
   });
-  ws.on("close", () => clients.delete(ws));
+  ws.on("close", (code) => {
+    clients.delete(ws);
+    console.log(`[ws] ${client} closed (${code}) (${clients.size} clients)`);
+  });
 });
 
 let last = Date.now();

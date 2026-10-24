@@ -1,0 +1,43 @@
+name: AresVR
+options:
+  bundleIdPrefix: io.nakayama
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6M6DG3Y544
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_BITCODE: NO
+targets:
+  AresVR:
+    type: application
+    platform: iOS
+    sources:
+      - path: AresVR/Sources
+      - path: AresVR/Resources
+        buildPhase: resources
+      - path: Vendor/Cardboard/sdk.bundle
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.nakayama.ares.vr
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_OBJC_BRIDGING_HEADER: AresVR/Sources/AresVR-Bridging-Header.h
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Vendor/Cardboard/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/Cardboard/lib
+        OTHER_LDFLAGS: -lCardboardSDK -lProtobuf-C++ -lc++
+        INFOPLIST_FILE: AresVR/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: SceneKit.framework
+      - sdk: SpriteKit.framework
+      - sdk: CoreMotion.framework
+      - sdk: AVFoundation.framework
