@@ -102,7 +102,7 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 1. **Adversarial review.** Separate Opus reviewers that hadn't seen our reasoning attacked the engine in three rounds. Round 1 broke it with 21 findings, including a hold verdict that still paid, duplicate invoice lines that doubled the payable, and a prepaid PO paid twice. Every finding is fixed, and each one is now a regression test: 76 tests plus 45 blocked-exploit repros.
 2. **Rogue agent, live.** A console switch replaces the Rule Keeper's brain with a malicious one. It approves the fraudulent quote, tries to pay it, self-confirms the fake bank details and decides for the commander. Every attempt is refused on stage, and a test asserts it.
 3. **Property-based fuzz.** 200 seeds × 400 steps mix an honest driver with an adversary sending random, forbidden and malformed proposals. Result: 0 forbidden actions executed, books always balance, and no payment ever reaches an unverified account.
-4. **Agent eval, early.** `scripts/eval-llm-story.ts`, 3 seeds, cloud layer: all 7 beats in order 3/3, the commander's decision reached 3/3, the fraud-prevented amount identical to the rules brains 3/3. 25 model decisions, 4 fell back to rules, 0 lines replaced; median 3.0 s per decision, p95 6.2 s. This is 3 seeds so far; a 30-seed run is next.
+4. **Agent eval.** `scripts/eval-llm-story.ts`, 30 seeds, cloud layer (`.cache/eval-llm-30.log`): all eight promised outcomes held on 30/30 seeds for the model-backed agents and for the rules brains alike (the short delivery paid for 34 only; the fake-bank quote never approved; verification requested; fraud confirmed by Earth and the supplier locked; the commander got the battery decision; the purchase went to the verified account; all 7 beats in order; the pump report reached the commander). 271 model decisions; 59 (22%) fell back to rules (mostly the Money Keeper talking instead of scheduling a payment, which the rules then did); 18 model proposals refused by policy (a duplicate "escalate" on an already-escalated request, harmless, and fixed since); 1 line in 271 replaced for stating a fact the engine hadn't provided; the Rule Keeper's own decision option passed the policy dry run on 30/30 seeds; median 3.3 s per decision, p95 9.2 s. The held-out 500-seed scorecard measures the rules brains.
 5. **Evaluation against the answer key (rules brains).** Held-out seeds 5000-5099 (100 runs × 30 purchase cycles), stress profile: error rates far above real life.
    - 100% recall on duplicates, fake bank details (invoice and quote), inflated quotes and invoices, short deliveries and over-contract quotes.
    - **35% on subtle +3-7% overpricing**, which is the honest limit of statistics at this policy.
@@ -121,7 +121,7 @@ Statistics, the three-way match, bank verification and escalation routing stay d
 - Swap the Mars world for real data: the BPI Challenge 2019 P2P event log (CC BY 4.0) maps onto the same engine through config.
 - Bank-account verification through real rails (positive pay, account validation APIs).
 - Multi-entity approvals.
-- A 30-seed LLM eval next to the rules scorecard, and a faster local model for fully offline runs.
+- A faster local model for fully offline runs (today's local layer works but takes 10-15 s per decision on the demo laptop), and fewer rules fallbacks for the Money Keeper.
 
 ## Built with
 

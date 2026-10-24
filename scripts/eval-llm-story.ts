@@ -40,7 +40,7 @@ interface RunResult {
   cash: number;
   proposals: Record<string, number>;
   denied: Record<string, number>;
-  llm: { decisions: number; fallbacks: number; byReason: Record<string, number>; linesReplaced: number; p50: number; p95: number; max: number; byLayer: Record<string, number>; localPromptTokens?: { median: number; max: number } };
+  llm: { decisions: number; fallbacks: number; byReason: Record<string, number>; linesReplaced: number; p50: number; p95: number; max: number; byLayer: Record<string, number>; fallbackSamples?: string[]; localPromptTokens?: { median: number; max: number } };
   pump: { reached: boolean; by?: string; urgency?: string; recommendation?: string; ms?: number };
   /** Story outcomes that must hold whoever decides: what the judge is promised to see. */
   checks: Record<string, boolean>;
@@ -141,6 +141,7 @@ async function run(seed: string, kind: "llm" | "rules"): Promise<RunResult> {
       decisions: hist.filter((h) => h.result === "llm").length,
       fallbacks: hist.filter((h) => h.result === "fallback").length,
       byReason: count(hist.filter((h) => h.result === "fallback").map((h) => `${h.role}:${h.point.replace(/^\w+:/, "")} ${(h.reason ?? "?").replace(/\(.*$/, "").trim().slice(0, 30)}`)),
+      fallbackSamples: hist.filter((h) => h.result === "fallback" && (h.raw || /invalid/.test(h.reason ?? ""))).slice(0, 3).map((h) => `${h.role}:${h.point} ${(h.reason ?? "").slice(0, 120)} | raw: ${(h.raw ?? "").slice(0, 120)}`),
       localPromptTokens: prompts.length ? { median: q(prompts, 0.5), max: Math.max(...prompts) } : undefined,
       linesReplaced: hist.filter((h) => h.result === "llm" && /line replaced/.test(h.reason ?? "")).length,
       p50: q(ms, 0.5), p95: q(ms, 0.95), max: Math.max(0, ...ms),
@@ -161,6 +162,7 @@ for (let i = 0; i < SEEDS; i++) {
     const r = await run(seed, kind);
     results.push(r);
     const failed = Object.entries(r.checks).filter(([, ok]) => !ok).map(([k]) => k);
+    for (const smp of r.llm?.fallbackSamples ?? []) console.log(`    fallback: ${smp}`);
     const flag = failed.length ? `  FAILED: ${failed.join("; ")}` : "";
     console.log(`${seed.padEnd(8)} ${kind.padEnd(5)} beats ${r.beats.join(">")}${flag}  commander ${r.escalationToCommander ? "yes" : "NO"}  prevented $${(r.prevented / 100).toLocaleString()}  paid $${(r.paid / 100).toLocaleString()}  denied ${JSON.stringify(r.denied)}` + (kind === "llm" ? `  llm ${r.llm.decisions} decisions / ${r.llm.fallbacks} fallbacks ${JSON.stringify(r.llm.byReason)}  lines replaced ${r.llm.linesReplaced}  options proposed ${r.proposedOptions}  p50 ${(r.llm.p50 / 1000).toFixed(1)}s p95 ${(r.llm.p95 / 1000).toFixed(1)}s  layers ${JSON.stringify(r.llm.byLayer)}${r.llm.localPromptTokens ? ` local prompt tokens read median ${r.llm.localPromptTokens.median}` : ""}  pump ${r.pump.reached ? `reached via ${r.pump.by} (${r.pump.urgency}, ${((r.pump.ms ?? 0) / 1000).toFixed(0)}s)` : "NOT REACHED"}` : `  pump ${r.pump.reached ? "reached (rules)" : "NOT REACHED"}`) + `  ${(r.wallMs / 1000).toFixed(0)}s`);
   }
@@ -172,7 +174,7 @@ if (llm.length) {
   const names = Object.keys(llm[0]!.checks);
   console.log("\nOutcome checks (LLM brains / rules brains), seeds passing:");
   for (const n of names) console.log(`  ${n.padEnd(60)} ${llm.filter((r) => r.checks[n]).length}/${llm.length}   ${rules.filter((r) => r.checks[n]).length}/${rules.length}`);
-  console.log(`\nLLM brains over ${llm.length} seeds: on-story ${llm.filter((r) => r.onStory).length}/${llm.length}; commander escalation ${llm.filter((r) => r.escalationToCommander).length}/${llm.length}; pump reached ${llm.filter((r) => r.pump.reached).length}/${llm.length}; decisions by model ${llm.reduce((s, r) => s + r.llm.decisions, 0)}, fallbacks ${llm.reduce((s, r) => s + r.llm.fallbacks, 0)}, lines replaced ${llm.reduce((s, r) => s + r.llm.linesReplaced, 0)}; denied llm proposals ${llm.reduce((s, r) => s + (r.denied.llm ?? 0), 0)}; median per-call p50 ${(q(allMs, 0.5) / 1000).toFixed(1)}s, worst p95 ${(Math.max(...llm.map((r) => r.llm.p95)) / 1000).toFixed(1)}s`);
+  console.log(`\nLLM brains over ${llm.length} seeds: on-story ${llm.filter((r) => r.onStory).length}/${llm.length}; commander escalation ${llm.filter((r) => r.escalationToCommander).length}/${llm.length}; pump reached ${llm.filter((r) => r.pump.reached).length}/${llm.length}; decisions by model ${llm.reduce((s, r) => s + r.llm.decisions, 0)}, fallbacks ${llm.reduce((s, r) => s + r.llm.fallbacks, 0)}, lines replaced ${llm.reduce((s, r) => s + r.llm.linesReplaced, 0)}; denied llm proposals ${llm.reduce((s, r) => s + Object.entries(r.denied).filter(([k]) => k.startsWith("llm ")).reduce((a, [, v]) => a + v, 0), 0)}; median per-call p50 ${(q(allMs, 0.5) / 1000).toFixed(1)}s, worst p95 ${(Math.max(...llm.map((r) => r.llm.p95)) / 1000).toFixed(1)}s`);
   console.log(`Rules brains over ${rules.length} seeds: on-story ${rules.filter((r) => r.onStory).length}/${rules.length}; pump reached ${rules.filter((r) => r.pump.reached).length}/${rules.length}; prevented same as LLM on ${llm.filter((r) => rules.find((x) => x.seed === r.seed)?.prevented === r.prevented).length}/${llm.length} seeds`);
 }
 if (OUT) writeFileSync(OUT, JSON.stringify(results, null, 1));

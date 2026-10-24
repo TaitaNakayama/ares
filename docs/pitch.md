@@ -39,7 +39,7 @@ C. **SAFE MODE** (console): every agent drops to the deterministic rules instant
    - The engine never mentions Mars; the same code runs a restaurant or a research ship.
    - Three model layers: cloud first when online, a local model as the offline fallback (slower: 9-17 s on a cold prompt), rules as the floor. Every proposal is labeled `llm`, `rules`, `parser` or `human`.
    - Statistics, the three-way match, bank verification and escalation routing stay deterministic.
-   - Eval so far: 3 seeds with the cloud layer, all 7 beats in order 3/3; a 30-seed run is next.
+   - Eval: 30 seeds with the cloud layer, every promised outcome on 30/30, 271 model decisions, 22% fell back to rules, median 3.3 s per decision.
    - Money moves only through the executor, with one-shot ledger tokens.
 6. **Hyphenate's own scenario:** use Inject to create a need, quote or invoice as they describe it.
 
