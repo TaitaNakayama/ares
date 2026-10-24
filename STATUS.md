@@ -43,14 +43,16 @@ Decision (your call, Sat 04:50): make the agents real, keep the demo reliable. [
 - Live, auto mode: the cloud answered every decision in 2-8 s. The local model failed 3/3 live calls (two 8 s timeouts on cold prompts, one Ollama tool-call parse error) even though it passed the spike warm. So today "a few seconds" holds for the cloud, not for the local layer on cold prompts. The fallback chain did its job: zero rules fallbacks, zero denied model proposals.
 - First eval (2 seeds, before the line fix): 16 model decisions, 0 fallbacks, but 14/16 lines replaced (the models made one tool call and no `say`; fixed: the line now rides inside the action call), and the LLM run diverged from the story on the fake-quote beat (the controller escalated without asking for verification, so "$88.9M saved" never happened). Fixed by stating the standing procedure in the controller's prompt; the 3-seed re-run is in progress (`.cache/eval-llm-3.log`).
 
+**Decided (you, Sat 06:00):** cloud-first when online, local as the offline fallback, rules as the floor. Keep measuring whether the warm-up makes local reliable; if it does, an offline moment goes into the pitch.
+
+**Also done since:** agent-proposed decision options (`escalate.options`: each action is dry-run through policy as the deciding human; illegal ones vanish, duplicates of the standard options are skipped; `proposedBy` marks them). A rules escalation floor: when the rules brain would escalate and the model neither escalates nor decides, the escalation still happens, labeled rules. Pushed to GitHub (everything since 93da083).
+
 **Next, in order**
-1. Read the 3-seed eval; then 30 seeds overnight-style in the background; report next to the rules scorecard.
-2. Decide the demo model layout from the numbers: cloud-first when online (hotspot) with local fallback, or local for the Engineer's reports only (`ARES_LLM_ROLES`).
-3. Prefix warm-up per (role, decision point) at boot, and measure the cache hit from `prompt_eval_count` (now recorded in `/api/agents/history`).
-4. Decision options proposed by the agents (today: engine-built list); a judge choice with visible later consequences beyond the drill.
-5. Re-record the REPLAY tape with the final agent setup.
-6. Hotspot networking test (needs your phone's Personal Hotspot on, Mac joined).
-7. README, pitch, Devpost to match exactly what runs.
+1. Eval re-run with the floor and options (`.cache/eval-llm-3c.log`), then 30 seeds; report honestly next to the rules scorecard. Confirm live that the controller proposes options and they show on the card.
+2. Local warm-up measurement (`ARES_PREFER=local node scripts/eval-llm-story.ts --warm --seeds 2`): does the second call per decision point read fewer prompt tokens, and does it land under 8 s?
+3. Re-record the REPLAY tape with the final agent setup.
+4. README, pitch, Devpost to match exactly what runs.
+5. Hotspot networking test (needs your phone's Personal Hotspot on, Mac joined; the app already tries 172.20.10.2-14).
 
 **Needs you**: see "Needs you" below (phone in the viewer: thinking face, tap-to-ask, nametags, bubbles, drill OFFLINE; the spectator on screen).
 
