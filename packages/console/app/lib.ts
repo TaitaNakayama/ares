@@ -19,13 +19,21 @@ export function simTime(ms: number | undefined): string {
 
 export const ROLE_NAMES: Record<string, string> = {
   requester: "Engineer",
-  receiver: "Cargo Keeper",
-  ap: "Bill Checker",
-  treasury: "Money Keeper",
-  controller: "Rule Keeper",
+  receiver: "Cargo",
+  ap: "Bills",
+  treasury: "Money",
+  controller: "Rules",
   local_authority: "Commander",
   remote_authority: "Earth CFO",
   system: "System",
+};
+
+export const ROLE_TITLES: Record<string, string> = {
+  requester: "Requester",
+  receiver: "Receiver",
+  ap: "AP",
+  treasury: "Treasury",
+  controller: "Controller",
 };
 
 export const ROLE_COLORS: Record<string, string> = {

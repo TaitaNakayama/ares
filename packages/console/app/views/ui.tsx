@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import { ROLE_COLORS, ROLE_NAMES } from "../lib";
+import { ROLE_COLORS, ROLE_NAMES, ROLE_TITLES } from "../lib";
 
-export function RoleChip({ role, name }: { role: string; name?: string }) {
+export function RoleChip({ role, name, showRole }: { role: string; name?: string; showRole?: boolean }) {
   const c = ROLE_COLORS[role] ?? "var(--muted)";
   return (
     <span className="chip" style={{ color: c, borderColor: c }}>
       <i style={{ background: c }} />
       {name ?? ROLE_NAMES[role] ?? role}
+      {showRole && ROLE_TITLES[role] ? ` · ${ROLE_TITLES[role]}` : ""}
     </span>
   );
 }

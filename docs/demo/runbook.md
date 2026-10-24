@@ -19,7 +19,7 @@ Then open Ares on the phone (unlocked, Auto-Lock Never), put it in the viewer. T
 ## 3. The run (about 3-3.5 min)
 - Console → Director → **Autoplay** (or press **Next** for each beat yourself: pad → science → solar → door → inside; then the agents run).
 - Part 1 (≈40 s): the judge is at the landing pad; walks to the scientist (gaze + press: the real Perseverance close-up); to the solar field (storm warning); to the door (gaze + press to enter; auto-enter after 25 s).
-- Part 2: the delivery/invoice beat resolves, the storm hits, the fake quote is flagged, the Rule Keeper asks Earth and escalates: the judge decides on the card (one option is tagged "proposed by Rule Keeper"). Earth's answer arrives after a time-lapse; "$88.9M saved".
+- Part 2: the delivery/invoice beat resolves, the storm hits, the fake quote is flagged, Rules asks Earth and escalates: the judge decides on the card (one option is tagged "proposed by Rules"). Earth's answer arrives after a time-lapse; "$88.9M saved".
 - Judge autonomy: look at a robot and press (it explains itself); after the story, Console → Inject → Report (the three presets or any text).
 
 ## 4. If something breaks

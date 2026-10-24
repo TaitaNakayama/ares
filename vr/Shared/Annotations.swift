@@ -58,7 +58,7 @@ enum RoleLabel {
   }
 }
 
-/// "Rule Keeper · Controller": always-readable label above a robot, in its colour.
+/// "Rules": always-readable label above a robot, in its colour.
 final class Nametag {
   let node: SCNNode
   private let sprite: SpritePanel
@@ -82,7 +82,7 @@ final class Nametag {
   }
 
   private func redraw() {
-    let label = "\(name) · \(RoleLabel.title(role))" + suffix
+    let label = name + suffix
     let color = self.color
     sprite.update(key: label) { ctx, size in
       Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.92), radius: size.height / 2)
