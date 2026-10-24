@@ -168,8 +168,10 @@ export async function readInvoice(text: string, e: Engine, llm?: LlmProvider): P
 }
 
 /** Deterministic reader for common invoice layouts (and our generated documents). */
-export function parseInvoiceText(text: string, e: Engine): ExtractedInvoice | undefined {
+export function parseInvoiceText(rawText: string, e: Engine): ExtractedInvoice | undefined {
   const notes: string[] = [];
+  // Bounded input: documents are short; this also keeps the regexes cheap.
+  const text = rawText.slice(0, 20_000);
   const lower = text.toLowerCase();
   const vendor = [...e.vendors.values()].sort((a, b) => b.name.length - a.name.length).find((v) => lower.includes(v.name.toLowerCase()));
   if (!vendor) return undefined;
@@ -181,6 +183,8 @@ export function parseInvoiceText(text: string, e: Engine): ExtractedInvoice | un
   if (!qtyPrice || !sku) return undefined;
   const qty = Number(qtyPrice[1]);
   const unitPrice = Math.round(Number(qtyPrice[2]!.replace(/,/g, "")) * 100);
+  // Sanity bounds: absurd numbers are a reading problem, not an invoice.
+  if (!Number.isSafeInteger(qty) || qty <= 0 || qty > 1_000_000 || !Number.isSafeInteger(unitPrice) || unitPrice <= 0 || unitPrice > 1e11) return undefined;
   const acct = text.match(/account\s*(?:no\.?|number)?\s*[:#]?\s*(\d{6,})/i)?.[1];
   const routing = text.match(/routing\s*[:#]?\s*(\d{9})/i)?.[1];
   const bankName = text.match(/(?:remit to|pay to)[:\s]+(?:[^,\n]*,\s*)?([A-Za-z][A-Za-z ]*?(?:Bank|Trust|Savings|Credit Union|Mercantile))/i)?.[1]?.trim();

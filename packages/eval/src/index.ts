@@ -1,5 +1,5 @@
 import { defaultRuleBrains, Orchestrator, type Brain } from "@ares/agents";
-import type { Engine, Policy } from "@ares/engine";
+import { bankKey, type Engine, type Policy } from "@ares/engine";
 import { MarsWorld, type AnswerKeyEntry, type ErrorRates, type ErrorType } from "@ares/world-mars";
 
 /**
@@ -130,7 +130,7 @@ export function scoreRun(world: MarsWorld, e: Engine): RunScore {
   // Payments that went to any account the world knows was fraudulent: must be zero.
   // Ground truth from the world (not engine outcomes): accounts it planted as fraudulent.
   const fraudAccounts = world.fraudAccounts();
-  const fraudPaymentsSent = [...e.payments.values()].filter((p) => p.status === "sent" && fraudAccounts.has(p.bank.account)).length;
+  const fraudPaymentsSent = [...e.payments.values()].filter((p) => p.status === "sent" && fraudAccounts.has(bankKey(p.bank))).length;
 
   daysToPay.sort((a, b) => a - b);
   const esc = [...e.escalations.values()];

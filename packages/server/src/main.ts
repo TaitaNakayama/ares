@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { networkInterfaces } from "node:os";
-import { extname, join, normalize } from "node:path";
+import { randomBytes } from "node:crypto";
+import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ApWithReader, ControllerRules, EscalationDrafter, Orchestrator, providerFromEnv, ReceiverRules, RequesterRules, RogueBrain, TreasuryRules, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type Escalation, type Policy } from "@ares/engine";
@@ -9,6 +10,21 @@ import { runEval } from "@ares/eval";
 import { MarsWorld } from "@ares/world-mars";
 
 const PORT = Number(process.env.PORT ?? 8787);
+
+/**
+ * Access control. The console and every control API are for this Mac only (loopback).
+ * The headset authenticates with a per-machine token that scripts/build-ios.sh bakes into
+ * the app; it may only decide as the on-site commander and upload frames.
+ */
+const TOKEN_FILE = new URL("../../../.cache/headset-token", import.meta.url).pathname;
+const HEADSET_TOKEN = (() => {
+  if (existsSync(TOKEN_FILE)) return readFileSync(TOKEN_FILE, "utf8").trim();
+  const t = randomBytes(16).toString("hex");
+  mkdirSync(dirname(TOKEN_FILE), { recursive: true });
+  writeFileSync(TOKEN_FILE, t);
+  return t;
+})();
+const isLoopback = (a?: string) => a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
 const PACE_MS = Number(process.env.ARES_PACE_MS ?? 2200);
 const BASE_SPEED = Number(process.env.ARES_SPEED ?? 120);
 const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
@@ -106,7 +122,11 @@ function scheduleVrState(): void {
   if (vrStateTimer) return;
   vrStateTimer = setTimeout(() => {
     vrStateTimer = undefined;
-    broadcast({ type: "vr_state", state: vrState() });
+    try {
+      broadcast({ type: "vr_state", state: vrState() });
+    } catch (err) {
+      console.error("vr_state failed", err);
+    }
   }, 150);
 }
 
@@ -290,6 +310,7 @@ function inject(b: InjectBody): string {
   if (b.kind === "text") {
     // A judge pastes any invoice text; the AP agent reads it (LLM or parser) and the controls take over.
     if (!b.text?.trim()) throw new Error("paste the invoice text");
+    if (b.text.length > 20_000) throw new Error("document too long (20,000 characters max)");
     s.orch.schedule(at, { type: "document", doc: { id: `DOC-TXT-${Date.now()}`, kind: "invoice", from: "pasted", text: b.text, fields: {} } });
     return `document queued for the Bill Checker (${LLM ? "LLM reader" : "deterministic parser"})`;
   }
@@ -310,7 +331,7 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 }
 
 function send(res: http.ServerResponse, code: number, body: unknown): void {
-  res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET,POST,PUT,OPTIONS" });
+  res.writeHead(code, { "content-type": "application/json", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
 }
 
@@ -320,7 +341,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   const path = url.pathname;
   try {
-    if (req.method === "OPTIONS") return send(res, 204, {});
+    if (path.startsWith("/api/")) {
+      const local = isLoopback(req.socket.remoteAddress);
+      const headsetUpload = (path === "/api/capture" || path === "/api/record/frame") && url.searchParams.get("t") === HEADSET_TOKEN;
+      if (!local && !headsetUpload) return send(res, 403, { error: "control API is only available on the presenter's Mac" });
+    }
     if (path === "/api/state" && req.method === "GET") return send(res, 200, fullState());
     if (path === "/api/vr" && req.method === "GET") return send(res, 200, vrState());
     if (path === "/api/vr/stats" && req.method === "GET") return send(res, 200, vrStats);
@@ -430,13 +455,15 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/api/director/speed" && req.method === "POST") {
       const b = await readJson(req);
-      session.speed = Number(b.speed ?? BASE_SPEED);
+      const sp = Number(b.speed ?? BASE_SPEED);
+      session.speed = Number.isFinite(sp) && sp > 0 && sp <= 100_000 ? sp : BASE_SPEED;
       session.paused = Boolean(b.paused ?? false);
       return send(res, 200, { ok: true, speed: session.speed, paused: session.paused });
     }
     if (path === "/api/eval" && req.method === "POST") {
       const b = await readJson(req);
-      const sc = await runEval({ from: Number(b.from ?? 5000), count: Math.min(500, Number(b.count ?? 50)), cycles: Number(b.cycles ?? 30), policy: b.usePolicy ? session.orch.engine.policy : undefined });
+      const num = (v: unknown, d: number, lo: number, hi: number) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.floor(Number(v)))) : d);
+      const sc = await runEval({ from: num(b.from, 5000, 0, 1e9), count: num(b.count, 50, 1, 500), cycles: num(b.cycles, 30, 1, 60), policy: b.usePolicy ? session.orch.engine.policy : undefined });
       return send(res, 200, { ...sc, runs: undefined });
     }
     // Static console
@@ -457,8 +484,17 @@ const server = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server });
 wss.on("connection", (ws, req) => {
+  const params = new URL(req.url ?? "/", "http://x").searchParams;
+  const client = params.get("client") ?? "console";
+  const local = isLoopback(req.socket.remoteAddress);
+  const headset = client === "vr" && params.get("t") === HEADSET_TOKEN;
+  // Off this Mac, only the paired headset may connect.
+  if (!local && !headset) {
+    console.log(`[ws] refused ${client} from ${req.socket.remoteAddress}`);
+    ws.close(4401, "not authorized");
+    return;
+  }
   clients.add(ws);
-  const client = new URL(req.url ?? "/", "http://x").searchParams.get("client") ?? "console";
   if (client === "vr") vrClients.add(ws);
   console.log(`[ws] ${client} connected from ${req.socket.remoteAddress} (${clients.size} clients)`);
   ws.send(JSON.stringify({ type: "hello", client, seed: session.seed, meta: session.orch.meta, state: client === "vr" ? undefined : fullState(), vr: vrState() }));
@@ -471,7 +507,7 @@ wss.on("connection", (ws, req) => {
         if (process.env.ARES_LOG_VR) console.log("[vr]", JSON.stringify(m));
       }
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
-      if (m.type === "decide" && m.escalationId && m.optionId) {
+      if (m.type === "decide" && m.escalationId && m.optionId && (headset || local)) {
         const r = await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: m.escalationId, optionId: m.optionId }, source: "human" });
         if (r.executed && session.world.beat >= 2) session.timelapse();
         ws.send(JSON.stringify({ type: "decided", verdict: r.decision.verdict, summary: r.decision.summary }));
@@ -498,6 +534,10 @@ setInterval(async () => {
   }
 }, 100);
 setInterval(() => scheduleVrState(), 1000);
+
+// Never let one bad timer take the demo down.
+process.on("uncaughtException", (err) => console.error("uncaught", err));
+process.on("unhandledRejection", (err) => console.error("unhandled", err));
 
 server.listen(PORT, "0.0.0.0", () => {
   const ips = Object.values(networkInterfaces()).flat().filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i!.address);

@@ -1,5 +1,5 @@
 import type { ScheduledWorldEvent, World, WorldEvent, WorldSetup } from "@ares/agents";
-import { DEFAULT_POLICY, formatCents, Rng, type Actor, type BankAccount, type Engine, type EngineEvent, type Lever, type Policy, type Time, type Vendor } from "@ares/engine";
+import { bankKey, DEFAULT_POLICY, formatCents, Rng, type Actor, type BankAccount, type Engine, type EngineEvent, type Lever, type Policy, type Time, type Vendor } from "@ares/engine";
 import { CATALOG, deliveredCents, FREIGHT_USD_PER_KG, generateMarket, randomBank, type GeneratedMarket } from "./catalog.ts";
 import { earthMarsDistanceAu, fmtLtst, lightTimeMs, marsSun } from "./mars-time.ts";
 import { OPPORTUNITY_POINTS, PowerModel } from "./power.ts";
@@ -156,7 +156,7 @@ export class MarsWorld implements World {
     this.cyclesTotal = opts.cycles ?? 40;
     this.power = new PowerModel({ arrayScale: 934, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 14, iceDrill: 5, science: 1 } });
     this.lastPowerT = this.mode === "demo" ? this.start - 32 * DAY : this.start;
-    for (const v of this.market.vendors) this.bankTruth.set(v.bank.account, true);
+    for (const v of this.market.vendors) this.bankTruth.set(bankKey(v.bank), true);
   }
 
   setup(): WorldSetup {
@@ -422,8 +422,8 @@ export class MarsWorld implements World {
         const gap = this.mode === "demo" ? 2 * MIN : 5 * MIN;
         let t = e.at + (this.mode === "demo" ? 3 * MIN : 20 * MIN);
         for (const q of cs.planned.quotes) {
-          if (q.legitNewBank) this.bankTruth.set(q.legitNewBank.account, true);
-          if (q.errors.includes("bank_fraud_quote")) this.bankTruth.set(q.bank.account, false);
+          if (q.legitNewBank) this.bankTruth.set(bankKey(q.legitNewBank), true);
+          if (q.errors.includes("bank_fraud_quote")) this.bankTruth.set(bankKey(q.bank), false);
           out.push({ at: t, event: this.quoteDoc(engine, req.id, q, cs.cycle) });
           t += gap;
         }
@@ -463,7 +463,8 @@ export class MarsWorld implements World {
       case "verification_requested": {
         // The remote authority (Earth) does the call-back and answers truthfully after the round trip.
         const v = d.verification as unknown as { id: string; claimedBank: BankAccount; sentAt: Time };
-        const legit = this.bankTruth.get(v.claimedBank.account) ?? false;
+        // Truth is keyed on the full bank identity: a real account number with someone else's routing is not the vendor's account.
+        const legit = this.bankTruth.get(bankKey(v.claimedBank)) ?? false;
         const at = (d.expectedReplyAt as unknown as number) ?? v.sentAt + 2 * engine.remoteLatencyMs + this.policy.vendorBankChange.verificationProcessingMs;
         out.push({ at, event: { type: "external", actorId: "cfo", action: "answer_verification", params: { verificationId: v.id, confirmed: legit, answer: legit ? "Supplier confirmed the new account on a call-back to the number on file." : "Supplier says it never changed its bank details. The request was fraudulent." }, summary: legit ? "Earth: call-back confirms the new bank account." : "Earth: the bank change was fake. The real supplier never sent it.", short: legit ? "Earth: the new bank account is genuine." : "Earth: the bank change was FAKE." } });
         break;
@@ -484,7 +485,7 @@ export class MarsWorld implements World {
       case "vendor_status_changed": {
         // Earth re-verifies a locked supplier's details on file by call-back, then releases it.
         const v = d.vendor as unknown as { id: string; name: string; status: string };
-        if (v.status !== "hold" || this.mode !== "eval") break;
+        if (v.status !== "hold") break;
         out.push({ at: e.at + 2 * engine.remoteLatencyMs + 2 * DAY, event: { type: "external", actorId: "cfo", action: "release_vendor", params: { vendorId: v.id, reason: "Details on file re-verified by call-back; supplier contacts secured." }, summary: `Earth: ${v.name} re-verified and released.` } });
         break;
       }
@@ -536,7 +537,7 @@ export class MarsWorld implements World {
     const ordered = po.lines[0]!.qty;
     const price = Math.round(po.lines[0]!.unitPrice * p.priceFactor);
     const bank = p.fraudBank ? randomBank(this.rng, v.bank.holder, true) : v.bank;
-    if (p.fraudBank) this.bankTruth.set(bank.account, false);
+    if (p.fraudBank) this.bankTruth.set(bankKey(bank), false);
     const no = `${v.name.split(" ")[0]!.slice(0, 3).toUpperCase()}-${10_000 + cs.cycle * 7 + this.rng.int(0, 6)}`;
     const fair = p.fraudBank ? 0 : acceptedQty * po.lines[0]!.unitPrice;
     const out: ScheduledWorldEvent[] = [{ at, event: this.invoiceDoc(engine, poId, cs, { bank, unitPrice: price, qty: ordered, no, errors: p.errors, decoys: p.decoys, fair }) }];
@@ -574,7 +575,7 @@ export class MarsWorld implements World {
     const usualPrice = this.market.basePrice.get(usual.id)!.get("BAT-10")!;
     const altPrice = this.market.basePrice.get(alt.id)!.get("BAT-10")!;
     const fraudBank = randomBank(this.rng.fork("fraud"), usual.name, true);
-    this.bankTruth.set(fraudBank.account, false);
+    this.bankTruth.set(bankKey(fraudBank), false);
     const altQty = Math.min(15, Math.floor(this.policy.approval.localAuthorityMaxCents / altPrice));
     this.demoCycles.push({
       cycle: 1,

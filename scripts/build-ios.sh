@@ -12,13 +12,16 @@ CONFIG=${CONFIG:-Release}
 IPS=$(ifconfig | awk '/inet / && $2 != "127.0.0.1" {print $2}')
 HOST=$(scutil --get LocalHostName 2>/dev/null || echo "")
 mkdir -p $ROOT/vr/AresVR/Resources
+TOKEN_FILE=$ROOT/.cache/headset-token
+[ -f $TOKEN_FILE ] || { mkdir -p $ROOT/.cache; openssl rand -hex 16 > $TOKEN_FILE; }
+TOKEN=$(cat $TOKEN_FILE)
 {
-  echo '{ "servers": ['
+  echo "{ \"token\": \"$TOKEN\", \"servers\": ["
   for ip in ${(f)IPS}; do echo "  \"ws://$ip:8787/?client=vr\","; done
   [ -n "$HOST" ] && echo "  \"ws://$HOST.local:8787/?client=vr\","
   echo '  "ws://172.20.10.2:8787/?client=vr", "ws://172.20.10.3:8787/?client=vr", "ws://172.20.10.4:8787/?client=vr" ] }'
 } > $ROOT/vr/AresVR/Resources/ares.json
-cat $ROOT/vr/AresVR/Resources/ares.json
+sed -E 's/"token": "[^"]+"/"token": "(hidden)"/' $ROOT/vr/AresVR/Resources/ares.json
 cd $ROOT/vr && xcodegen generate --quiet
 LOG=$ROOT/vr/build/xcodebuild.log
 mkdir -p $ROOT/vr/build

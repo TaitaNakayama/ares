@@ -1,4 +1,0 @@
-{ "servers": [
-  "ws://172.20.10.13:8787/?client=vr",
-  "ws://TAITA-MAC3-6.local:8787/?client=vr",
-  "ws://172.20.10.2:8787/?client=vr", "ws://172.20.10.3:8787/?client=vr", "ws://172.20.10.4:8787/?client=vr" ] }

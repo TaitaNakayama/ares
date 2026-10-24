@@ -297,7 +297,7 @@ describe("N7 [medium] escalations whose options are stale or undecidable", () =>
     const invId = recordInvoice(e, poId, 10);
     submitAndApprove(e, invId);
     const p = structuredClone(e.policy);
-    p.treasury.minRunwayDays = 100_000;
+    p.treasury.minRunwayDays = 3650; // policy max (was 100k before bounds); still far above the fixture runway
     e.setPolicy(p, "rem");
     const sch = e.submit({ actorId: "tre", type: "schedule_payment", params: { invoiceId: invId, amount: 120_000 } });
     const esc = e.openEscalationFor({ kind: "invoice", id: invId })!;

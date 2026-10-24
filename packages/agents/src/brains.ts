@@ -131,7 +131,7 @@ export class ApRules implements Brain {
     const receipt = ev(input, "receipt_recorded");
     if (receipt) {
       const poId = (receipt.po as { id: string }).id;
-      return [...e.invoices.values()].filter((i) => i.poId === poId && i.status === "received").flatMap((i) => this.trySubmit(i, ctx));
+      return [...e.invoices.values()].filter((i) => i.poId === poId && (i.status === "received" || i.status === "submitted")).flatMap((i) => this.trySubmit(i, ctx));
     }
     const vs = ev(input, "vendor_status_changed");
     if (vs) {
@@ -154,7 +154,9 @@ export class ApRules implements Brain {
   private trySubmit(invRef: Invoice, ctx: BrainContext): Intent[] {
     const e = ctx.engine;
     const inv = e.invoices.get(invRef.id);
-    if (!inv || (inv.status !== "received" && inv.status !== "held")) return [];
+    if (!inv || (inv.status !== "received" && inv.status !== "held" && inv.status !== "submitted")) return [];
+    // A submitted invoice is only re-submitted when the match changed (e.g. goods arrived late).
+    if (inv.status === "submitted" && e.computeMatch(inv).payable === inv.approvedAmount) return [];
     const po = inv.poId ? e.pos.get(inv.poId) : undefined;
     const hasReceipt = po ? [...e.receipts.values()].some((g) => g.poId === po.id) : false;
     if (po && !hasReceipt && po.terms === "on_receipt") return []; // wait for the goods

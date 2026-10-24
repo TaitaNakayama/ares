@@ -502,6 +502,7 @@ export class Engine {
         return [
           req.requestedBy === p.actorId ? pass("state.valid", "own request") : fail("state.valid", "only the requester can cancel", "deny"),
           ["open", "escalated"].includes(req.status) ? pass("state.valid", `status ${req.status}`) : fail("state.valid", `cannot cancel a ${req.status} request`, "deny"),
+          this.escalationRoutingRule(p, { kind: "requisition", id: req.id }),
         ];
       }
       case "record_receipt":
@@ -523,7 +524,8 @@ export class Engine {
       case "submit_invoice": {
         const inv = this.invoices.get(a.params.invoiceId);
         if (!inv) return [fail("state.valid", `no invoice ${a.params.invoiceId}`, "deny")];
-        if (inv.status !== "received" && inv.status !== "held") return [fail("state.valid", `invoice is ${inv.status}`, "deny")];
+        // "submitted" can be re-matched (e.g. goods arrived after the first submission).
+        if (inv.status !== "received" && inv.status !== "held" && inv.status !== "submitted") return [fail("state.valid", `invoice is ${inv.status}`, "deny")];
         const m = this.computeMatch(inv);
         const r = [...m.rules, ...this.invoiceDocRules(inv), this.prepayInFlightRule(inv)];
         r.push(
@@ -569,7 +571,10 @@ export class Engine {
       case "reject_quote": {
         const q = this.quotes.get(a.params.quoteId);
         if (!q) return [fail("state.valid", `no quote ${a.params.quoteId}`, "deny")];
-        return [q.status !== "used" && q.status !== "rejected" ? pass("state.valid", `quote is ${q.status}`) : fail("state.valid", `quote is ${q.status}`, "deny")];
+        return [
+          q.status !== "used" && q.status !== "rejected" ? pass("state.valid", `quote is ${q.status}`) : fail("state.valid", `quote is ${q.status}`, "deny"),
+          ...(q.requisitionId ? [this.escalationRoutingRule(p, { kind: "requisition", id: q.requisitionId })] : []),
+        ];
       }
       case "hold_vendor":
       case "block_vendor":
@@ -892,6 +897,8 @@ export class Engine {
     r.push(esc.status === "awaiting_decision" ? pass("escalation.delivered", "awaiting decision") : fail("escalation.delivered", `escalation is ${esc.status}`, "deny"));
     const opt = esc.options.find((o) => o.id === params.optionId);
     r.push(opt ? pass("state.valid", `option ${opt.label}`) : fail("state.valid", `no option ${params.optionId}`, "deny"));
+    const lastChoice = esc.history?.at(-1)?.optionId;
+    if (opt && lastChoice === opt.id) r.push(fail("escalation.repeat", `"${opt.label}" was already chosen; pick a different option`, "deny"));
     if (opt) {
       // Each underlying action must itself pass policy for this human authority.
       for (const sub of opt.actions) {
@@ -1181,7 +1188,8 @@ export class Engine {
         const inv = this.invoices.get(a.params.invoiceId)!;
         inv.status = "rejected";
         const atRisk = inv.flags.length ? inv.total - (inv.flags.includes("price_over_po") ? this.fairValue(inv) : 0) : 0;
-        if (inv.flags.length) this.prevent({ kind: "invoice", id: inv.id }, inv.flags[0] as FlagCode, atRisk, a.params.reason);
+        // No purchase order means no obligation: rejecting it isn't "money saved".
+        if (inv.flags.length && inv.poId && this.pos.has(inv.poId)) this.prevent({ kind: "invoice", id: inv.id }, inv.flags[0] as FlagCode, atRisk, a.params.reason);
         this.supersedeEscalations({ kind: "invoice", id: inv.id }, p.actorId);
         this.emit("invoice_rejected", { invoice: inv, reason: a.params.reason });
         break;

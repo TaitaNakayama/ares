@@ -11,6 +11,8 @@ const cents = z.number().int().nonnegative();
 const actionEnum = z.enum(ACTION_TYPES as [ActionType, ...ActionType[]]);
 const roleEnum = z.enum(["requester", "receiver", "ap", "treasury", "controller", "local_authority", "remote_authority", "system"]);
 
+const HUMAN_ONLY: ActionType[] = ["decide", "answer_verification", "release_vendor"];
+
 /** No single role may hold two of these duties (segregation of duties). */
 const INCOMPATIBLE: [string, ActionType[], ActionType[]][] = [
   ["approve and pay", ["approve_requisition", "approve_invoice"], ["schedule_payment", "execute_payment"]],
@@ -28,7 +30,7 @@ export const policySchema = z.object({
   permissions: z.record(roleEnum, z.array(actionEnum)),
   approval: z.object({
     /** Largest order or invoice the controller agent may approve on its own. */
-    agentMaxCents: cents,
+    agentMaxCents: cents.max(1e14),
     /** Emergency spending limit of the on-site human authority. */
     localAuthorityMaxCents: cents,
     /** Limit of the remote human authority (e.g. CFO). */
@@ -38,7 +40,8 @@ export const policySchema = z.object({
   }),
   match: z.object({
     /** Billed unit price may exceed the PO price by at most this percent. */
-    priceTolerancePct: z.number().nonnegative(),
+    // Bounded: an unbounded tolerance would lift the payment cap along with the match.
+    priceTolerancePct: z.number().nonnegative().max(10),
     /** Pay only for quantity actually received and accepted (short-pay the rest). */
     payReceivedQtyOnly: z.boolean(),
   }),
@@ -54,9 +57,9 @@ export const policySchema = z.object({
   }),
   priceAnomaly: z.object({
     /** Robust z-score (log price vs vendor/item history) above which a price is anomalous. */
-    zThreshold: z.number().positive(),
+    zThreshold: z.number().min(0.5).max(50),
     /** Also anomalous if price / historical median exceeds this ratio. */
-    ratioThreshold: z.number().positive(),
+    ratioThreshold: z.number().min(1.01).max(20),
     /** Need at least this many past prices to judge. */
     minHistory: z.number().int().nonnegative(),
   }),
@@ -64,7 +67,7 @@ export const policySchema = z.object({
   materialityCents: cents,
   treasury: z.object({
     /** Cash after any commitment must cover this many days of spending. */
-    minRunwayDays: z.number().nonnegative(),
+    minRunwayDays: z.number().nonnegative().max(3650),
   }),
   /** Segregation of duties is not optional: these must stay true. */
   sod: z.object({
@@ -75,6 +78,12 @@ export const policySchema = z.object({
   }),
 }).superRefine((p, ctx) => {
   for (const [role, actions] of Object.entries(p.permissions)) {
+    // Human-only powers: deciding escalations, answering out-of-band checks, releasing a locked supplier.
+    if (role !== "local_authority" && role !== "remote_authority") {
+      for (const x of HUMAN_ONLY) {
+        if (actions.includes(x)) ctx.addIssue({ code: "custom", path: ["permissions", role], message: `${x} is reserved for human authorities, not ${role}` });
+      }
+    }
     for (const [what, a, b] of INCOMPATIBLE) {
       if (actions.some((x) => a.includes(x)) && actions.some((x) => b.includes(x))) {
         ctx.addIssue({ code: "custom", path: ["permissions", role], message: `role ${role} cannot both ${what} (segregation of duties)` });

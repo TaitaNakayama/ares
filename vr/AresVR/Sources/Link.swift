@@ -70,14 +70,22 @@ final class Link: NSObject, @unchecked Sendable {
     candidates = Self.loadCandidates()
   }
 
+  /// Per-machine token from scripts/build-ios.sh; the server refuses headsets without it.
+  static let token: String = {
+    guard let url = Bundle.main.url(forResource: "ares", withExtension: "json"), let data = try? Data(contentsOf: url),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+    return obj["token"] as? String ?? ""
+  }()
+
   static func loadCandidates() -> [String] {
-    if let url = Bundle.main.url(forResource: "Resources/ares", withExtension: "json") ?? Bundle.main.url(forResource: "ares", withExtension: "json"),
+    var list: [String] = ["ws://172.20.10.2:8787/?client=vr"]
+    if let url = Bundle.main.url(forResource: "ares", withExtension: "json"),
        let data = try? Data(contentsOf: url),
        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let list = obj["servers"] as? [String], !list.isEmpty {
-      return list
+       let l = obj["servers"] as? [String], !l.isEmpty {
+      list = l
     }
-    return ["ws://172.20.10.2:8787/?client=vr"]
+    return list.map { $0.contains("t=") ? $0 : $0 + "&t=" + token }
   }
 
   func start() {
@@ -264,7 +272,7 @@ final class Link: NSObject, @unchecked Sendable {
     guard let ws = current, var comps = URLComponents(url: ws, resolvingAgainstBaseURL: false) else { return }
     comps.scheme = ws.scheme == "wss" ? "https" : "http"
     comps.path = "/api/record/frame"
-    comps.query = nil
+    comps.query = "t=\(Self.token)"
     guard let url = comps.url else { return }
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
@@ -277,7 +285,7 @@ final class Link: NSObject, @unchecked Sendable {
     guard let ws = current, var comps = URLComponents(url: ws, resolvingAgainstBaseURL: false) else { return }
     comps.scheme = ws.scheme == "wss" ? "https" : "http"
     comps.path = "/api/capture"
-    comps.query = info.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+    comps.query = (info.map { "\($0.key)=\($0.value)" } + ["t=\(Self.token)"]).joined(separator: "&")
     guard let url = comps.url else { return }
     var req = URLRequest(url: url)
     req.httpMethod = "POST"

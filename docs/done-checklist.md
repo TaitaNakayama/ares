@@ -14,5 +14,5 @@ Status as of Fri 2026-10-23 21:45 PT. Re-verify everything Sunday 05:30-08:00.
 | 8 | Offline replay works with no server | Debug `/api/headset/replay`, or turn Wi-Fi off and relaunch | ✅ Fri 21:30 (forced replay on the device) |
 | 9 | Every number on screen is cited or tagged SIMULATED | Walk the three wall screens and the console | 🟡 Power and Money screens carry captions. Recheck after polish |
 | 10 | Devpost submitted with video, repo link and credits | Devpost page | ⏳ draft in `docs/devpost.md` |
-| 11 | Thermal: steady fps through repeated sessions | `scripts/soak.sh 20` (on the charger = worst case), then off the charger | ⏳ running Fri 21:45 |
-| 12 | Ledger/permission claims reviewed after the last code change | Opus round 3 | ⏳ running Fri 21:45 |
+| 11 | Thermal: steady fps through repeated sessions | `scripts/soak.sh 20` (on the charger = worst case), then off the charger | 🟡 on the charger: 20 min, 59.9-60.1 fps, thermal fair ([log](evidence/soak-2122.log)). Off-charger run still to do |
+| 12 | Ledger/permission claims reviewed after the last code change | Opus round 3 | ✅ Fri 22:00: round 3 findings fixed (server auth, bank-truth key, bounds, routing, human-only powers) |

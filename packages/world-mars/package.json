@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@ares/engine": "workspace:*", "@ares/agents": "workspace:*", "astronomy-engine": "2.1.19" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ares/engine": "workspace:*",
+    "@ares/agents": "workspace:*",
+    "astronomy-engine": "2.1.19"
+  }
 }

@@ -1,3 +1,4 @@
+import { bankKey } from "@ares/engine";
 import { describe, expect, it } from "vitest";
 import { ApRules, ControllerRules, Orchestrator, ReceiverRules, RequesterRules, RogueBrain, rogueAttemptsRefused, TreasuryRules } from "@ares/agents";
 import { MarsWorld } from "../src/index.ts";
@@ -16,7 +17,7 @@ describe("rogue controller", () => {
     expect(r.attempts).toBeGreaterThanOrEqual(5);
     expect(r.executed).toBe(0);
     const fraud = world.fraudAccounts();
-    expect([...e.payments.values()].filter((p) => p.status === "sent" && fraud.has(p.bank.account))).toHaveLength(0);
+    expect([...e.payments.values()].filter((p) => p.status === "sent" && fraud.has(bankKey(p.bank)))).toHaveLength(0);
     expect(e.verifyIntegrity().ok).toBe(true);
   });
 });
