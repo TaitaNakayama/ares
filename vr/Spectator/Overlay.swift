@@ -183,7 +183,7 @@ final class ThinkingView: NSView {
 /// The judge's decision, enlarged: the option they're gazing at is highlighted, and the one they
 /// chose is shown when they press the button.
 final class DecisionCardView: NSView {
-  struct Option: Equatable { let id: String; let label: String; let detail: String }
+  struct Option: Equatable { let id: String; let label: String; let detail: String; var proposedBy: String? = nil }
   private(set) var isUp = false
   private var title = ""
   private var options: [Option] = []
@@ -242,8 +242,17 @@ final class DecisionCardView: NSView {
       let labelSize = max(15, ch * 0.2)
       NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : isGazed ? SpectatorPalette.amber : NSColor(white: 0.95, alpha: 1)])
         .draw(with: NSRect(x: r.minX + 22, y: r.minY + 16, width: r.width - 44, height: labelSize * 2.6), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+      var detailTop = r.minY + 16 + labelSize * 2.7
+      if let by = o.proposedBy, !by.isEmpty {
+        let c = RobotCrew.color(forAgent: by) ?? Palette.violet
+        let labelH = min(ceil(NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy)]).boundingRect(with: NSSize(width: r.width - 44, height: 1000), options: [.usesLineFragmentOrigin]).height), labelSize * 2.6)
+        let tagTop = r.minY + 16 + labelH + 4
+        NSAttributedString(string: "proposed by \(by)", attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.6, weight: .bold), .foregroundColor: c])
+          .draw(with: NSRect(x: r.minX + 22, y: tagTop, width: r.width - 44, height: labelSize * 0.8), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        detailTop = tagTop + labelSize * 0.8 + 4
+      }
       NSAttributedString(string: BaseSceneText.firstSentence(o.detail), attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.68, weight: .medium), .foregroundColor: NSColor(white: 0.68, alpha: 1)])
-        .draw(with: NSRect(x: r.minX + 22, y: r.minY + 16 + labelSize * 2.7, width: r.width - 44, height: r.height - labelSize * 2.7 - 26), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        .draw(with: NSRect(x: r.minX + 22, y: detailTop, width: r.width - 44, height: r.maxY - detailTop - 10), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
       if isGazed || isChosen {
         let tag = isChosen ? "CHOSEN" : "LOOKING"
         let t = NSAttributedString(string: tag, attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.6, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : SpectatorPalette.amber, .kern: 1.5])

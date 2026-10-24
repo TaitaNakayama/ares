@@ -6,7 +6,7 @@ struct VRState: Decodable {
   struct Power: Decodable { var socPct: Double?; var solarKWhPerSol: Double?; var loadKWhPerSol: Double?; var solsLeft: Double?; var drillOn: Bool? }
   struct Payment: Decodable { var id: String; var vendor: String?; var amountText: String? }
   struct Money: Decodable { var cashText: String?; var runwayDays: Int?; var committedText: String?; var savedText: String?; var payments: [Payment]? }
-  struct Option: Decodable { var id: String; var label: String; var detail: String? }
+  struct Option: Decodable { var id: String; var label: String; var detail: String?; var proposedBy: String? }
   struct Waiting: Decodable { var id: String; var reason: String?; var decideByText: String?; var options: [Option] }
   struct Earth: Decodable { var id: String; var vendor: String?; var replyEtaText: String?; var replyInMin: Int? }
   struct Robot: Decodable { var name: String?; var text: String?; var short: String?; var mood: String?; var outcome: String?; var seq: Int? }
