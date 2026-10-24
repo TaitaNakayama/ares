@@ -168,6 +168,9 @@ describe("controls", () => {
     e.advanceTo(esc.deliverAt);
     expect(esc.status).toBe("awaiting_decision");
     const buy = esc.options.find((o) => o.id.startsWith("buy-"))!;
+    // Delivered, but the reply can't be back on site for another light time.
+    expect(e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: buy.id } }).decision.verdict).toBe("deny");
+    e.advanceTo(esc.deliverAt + e.remoteLatencyMs);
     expect(e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: buy.id } }).decision.verdict).toBe("allow");
     expect(e.pos.size).toBe(1);
   });

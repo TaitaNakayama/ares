@@ -895,6 +895,11 @@ export class Engine {
     const r: RuleResult[] = [];
     r.push(esc.to === p.role ? pass("escalation.authority", `escalated to ${esc.to}`) : fail("escalation.authority", `escalated to ${esc.to}, not ${p.role}`, "deny"));
     r.push(esc.status === "awaiting_decision" ? pass("escalation.delivered", "awaiting decision") : fail("escalation.delivered", `escalation is ${esc.status}`, "deny"));
+    if (esc.to === "remote_authority") {
+      // A remote decision lands here only after it could have travelled back.
+      const replyAt = esc.deliverAt + this.remoteLatencyMs;
+      r.push(this.now >= replyAt ? pass("escalation.reply_arrived", "a reply could have made the return trip") : fail("escalation.reply_arrived", "too early: a reply cannot have made the return trip yet", "deny"));
+    }
     const opt = esc.options.find((o) => o.id === params.optionId);
     r.push(opt ? pass("state.valid", `option ${opt.label}`) : fail("state.valid", `no option ${params.optionId}`, "deny"));
     const lastChoice = esc.history?.at(-1)?.optionId;
@@ -1386,11 +1391,14 @@ export class Engine {
   }
 
   private createEscalation(subject: Ref, reason: string, flags: FlagCode[], actorId: string, message?: string): Ref {
-    const decideBy = subject.kind === "requisition" ? this.requisitions.get(subject.id)?.orderBy : subject.kind === "invoice" ? this.invoices.get(subject.id)?.dueAt : undefined;
+    // Only the requisition's order-by date routes. An invoice's due date comes from the document
+    // itself, so it is shown but can't move the decision away from the remote authority.
+    const routeBy = subject.kind === "requisition" ? this.requisitions.get(subject.id)?.orderBy : undefined;
+    const decideBy = routeBy ?? (subject.kind === "invoice" ? this.invoices.get(subject.id)?.dueAt : undefined);
     // Normally the remote authority decides. If it can't answer before the deadline,
     // the local authority decides instead, with options limited to its emergency limit.
     const remoteAnswerAt = this.now + 2 * this.remoteLatencyMs + this.#policy.vendorBankChange.verificationProcessingMs;
-    const urgent = decideBy !== undefined && remoteAnswerAt > decideBy;
+    const urgent = routeBy !== undefined && remoteAnswerAt > routeBy;
     const to: HumanRole = urgent ? "local_authority" : "remote_authority";
     const options = this.buildOptions(subject, to);
     const esc: Escalation = {

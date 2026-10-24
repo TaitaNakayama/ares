@@ -222,7 +222,7 @@ describe("R3-E6 [low] 'wait' can be chosen any number of times; each choice is a
 describe("R3-E7 [low] a remote decision takes effect the instant the escalation is delivered (no return-trip latency)", () => {
   // answer_verification requires sentAt + 2 x latency (L2 fix); decide has no equivalent, so a decision
   // "from Earth" changes Mars-side state one light-time early. Via the server, any caller can do this as the CFO.
-  it.fails("invariant: a remote authority's decision cannot land before a reply could physically arrive", () => {
+  it("invariant: a remote authority's decision cannot land before a reply could physically arrive", () => {
     const { e, esc, quoteId } = escalatedToCfo();
     expect(e.now).toBe(esc.deliverAt);
     const r = e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: `buy-${quoteId}` } });
@@ -269,7 +269,7 @@ describe("R3-E8 [low] a late receipt strands a submitted (or escalated) invoice:
 describe("R3-E9 [low] an invoice's own dueAt decides which human gets the escalation", () => {
   // decideBy = inv.dueAt, taken from the document. A past due date makes the CFO "too far away", so the
   // on-site authority (lower limit, less context) decides instead. The LLM reader sets dueAt.
-  it.fails("invariant: a document can't move its own escalation away from the remote authority", () => {
+  it("invariant: a document can't move its own escalation away from the remote authority", () => {
     const e = makeEngine();
     const { reqId, quoteIds } = requisitionWithQuotes(e, "BAT", 5, [{ vendorId: "V-A", unitPrice: 80_000, qtyAvailable: 40, bank: bankA }]);
     const poId = e.submit({ actorId: "ctl", type: "approve_requisition", params: { requisitionId: reqId, quoteId: quoteIds[0] } }).created!.id; // 4,000.00

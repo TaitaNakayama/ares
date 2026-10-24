@@ -212,6 +212,7 @@ export const RULE_LABELS: Record<string, string> = {
   "state.valid": "Record exists and is in the right state",
   "escalation.authority": "Decision made by the authority it was escalated to",
   "escalation.delivered": "Escalation has reached its recipient",
+  "escalation.reply_arrived": "A remote decision could have made the return trip",
   "escalation.routing": "Escalated items are decided only by their target authority",
   "payment.po_cap": "Total paid on an order stays within the order total",
   "payment.prepay_settled": "No prepayment in flight on this order",

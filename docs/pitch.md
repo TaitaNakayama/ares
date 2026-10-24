@@ -20,7 +20,7 @@ Setup before each judge:
 "Look at a card and press the button. These are the only options the policy allows you: buy 15 from a supplier we've verified, wait, or shut the ice drill."
 
 ## 1:40-2:00 Beat 7 and the close
-"Earth's answer just arrived, after the real light-time delay: the bank change was fake. $89 million saved. Here's the key part: the AI agents only *propose*. Deterministic code checks every action against policy before anything moves. Two independent reviewers attacked it. We fixed everything they found, and on 100 held-out scenarios it never paid a fraudster."
+"Earth's answer just arrived, after the real light-time delay: the bank change was fake. $89 million saved. Here's the key part: the AI agents only *propose*. Deterministic code checks every action against policy before anything moves. Independent reviewers attacked it three times. We fixed everything they found, and on 100 held-out scenarios it never paid a fraudster."
 
 ## Deep dives (if they stay)
 0. **Rogue agent** (console → **Rogue Rule Keeper**, then Autoplay): "Now I've replaced the Rule Keeper's brain with a malicious one. It approves the fraudster, pays without approval, and confirms the fake bank itself." The headset shows "REFUSED BY POLICY" on each attempt. "The agent's intent doesn't matter, only what the policy lets through." Turn it off afterwards.

@@ -835,6 +835,7 @@ describe("HOLDS: escalation decisions via decide()", () => {
     e.advanceTo(esc.deliverAt);
     expect(e.submit({ actorId: "loc", type: "decide", params: { escalationId: esc.id, optionId: buy.id } }).decision.verdict).toBe("deny");
     expect(e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: "no-such-option" } }).decision.verdict).toBe("deny");
+    e.advanceTo(esc.deliverAt + e.remoteLatencyMs);
     expect(e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: buy.id } }).decision.verdict).toBe("allow");
     expect(e.submit({ actorId: "rem", type: "decide", params: { escalationId: esc.id, optionId: buy.id } }).decision.verdict).toBe("deny");
     expect(e.pos.size).toBe(1);

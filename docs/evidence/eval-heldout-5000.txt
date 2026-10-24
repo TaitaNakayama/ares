@@ -23,5 +23,5 @@ Ares evaluation: seeds 5000..5099 (100 runs x 30 purchase cycles), policy "Ares 
   escalations per cycle     0.690
   median days to pay        0.0
   ledger integrity failures 0
-  proposals 40129, denied by policy 190
+  proposals 40133, denied by policy 190
   took 4.9 s

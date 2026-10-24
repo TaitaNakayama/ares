@@ -657,7 +657,7 @@ describe("HOLDS: credentials, decide and re-entry with requireCredentials on", (
     const quoteId = as("ap", "record_quote", { vendorId: "V-A", sku: "BAT", unitPrice: 80_000, qtyAvailable: 40, bank: bankA, terms: "on_receipt", validUntil: T0 + DAY, requisitionId: reqId }).created!.id;
     expect(as("ctl", "approve_requisition", { requisitionId: reqId, quoteId }).decision.verdict).toBe("escalate");
     const esc = [...e.escalations.values()][0]!;
-    e.advanceTo(esc.deliverAt);
+    e.advanceTo(esc.deliverAt + e.remoteLatencyMs);
     const buy = esc.options.find((o) => o.id.startsWith("buy-"))!;
     expect(as("rem", "decide", { escalationId: esc.id, optionId: buy.id }).decision.verdict).toBe("allow");
     expect(e.pos.size).toBe(1);
