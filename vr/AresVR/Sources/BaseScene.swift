@@ -156,11 +156,12 @@ final class BaseScene {
   private func applyState(_ st: VRState?) {
     guard let st else { return }
     if let saved = st.money?.savedText, saved != lastSaved {
-      if !lastSaved.isEmpty { savedChangedAt = now }
+      if !lastSaved.isEmpty { savedChangedAt = now; Sound.shared.play("saved", volume: 0.8) }
       lastSaved = saved
     }
     outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.setDrill(on: st.power?.drillOn ?? true)
+    Sound.shared.setStorm(tau: st.tau ?? 0.6)
     var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
       guard let robot = robots[role], let seq = r.seq else { continue }
@@ -188,13 +189,14 @@ final class BaseScene {
     }
     caption.node.removeAllActions()
     caption.node.runAction(.fadeOpacity(to: 1, duration: 0.2))
+    if deny || r.mood == "suspicious" { Sound.shared.play("alert", volume: 0.6) } else { Sound.shared.play("blip", volume: 0.5) }
   }
 
   private func setHover(_ node: SCNNode?) {
     guard node !== hovered else { return }
     if let h = hovered { SCNTransaction.begin(); SCNTransaction.animationDuration = 0.12; h.scale = SCNVector3(1, 1, 1); SCNTransaction.commit() }
     hovered = node
-    if let n = node { SCNTransaction.begin(); SCNTransaction.animationDuration = 0.12; n.scale = SCNVector3(1.07, 1.07, 1.07); SCNTransaction.commit() }
+    if let n = node { SCNTransaction.begin(); SCNTransaction.animationDuration = 0.12; n.scale = SCNVector3(1.07, 1.07, 1.07); SCNTransaction.commit(); Sound.shared.play("hover", volume: 0.5) }
     refreshCards(latest)
   }
 
@@ -214,6 +216,7 @@ final class BaseScene {
     let t = cardTargets[i]
     lastTapText = "chose: \(t.label)"
     hideUntil = now + 1.5
+    Sound.shared.play("select", volume: 0.9)
     onDecide?(t.esc, t.opt)
     showCards(false)
   }
@@ -224,6 +227,7 @@ final class BaseScene {
     if on {
       cardRoot.isHidden = false
       cardRoot.runAction(.fadeIn(duration: 0.4))
+      Sound.shared.play("saved", volume: 0.5)
     } else {
       cardRoot.runAction(.sequence([.fadeOut(duration: 0.3), .hide()]))
       setHover(nil)

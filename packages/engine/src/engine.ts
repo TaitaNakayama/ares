@@ -1440,7 +1440,8 @@ export class Engine {
           withinAuthority: qty * q.unitPrice <= limit,
         });
       }
-      opts.push({
+      // Waiting only makes sense while an out-of-band check is still outstanding.
+      if (pending.length) opts.push({
         id: "wait",
         label: "Wait for verification",
         detail: `Keep everything on hold until the out-of-band check comes back (expected in about ${Math.round((replyAt - this.now) / 60_000)} min).`,
