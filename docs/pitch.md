@@ -1,28 +1,32 @@
-# Pitch (2:00 core plus optional deep dives)
+# Pitch (about 3 min core plus optional deep dives)
+
+Total demo: part 1 outside is about 40 s (autoplay), then the control-room story is about 2-3 min.
 
 Setup before each judge:
 - Phone in the viewer, on a fresh run (console → **Reset**).
 - Console open on the Live feed.
 - Speak while they look.
 
-## 0:00-0:20 Hook (judge puts the headset on)
-"You're the commander of a Mars base. Nobody here handles money. The finance team, the bank and the suppliers are on Earth, 25 light-minutes away. Five AI agents run purchasing and payments for you. A model proposes, deterministic controls decide, and plain rules are the floor. They have to be *more* trustworthy than a person, not less."
+## 0:00-0:30 Part 1, outside (judge puts the headset on; about 30 s of speaking over the ~40 s walk)
+"You're the commander of a Mars base, standing on the real Jezero terrain. Nobody here handles money. The finance team, the bank and the suppliers are on Earth, 25 light-minutes away. Five AI agents run purchasing and payments for you. A model proposes, deterministic controls decide, and plain rules are the floor. They have to be *more* trustworthy than a person, not less."
 
-## 0:20-0:45 Beat 1 (press **Next beat**): routine
-"Cargo Keeper, the green one, just counted a delivery: 34 air filters, two short. The invoice bills 36. Bill Checker matched it against the order and the receipt and pays for 34. No human needed."
+"A cargo lander just arrived. The Cargo Keeper, the green one, counted the boxes: 34 air filters, two short. The invoice bills 36. Bill Checker matches it against the order and the receipt and pays for 34. No human needed. Walk on: the crew scientist is sampling the delta rock. Look at her and tap, and you get a real Perseverance close-up with its NASA credit. Then the Engineer at the solar field warns the storm is rising. Look at the base door and tap to go inside."
 
-## 0:45-1:20 Beats 2-5 (press **Next beat**): the storm and the fraud
-"A dust storm. Look out the window: real Jezero terrain from NASA. Solar power drops on Opportunity's real 2018 curve. The Engineer, in orange, needs 40 batteries before the cargo manifest closes."
+(Beat 1 happens here, at the pad. Part 1 runs on autoplay in about 40 s; if the judge is slower, let them. Press **Next beat** when they are inside.)
+
+## 0:30-1:20 Beats 2-5 (press **Next beat**): the storm and the fraud
+"A dust storm, the one you saw rising outside. Look out the window: real Jezero terrain from NASA. Solar power drops on Opportunity's real 2018 curve. The Engineer, in orange, needs 40 batteries before the cargo manifest closes."
 
 "Here's the trap. The usual supplier's quote is three times their price history and asks for payment to a new bank account. That's business email compromise, and it hit 74% of companies last year. Bill Checker flags both, using statistics, not the model's opinion. Rule Keeper, in purple, reasons about it, asks Earth to verify by call-back and blocks it. Earth can't answer before the deadline, so it comes to you."
 
-## 1:20-1:40 Beat 6: the judge decides
+## 1:20-1:50 Beat 6: the judge decides
 "Look at a card and press the button. Every option was checked against policy for you before it was shown, including ones the agent proposed itself: buy 15 from a supplier we've verified, wait, or shut the ice drill."
 
-## 1:40-2:00 Beat 7 and the close
+## 1:50-2:30 Beat 7 and the close
 "Earth's answer just arrived, after the real light-time delay: the bank change was fake. $89 million saved. Here's the key part: the agents only *propose*. Deterministic code checks every action against policy before anything moves, and if a model is slow or off-script, the rules answer and the proposal is labeled that way. Independent reviewers attacked the controls three times. We fixed everything they found, and on 100 held-out scenarios, with the rules brains, it never paid a fraudster."
 
 ## Deep dives (if they stay)
+A0. **Look around the room**: the control room is textured and lived-in (lockers with fictional name tapes, hydroponics, wall screens, a LOCATION screen on the real Jezero orbital map). The Mac spectator view follows the judge's position and orientation through both parts.
 A. **Ask an agent**: look at a robot, press the button. It answers live from current state. A "thinking" face shows while a model decides.
 B. **Invent an event** (console → Inject → Report, after the story): type anything, or use a preset (broken water pump, crew injury needing medicine, supplier bankruptcy). The agent routes it to the commander with a recommendation.
 C. **SAFE MODE** (console): every agent drops to the deterministic rules instantly. The story still runs.
