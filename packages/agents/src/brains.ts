@@ -13,6 +13,8 @@ export interface Intent {
   /** Headline version for small displays (VR speech bubbles): about 60 characters. */
   short?: string;
   mood?: Mood;
+  /** What actually produced this intent, recorded as the proposal's `source`. Default: rules code. */
+  via?: "rules" | "llm" | "parser";
 }
 
 export interface BrainContext {

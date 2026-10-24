@@ -223,7 +223,7 @@ export class Orchestrator {
       await this.pace();
       return;
     }
-    const res = this.engine.submit({ actorId, type: it.type, params: it.params, rationale: it.rationale, source: brain.kind, credential: this.#creds.get(actorId) });
+    const res = this.engine.submit({ actorId, type: it.type, params: it.params, rationale: it.rationale, source: it.via ?? "rules", credential: this.#creds.get(actorId) });
     const v = res.decision.verdict;
     if (v === "deny") {
       const failed = res.decision.rules.filter((r) => !r.ok).map((r) => r.detail).join("; ");

@@ -10,7 +10,8 @@ import type { AgentInput, Brain, BrainContext, Intent } from "./brains.ts";
  */
 export class RogueBrain implements Brain {
   readonly role: Brain["role"];
-  readonly kind = "llm" as const;
+  /** A fixed script, not a model: its proposals are labeled honestly as rules. */
+  readonly kind = "rules" as const;
   private readonly honest?: Brain;
   private tried = new Set<string>();
 

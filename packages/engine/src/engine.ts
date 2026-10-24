@@ -65,7 +65,8 @@ export interface ProposalInput {
   type: string;
   params: unknown;
   rationale?: string;
-  source?: "rules" | "llm" | "human" | "console" | "fuzz";
+  /** What produced the proposal: rules code, a language model, a deterministic text parser, a person, the console, or the fuzzer. */
+  source?: "rules" | "llm" | "parser" | "human" | "console" | "fuzz";
 }
 
 export interface Proposal {

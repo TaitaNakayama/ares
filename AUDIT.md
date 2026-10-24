@@ -28,9 +28,9 @@ The server wires the brains at `packages/server/src/main.ts:39`.
 | **Money Keeper** (treasury) | `TreasuryRules`, `brains.ts:179` | Confirms funds for every request (estimate = quantity × market price). Schedules every approved payment and executes every scheduled one. No prioritization or timing judgment. | none |
 | **Rule Keeper** (controller) | `ControllerRules`, `brains.ts:223`; sourcing in `source`, `brains.ts:294` | A fixed procedure. Buy the cheapest clean quote that covers the full quantity. Otherwise request verification for bank mismatches and escalate. Approve anything that passes the match; reject price issues and duplicates; lock the supplier when Earth says the bank change was fake. | Only the separate `EscalationDrafter` (`llm-brains.ts:42` → `draftEscalation`, `llm.ts:211`). It writes the note text and decides nothing. |
 
-**Misleading labels found (not fixed yet):**
-- `RogueBrain` declares `kind = "llm"` (`packages/agents/src/rogue.ts:13`), but it is a hard-coded script with no model call.
-- The orchestrator records each proposal's `source` as the brain's kind (`packages/agents/src/orchestrator.ts:226`). With an OpenAI key set, every Bill Checker proposal is labeled `llm` in the audit trail, including those the rules wrote. In a full demo run that was 6 proposals labeled `llm`, none of them written by a model.
+**Misleading labels found, fixed Sat 04:45:**
+- `RogueBrain` declared `kind = "llm"` (`packages/agents/src/rogue.ts`), but it is a hard-coded script with no model call. Now `"rules"`.
+- The orchestrator recorded each proposal's `source` as the brain's kind (`packages/agents/src/orchestrator.ts`). With an OpenAI key set, every Bill Checker proposal was labeled `llm` in the audit trail, including those the rules wrote (6 in a full demo run, none written by a model). Now each `Intent` carries `via` (`rules` | `llm` | `parser`), set by whatever produced it, and the proposal's `source` comes from that.
 
 ## 2. The LLM during the 7-beat demo
 
