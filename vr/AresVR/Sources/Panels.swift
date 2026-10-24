@@ -22,15 +22,28 @@ final class TextPanel {
     node = SCNNode(geometry: plane)
   }
 
+  /// Panels render off the render thread; the newest request wins.
+  private static let queue = DispatchQueue(label: "ares.panels", qos: .userInitiated)
+  private var generation = 0
+
   /// `draw` paints into a context sized `pixelSize` (origin top-left). `key` decides redraws.
-  func update(key: String, _ draw: (CGContext, CGSize) -> Void) {
+  /// Drawing happens on a background queue so the headset never drops a frame for text.
+  func update(key: String, _ draw: @escaping (CGContext, CGSize) -> Void) {
     guard key != lastKey else { return }
     lastKey = key
-    let fmt = UIGraphicsImageRendererFormat()
-    fmt.scale = 1
-    fmt.opaque = true
-    let img = UIGraphicsImageRenderer(size: pixelSize, format: fmt).image { ctx in draw(ctx.cgContext, pixelSize) }
-    material.diffuse.contents = img
+    generation += 1
+    let gen = generation
+    let size = pixelSize
+    Self.queue.async { [weak self] in
+      let fmt = UIGraphicsImageRendererFormat()
+      fmt.scale = 1
+      fmt.opaque = true
+      let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in draw(ctx.cgContext, size) }
+      DispatchQueue.main.async {
+        guard let self, gen == self.generation else { return }
+        self.material.diffuse.contents = img
+      }
+    }
   }
 }
 

@@ -16,6 +16,7 @@ final class Outside {
   private let beacon = SCNNode()
   private let dust = SCNParticleSystem()
   private var lastSkyKey = ""
+  private var skyBusy = false
   private(set) var drillOn = true
   /// World rotation that puts compass azimuth `viewAzimuth` straight ahead (-Z).
   static let viewAzimuth: Float = 305
@@ -283,9 +284,19 @@ final class Outside {
     dust.birthRate = CGFloat(max(0, (tau - 1.2)) * 120)
 
     let key = "\(Int(tau * 10))|\(Int(sunAzimuth / 4))|\(Int(sunElevation / 2))"
-    if key != lastSkyKey {
+    if key != lastSkyKey && !skyBusy {
       lastSkyKey = key
-      scene?.background.contents = makeSky(tau: tau, sunWorld: sunWorld, sunElev: Float(sunElevation))
+      skyBusy = true
+      let elev = Float(sunElevation)
+      // The cube map is computed off the render thread, then swapped in.
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self else { return }
+        let faces = self.makeSky(tau: tau, sunWorld: sunWorld, sunElev: elev)
+        DispatchQueue.main.async {
+          self.scene?.background.contents = faces
+          self.skyBusy = false
+        }
+      }
     }
   }
 }

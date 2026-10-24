@@ -29,7 +29,7 @@ struct VRState: Decodable {
 /// reconnects forever, and retries the first connection (iOS may deny it while
 /// showing the Local Network prompt).
 final class Link: NSObject, @unchecked Sendable {
-  enum Status: Equatable { case connecting(String), connected(String), offline }
+  enum Status: Equatable { case connecting(String), connected(String), offline, replay }
   private(set) var status: Status = .connecting("")
   private(set) var state: VRState?
   private(set) var stateVersion = 0
@@ -42,6 +42,15 @@ final class Link: NSObject, @unchecked Sendable {
   private var index = 0
   private var current: URL?
   private let lock = NSLock()
+  private var everConnected = false
+  // Offline replay (bundled tape recorded from the live server).
+  private struct Frame { let t: Double; let state: VRState }
+  private var tapePrefix: [Frame] = []
+  private var tapeBranches: [String: [Frame]] = [:]
+  private var replayStart = Date()
+  private var branch: [Frame]?
+  private var branchStart = Date()
+  private var replayTimer: Timer?
 
   init(world: BaseScene) {
     self.world = world
@@ -63,7 +72,58 @@ final class Link: NSObject, @unchecked Sendable {
     return ["ws://172.20.10.2:8787/?client=vr"]
   }
 
-  func start() { connectNext() }
+  func start() {
+    connectNext()
+    // No server after 12 s: play the bundled tape, keep trying the network in the background.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+      guard let self, !self.everConnected else { return }
+      self.enterReplay()
+    }
+  }
+
+  var isReplay: Bool { replayTimer != nil }
+
+  private func enterReplay() {
+    guard replayTimer == nil, loadTape() else { return }
+    replayStart = Date()
+    branch = nil
+    replayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.replayTick() }
+  }
+
+  private func exitReplay() {
+    replayTimer?.invalidate()
+    replayTimer = nil
+  }
+
+  private func loadTape() -> Bool {
+    if !tapePrefix.isEmpty { return true }
+    guard let url = Bundle.main.url(forResource: "tape", withExtension: "json"), let data = try? Data(contentsOf: url),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+    func frames(_ any: Any?) -> [Frame] {
+      (any as? [[String: Any]] ?? []).compactMap { f in
+        guard let t = f["t"] as? Double, let st = f["state"], let d = try? JSONSerialization.data(withJSONObject: st), let v = try? JSONDecoder().decode(VRState.self, from: d) else { return nil }
+        return Frame(t: t / 1000, state: v)
+      }
+    }
+    tapePrefix = frames(obj["prefix"])
+    for (k, v) in obj["branches"] as? [String: Any] ?? [:] { tapeBranches[k] = frames(v) }
+    return !tapePrefix.isEmpty
+  }
+
+  private func replayTick() {
+    let frames: [Frame]
+    let t: Double
+    if let b = branch { frames = b; t = Date().timeIntervalSince(branchStart) } else { frames = tapePrefix; t = Date().timeIntervalSince(replayStart) }
+    // Hold the last frame; after a finished branch, restart the story after 40 s.
+    if branch != nil, t > (frames.last?.t ?? 0) + 40 { branch = nil; replayStart = Date(); return }
+    guard let f = frames.last(where: { $0.t <= t }) ?? frames.first else { return }
+    lock.lock()
+    state = f.state
+    stateVersion += 1
+    status = .replay
+    lock.unlock()
+  }
+
 
   private func connectNext() {
     guard !candidates.isEmpty else { return }
@@ -117,6 +177,8 @@ final class Link: NSObject, @unchecked Sendable {
   }
 
   private func handle(_ s: String) {
+    everConnected = true
+    if isReplay { DispatchQueue.main.async { self.exitReplay() } }
     if case .connecting = status, let t = task {
       setStatus(.connected(current?.host ?? ""))
       keepAlive(t)
@@ -156,6 +218,13 @@ final class Link: NSObject, @unchecked Sendable {
   }
 
   func decide(escalationId: String, optionId: String) {
+    if isReplay {
+      if let b = tapeBranches[optionId] ?? tapeBranches.first(where: { $0.key.hasPrefix(String(optionId.prefix(4))) })?.value {
+        branch = b
+        branchStart = Date()
+      }
+      return
+    }
     let msg = ["type": "decide", "escalationId": escalationId, "optionId": optionId]
     guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
     task?.send(.string(s)) { _ in }
@@ -176,7 +245,7 @@ final class Link: NSObject, @unchecked Sendable {
 
   private func setStatus(_ s: Status) {
     lock.lock()
-    status = s
+    if replayTimer == nil || s != .offline { if !(replayTimer != nil && { if case .connecting = s { return true } else { return false } }()) { status = s } }
     lock.unlock()
   }
 
@@ -185,6 +254,7 @@ final class Link: NSObject, @unchecked Sendable {
     case .connecting(let h): return "Connecting \(h)…"
     case .connected(let h): return "Live · \(h)"
     case .offline: return "Offline · retrying"
+    case .replay: return "Offline replay (recorded run)"
     }
   }
 }

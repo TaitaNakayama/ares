@@ -1,1 +1,11 @@
-{ "name": "@ares/scripts", "private": true, "type": "module", "dependencies": { "@ares/engine": "workspace:*", "@ares/agents": "workspace:*", "@ares/world-mars": "workspace:*" } }
+{
+ "name": "@ares/scripts",
+ "private": true,
+ "type": "module",
+ "dependencies": {
+  "@ares/engine": "workspace:*",
+  "@ares/agents": "workspace:*",
+  "@ares/world-mars": "workspace:*",
+  "ws": "8.22.0"
+ }
+}
