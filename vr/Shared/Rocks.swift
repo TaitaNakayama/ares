@@ -110,7 +110,7 @@ enum RockField {
       rock.simdEulerAngles = SIMD3(Float(rng.unit()) * 0.3 - 0.15, Float(rng.unit()) * 2 * .pi, Float(rng.unit()) * 0.3 - 0.15)
       rock.simdScale = SIMD3(s, s * Float(0.8 + 0.4 * rng.unit()), s * Float(0.8 + 0.4 * rng.unit()))
       holder.addChildNode(rock)
-      shadows.append(Blob.Item(center: p, rx: 1.5 * s, rz: 1.35 * s, yaw: Float(rng.unit()) * .pi))
+      shadows.append(Blob.Item(center: p, rx: 2.0 * s, rz: 1.8 * s, yaw: Float(rng.unit()) * .pi))
       placed += 1
     }
     let merged = holder.flattenedClone()
@@ -210,10 +210,36 @@ enum DetailTexture {
 /// Soft dark blob shadows hugging the ground: ONE shared decal (the radial `discShadow`) for every prop and rock.
 /// Contact blobs are batched into a single mesh; long low-sun shadows are stretched ellipses of the same decal.
 enum Blob {
+  /// Soft round shadow, 128 px: dark regolith brown, opaque core, long smooth falloff.
+  static let image: PlatformImage = Bitmap.image(size: CGSize(width: 128, height: 128), scale: 1, opaque: false) { ctx in
+    let cols = [PlatformColor(red: 0.04, green: 0.025, blue: 0.018, alpha: 0.95).cgColor, PlatformColor(red: 0.04, green: 0.025, blue: 0.018, alpha: 0.7).cgColor, PlatformColor(red: 0.04, green: 0.025, blue: 0.018, alpha: 0.0).cgColor] as CFArray
+    let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cols, locations: [0, 0.55, 1])!
+    ctx.drawRadialGradient(g, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 64, options: [])
+  }
+
+  /// Long-shadow decal, 256 x 64: darkest at the prop's end (u = 0), fading to nothing along the length, soft across the width.
+  static let longImage: PlatformImage = {
+    let w = 256, h = 64
+    var px = [UInt8](repeating: 0, count: w * h * 4)
+    for y in 0..<h {
+      let v = (Double(y) + 0.5) / Double(h), e = min(1, (0.5 - abs(v - 0.5)) * 2 * 2.2), across = e * e * (3 - 2 * e)
+      for x in 0..<w {
+        let u = Double(x) / Double(w - 1)
+        let along = u < 0.45 ? 0.92 - (0.92 - 0.55) * (u / 0.45) : 0.55 * max(0, 1 - (u - 0.45) / 0.55)
+        let a = along * across
+        let i = (y * w + x) * 4
+        px[i] = UInt8(10 * a); px[i + 1] = UInt8(6 * a); px[i + 2] = UInt8(5 * a); px[i + 3] = UInt8(255 * a)
+      }
+    }
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    let cg = px.withUnsafeMutableBytes { p in CGContext(data: p.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage() }
+    return cg.map { PlatformImage(cgImage: $0) } ?? Bitmap.image(size: CGSize(width: 4, height: 4)) { _ in }
+  }()
+
   static let material: SCNMaterial = {
     let m = SCNMaterial()
     m.lightingModel = .constant
-    m.diffuse.contents = Tex.discShadow()
+    m.diffuse.contents = image
     m.diffuse.mipFilter = .linear
     m.diffuse.wrapS = .clamp
     m.diffuse.wrapT = .clamp

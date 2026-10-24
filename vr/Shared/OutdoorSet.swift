@@ -30,7 +30,7 @@ final class OutdoorSet {
   /// Stretched blob shadows for the big props, turned away from the sun (rebuilt when the sun moves a couple of degrees).
   private var longShadows: [(node: SCNNode, base: SIMD2<Float>, height: Float, half: Float)] = []
   private var shadowKey = ""
-  private let longShadowMat: SCNMaterial = { let m = Blob.material.copy() as! SCNMaterial; return m }()
+  private let longShadowMat: SCNMaterial = { let m = Blob.material.copy() as! SCNMaterial; m.diffuse.contents = Blob.longImage; return m }()
   private var h: (Float, Float) -> Float { { [weak self] x, z in self?.outside?.groundY(x, z) ?? 0.4 } }
   private var hOpt: (Float, Float) -> Float? { { [weak self] x, z in self?.outside?.height(x, z) } }
 
@@ -822,7 +822,7 @@ final class OutdoorSet {
 
   /// The sun moved (or the storm dimmed it): turn every long shadow away from it and stretch it with the low sun.
   func setSun(dir: SIMD3<Float>, elevation: Float, strength: Float) {
-    longShadowMat.transparency = CGFloat(0.25 + 0.6 * min(1, max(0, strength)))
+    longShadowMat.transparency = CGFloat(0.5 + 0.5 * min(1, max(0, strength)))
     let flat = SIMD2(dir.x, dir.z)
     guard simd_length(flat) > 0.01 else { return }
     let away = simd_normalize(-flat)
