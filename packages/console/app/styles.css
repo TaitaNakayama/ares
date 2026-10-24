@@ -189,3 +189,6 @@ legend { padding: 0 8px; color: var(--accent); font-weight: 700; font-size: 0.9r
 .barcell { width: 30%; } .bar { height: 12px; background: var(--panel2); border-radius: 6px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--good); } .bar i.low { background: var(--warn); }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+.json-edit.paste { min-height: 260px; font-size: 0.95rem; }
+.hchip { display: inline-block; font-size: 0.78rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; color: var(--muted); }
+.note { white-space: pre-wrap; background: #0a0f18; border-left: 3px solid var(--rules); padding: 8px 12px; margin: 8px 0; border-radius: 6px; font-size: 0.95rem; }

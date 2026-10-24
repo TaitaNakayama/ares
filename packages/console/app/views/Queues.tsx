@@ -85,6 +85,10 @@ function EscCard({ e, refresh }: { e: Escalation; refresh: () => Promise<void> }
         {e.decideBy && <span className="deadline">decide by {simTime(e.decideBy)}</span>}
       </div>
       <p className="big">{e.reason}</p>
+      {e.message && <div className="note"><span className="dim small">Note drafted for the human:</span><br />{e.message}</div>}
+      {e.history && e.history.length > 0 && (
+        <div className="row-gap small"><span className="dim">Choices so far:</span>{e.history.map((h, i) => <span key={i} className="hchip">{e.options.find((o) => o.id === h.optionId)?.label ?? h.optionId} ({h.by}, {simTime(h.at)})</span>)}</div>
+      )}
       {e.status === "in_transit" && <p className="dim">Message is in transit (delivers {simTime(e.deliverAt)}).</p>}
       {e.decision && <p className="okt">Decided: {e.options.find((o) => o.id === e.decision!.optionId)?.label ?? e.decision.optionId} by {e.decision.by}</p>}
       <div className="opts">

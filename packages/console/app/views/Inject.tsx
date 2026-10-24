@@ -9,14 +9,17 @@ type Result = { ok: boolean; text: string } | null;
 export function Inject({ state, refresh, goLive }: { state: AppState; refresh: () => Promise<void>; goLive: () => void }) {
   const s = state.snapshot;
   const [res, setRes] = useState<Result>(null);
-  const post = async (body: Record<string, unknown>) => {
+  const post = async (body: Record<string, unknown>): Promise<boolean> => {
     try {
       const r = await api<{ message: string }>("/api/inject", "POST", body);
       setRes({ ok: true, text: r.message });
+      void refresh();
+      return true;
     } catch (e) {
       setRes({ ok: false, text: (e as Error).message });
+      void refresh();
+      return false;
     }
-    void refresh();
   };
   const dollars = (v: string) => (v === "" ? undefined : Math.round(Number(v) * 100));
   const num = (v: string) => (v === "" ? undefined : Number(v));
@@ -29,6 +32,8 @@ export function Inject({ state, refresh, goLive }: { state: AppState; refresh: (
         <p className="big">Anything you inject goes through the same rules as real events. Watch the <button className="link" onClick={goLive}>Live feed</button> for the reaction, then trace what happened in the Ledger and Audit trail.</p>
         {res && <p className={res.ok ? "result ok" : "result bad"}>{res.ok ? "Injected: " : "Error: "}{res.text}. {res.ok && "Now watch the Live feed."}</p>}
       </Card>
+
+      <PasteDoc state={state} post={post} goLive={goLive} />
 
       <Form title="Invoice" onSubmit={(f) => post({ kind: "invoice", vendorId: f.vendor || undefined, poId: f.po || undefined, qty: num(f.qty), unitPrice: dollars(f.price), bank: f.bank, invoiceNo: f.no || undefined })}
         init={{ vendor: "", po: openPos.at(-1)?.id ?? "", qty: "", price: "", bank: "master", no: "" }}>
@@ -101,4 +106,25 @@ function In({ label, v, on, type }: { label: string; v: string; on: (v: string) 
 
 function Sel({ label, v, on, opts }: { label: string; v: string; on: (v: string) => void; opts: [string, string][] }) {
   return <label className="field"><span>{label}</span><select className="in" value={v} onChange={(e) => on(e.target.value)}>{opts.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>;
+}
+
+function PasteDoc({ state, post, goLive }: { state: AppState; post: (b: Record<string, unknown>) => Promise<boolean>; goLive: () => void }) {
+  const s = state.snapshot;
+  const po = s.pos.at(-1);
+  const vendor = s.vendors.find((v) => v.id === po?.vendorId) ?? s.vendors[0];
+  const line = po?.lines[0];
+  const item = s.items.find((i) => i.sku === line?.sku);
+  const example = `Hi team,\n\nPlease find our invoice no. XYZ-77812 attached. Ref ${po?.id ?? "PO-0001"}.\n\n${line?.qty ?? 36} x ${item?.name ?? "air filters"} @ ${usd(line?.unitPrice ?? 1935000)}\n\nNote our NEW banking details: Remit to: ${vendor?.name ?? "Vendor"}, Coastal Credit Union, routing 321456789, account 4455667788\n\nThanks,\n${vendor?.name ?? "Vendor"} accounts receivable`;
+  const [text, setText] = useState<string | null>(null);
+  const value = text ?? example;
+  return (
+    <Card title="Paste a document" className="span2">
+      <p className="big">The Bill Checker reads it (LLM if configured, otherwise a deterministic parser); the controls decide.</p>
+      <textarea className="json-edit paste" value={value} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+      <div className="row-gap apply">
+        <button className="btn primary" disabled={!value.trim()} onClick={async () => { const ok = await post({ kind: "text", text: value }); if (ok) goLive(); }}>Send to the Bill Checker</button>
+        <button className="btn" onClick={() => setText(null)}>Reset example</button>
+      </div>
+    </Card>
+  );
 }

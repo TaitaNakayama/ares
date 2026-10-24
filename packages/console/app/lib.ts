@@ -65,7 +65,7 @@ export interface Escalation {
   id: string; subject: Ref; to: "local_authority" | "remote_authority"; reason: string; flags: string[];
   options: EscOption[]; createdAt: number; deliverAt: number; decideBy?: number;
   status: "in_transit" | "awaiting_decision" | "decided" | "superseded";
-  decision?: { optionId: string; by: string; at: number }; message?: string;
+  decision?: { optionId: string; by: string; at: number }; history?: { optionId: string; by: string; at: number }[]; message?: string;
 }
 export interface Invoice {
   id: string; vendorId: string; vendorInvoiceNo: string; poId?: string; lines: Line[]; total: number;
