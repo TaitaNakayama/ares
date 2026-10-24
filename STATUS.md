@@ -144,7 +144,7 @@ Shared scene code (`vr/Shared/Annotations.swift`, Robots, BaseScene, Outside), s
   - Quit the headset app: the Mac spectator shows REPLAY within ~1.5 s; relaunch: LIVE again.
 - **Spectator on screen**: `scripts/build-spectator.sh`, swipe to its Space. Does it turn with your head, smoothly? Readable across a table? Is 110° too wide?
 - **Console** (reload): SAFE MODE button and mode group; Inject → Report presets; "thinking…" rows.
-- **Hotspot**: turn on your iPhone's Personal Hotspot, join the Mac to it, restart the server (`node packages/server/src/main.ts`), relaunch the headset app: it should find the Mac on 172.20.10.x within a minute (the app tries .2-.14 after the baked addresses). If it doesn't, rebuild once while the Mac is on the hotspot (`scripts/build-ios.sh` bakes the current IPs).
+- **Hotspot: passed Sat 15:05** without a rebuild: with the Mac on the phone's Personal Hotspot the headset reported `Live · 172.20.10.13` (found through the baked 172.20.10.2-14 range) at 60 fps. Repeat on the day: hotspot on, Mac joined, server started, app opened.
 - Before the demo: `scripts/start-local-llm.sh` (fresh Ollama, memory back to ~9 GB), close Chrome and other heavy apps, Mac on power.
 
 ## Cut
