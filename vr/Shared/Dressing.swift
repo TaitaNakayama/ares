@@ -150,6 +150,7 @@ enum Dressing {
     door(lit, emis)
     sideTable(lit)
     floorCables(lit)
+    ceilingDetail(lit)
     let decals = SCNNode()
     groundDecals(decals)
 
@@ -700,6 +701,99 @@ enum Dressing {
     emis.addChildNode(lamps)
   }
 
+  // ---------------------------------------------------------------- ceiling
+
+  /// Ducts and pipes crossing the ceiling, channel housings around each cove tube, two access hatches. Merged by
+  /// material with the rest of the dressing (a handful of draw calls); the panel grid and edge darkening live in the
+  /// ceiling texture. Everything keeps clear of the ring light (r 2.2) so it still reads.
+  private static func ceilingDetail(_ out: SCNNode) {
+    let H = CGFloat(Room.height)
+    let duct = solid(PlatformColor(red: 0.50, green: 0.49, blue: 0.46, alpha: 1))
+    let flange = solid(PlatformColor(red: 0.30, green: 0.29, blue: 0.28, alpha: 1))
+    let orange = solid(PlatformColor(red: 0.78, green: 0.42, blue: 0.20, alpha: 1))
+    let blue = solid(PlatformColor(red: 0.30, green: 0.40, blue: 0.50, alpha: 1))
+    let dark = solid(PlatformColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1))
+    // Duct A across the room in front of the window, duct B down the right side.
+    func ductRun(_ a: SCNNode, len: CGFloat, w: CGFloat, h: CGFloat) {
+      a.addChildNode(box(len, h, w, duct, at: SCNVector3(0, 0, 0), chamfer: 0.015))
+      var x = -len / 2 + 0.7
+      while x < len / 2 - 0.3 {
+        a.addChildNode(box(0.09, h + 0.05, w + 0.05, flange, at: SCNVector3(x, 0, 0)))
+        a.addChildNode(box(0.04, 0.12, 0.04, dark, at: SCNVector3(x + 0.5, h / 2 + 0.06, 0)))
+        x += 1.25
+      }
+    }
+    let a = SCNNode(); a.position = SCNVector3(0, H - 0.16, -2.6)
+    ductRun(a, len: 5.6, w: 0.44, h: 0.30)
+    out.addChildNode(a)
+    let b = SCNNode(); b.position = SCNVector3(2.85, H - 0.14, 0.2); b.simdEulerAngles.y = .pi / 2
+    ductRun(b, len: 5.0, w: 0.38, h: 0.26)
+    out.addChildNode(b)
+    // Pipes: a pair along the left side and one crossing under duct A.
+    func pipe(_ m: SCNMaterial, r: CGFloat, len: CGFloat, at p: SCNVector3, yaw: Float) {
+      let g = SCNCylinder(radius: r, height: len); g.radialSegmentCount = 10
+      let n = SCNNode(geometry: g)
+      n.geometry?.materials = [m]
+      n.eulerAngles = SCNVector3(0, CGFloat(yaw), CGFloat.pi / 2)
+      n.position = p
+      out.addChildNode(n)
+      // clamps
+      var t = -len / 2 + 0.6
+      while t < len / 2 - 0.2 {
+        let c = SCNNode(geometry: SCNCylinder(radius: r + 0.012, height: 0.05))
+        c.geometry?.materials = [dark]
+        c.eulerAngles = n.eulerAngles
+        let dx = CGFloat(cos(-yaw)) * t, dz = CGFloat(sin(-yaw)) * t
+        c.position = SCNVector3(p.x + dx, p.y, p.z + dz)
+        out.addChildNode(c)
+        t += 1.1
+      }
+    }
+    pipe(orange, r: 0.055, len: 5.2, at: SCNVector3(-2.75, H - 0.09, 0.1), yaw: .pi / 2)
+    pipe(blue, r: 0.04, len: 5.2, at: SCNVector3(-2.5, H - 0.075, 0.1), yaw: .pi / 2)
+    pipe(blue, r: 0.05, len: 4.6, at: SCNVector3(0, H - 0.42, -2.0), yaw: 0)
+    // Channel housings around each cove tube (rails and back plate; the tube stays visible between them).
+    for k in 0..<8 {
+      let deg = Float(k) * 45 + 22.5
+      let h = holder(deg, r: 3.3, y: Float(H) - 0.03)
+      h.addChildNode(box(1.72, 0.05, 0.03, dark, at: SCNVector3(0, 0, 0.10)))
+      h.addChildNode(box(1.72, 0.05, 0.03, dark, at: SCNVector3(0, 0, -0.10)))
+      h.addChildNode(box(1.72, 0.012, 0.24, flange, at: SCNVector3(0, 0.022, 0)))
+      for sx: CGFloat in [-0.87, 0.87] { h.addChildNode(box(0.04, 0.06, 0.23, dark, at: SCNVector3(sx, 0, 0))) }
+      out.addChildNode(h)
+    }
+    // Two access hatches with hazard frames.
+    let hatch = picture(CGSize(width: 256, height: 256)) { c in
+      c.setFillColor(PlatformColor(red: 0.34, green: 0.35, blue: 0.35, alpha: 1).cgColor)
+      c.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+      c.setFillColor(PlatformColor(red: 0.90, green: 0.72, blue: 0.12, alpha: 1).cgColor)
+      c.fill(CGRect(x: 0, y: 0, width: 256, height: 20)); c.fill(CGRect(x: 0, y: 236, width: 256, height: 20))
+      c.fill(CGRect(x: 0, y: 0, width: 20, height: 256)); c.fill(CGRect(x: 236, y: 0, width: 20, height: 256))
+      c.setFillColor(PlatformColor(white: 0.05, alpha: 1).cgColor)
+      var x: CGFloat = -256
+      while x < 256 { c.fill(CGRect(x: x, y: 0, width: 10, height: 20)); c.fill(CGRect(x: x, y: 236, width: 10, height: 20)); c.fill(CGRect(x: 0, y: x + 256, width: 20, height: 10)); c.fill(CGRect(x: 236, y: x + 256, width: 20, height: 10)); x += 24 }
+      c.setFillColor(PlatformColor(white: 0.22, alpha: 1).cgColor)
+      c.fill(CGRect(x: 36, y: 36, width: 184, height: 184))
+      c.setFillColor(PlatformColor(white: 0.6, alpha: 1).cgColor)
+      c.fill(CGRect(x: 96, y: 118, width: 64, height: 20))
+      for (bx, by) in [(CGFloat(46), CGFloat(46)), (200, 46), (46, 200), (200, 200)] { c.fillEllipse(in: CGRect(x: bx - 6, y: by - 6, width: 12, height: 12)) }
+    }
+    for (x, z, yaw) in [(CGFloat(-1.15), CGFloat(0.95), Float(0.3)), (1.25, -0.6, Float(-0.2))] {
+      let g = SCNPlane(width: 0.8, height: 0.8)
+      let n = SCNNode(geometry: g)
+      n.geometry?.materials = [hatch]
+      n.eulerAngles.x = .pi / 2
+      let hh = SCNNode()
+      hh.position = SCNVector3(x, H - 0.034, z)
+      hh.simdEulerAngles.y = yaw
+      hh.addChildNode(n)
+      out.addChildNode(hh)
+      let rim = box(0.86, 0.03, 0.86, dark, at: SCNVector3(x, H - 0.015, z))
+      rim.simdEulerAngles.y = yaw
+      out.addChildNode(rim)
+    }
+  }
+
   // ---------------------------------------------------------------- floor decals
 
   /// Contact-shadow blobs under every machine, locker, shelf, barrel and table, plus floor markings and scuffs.
@@ -722,7 +816,30 @@ enum Dressing {
       let n = SCNNode(geometry: SCNPlane(width: w * 1.25 + 0.5, height: d * 1.4 + 0.55))
       n.geometry?.materials = [blob]
       n.eulerAngles.x = -.pi / 2
-      n.position = SCNVector3(x, 0, z)
+      n.position = SCNVector3(x, 0, z + 0.12)
+      h.addChildNode(n)
+      out.addChildNode(h)
+    }
+    // Tight contact shadows hugging each footprint (visibly darker at the base, fading ~0.15 m out).
+    // (angle, radius, local x, local z, footprint width, footprint depth)
+    let feet: [(Float, Float, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+      (-92.5, 3.66, 0, 0, 0.50, 0.46), (-100.5, 3.66, 0, 0, 0.50, 0.46), // lockers
+      (-123, 3.62, 0, 0, 1.5, 0.5),    // hydroponics
+      (-142, 3.62, 0, 0, 1.25, 0.55),  // storage rack
+      (-153.5, 3.58, 0, 0, 0.62, 0.62), (-157, 3.58, 0, 0, 0.62, 0.62), // barrels
+      (-166.5, 3.62, 0, -0.04, 0.8, 0.65), // water recycler
+      (146, 3.62, 0, 0, 0.96, 0.58),       // O2 scrubber
+      (126, 3.84, 0, 0.1, 1.3, 0.3),       // pressure door sill
+      (166, 3.62, 0, 0, 1.0, 0.5),         // side table
+    ]
+    for (deg, r, x, z, fw, fd) in feet {
+      let h = holder(deg, r: r, y: 0.010)
+      let fade: CGFloat = 0.5
+      let pw = fw + 0.06 + 2 * fade, pd = fd + 0.06 + 2 * fade
+      let n = SCNNode(geometry: SCNPlane(width: pw, height: pd))
+      n.geometry?.materials = [Tex.decalMaterial(Tex.contact(fx: fade / pw, fy: fade / pd))]
+      n.eulerAngles.x = -.pi / 2
+      n.position = SCNVector3(x, 0, z + 0.12)
       h.addChildNode(n)
       out.addChildNode(h)
     }
