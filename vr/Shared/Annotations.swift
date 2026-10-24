@@ -256,3 +256,15 @@ enum Consequence: Hashable {
     return s
   }
 }
+
+/// Outdoor sizing: the judge stands 5 to 30 m from the speakers (3 m indoors), so tags and bubbles are drawn larger.
+/// The scale is applied about the edge that must stay put (the tail edge of a bubble, the lower edge of a tag), so a bigger
+/// bubble grows away from its speaker instead of over it. Indoor labels never call this.
+extension SpeechBubble {
+  /// `tailLeft`: the speaker is to the bubble's left (the tail edge stays fixed there).
+  func enlarge(_ k: CGFloat, tailLeft: Bool) {
+    node.scale = SCNVector3(k, k, k)
+    let dx = (Self.w / 2) * (1 - 1 / k) * (tailLeft ? -1 : 1)
+    node.pivot = SCNMatrix4MakeTranslation(dx, -(Self.h / 2) * (1 - 1 / k), 0)
+  }
+}

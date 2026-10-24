@@ -55,11 +55,20 @@ final class OutdoorDirector {
       scene.rootNode.addChildNode(r.node)
       scene.rootNode.addChildNode(r.bubble.node)
       outdoorRobots[role] = r
+      // Outdoors the judge is 5 to 30 m away: tags and bubbles are 2.5x their indoor size (the robot puts its bubble to the
+      // right when it stands at x < 0, so the tail is then on the left).
+      r.node.childNode(withName: "nametag", recursively: true).map { tag in
+        tag.scale = SCNVector3(Self.labelScale, Self.labelScale, Self.labelScale)
+        tag.pivot = SCNMatrix4MakeTranslation(0, -(0.17 / 2) * (1 - 1 / Self.labelScale), 0)
+      }
+      r.bubble.enlarge(Self.labelScale, tailLeft: p.x < 0)
     }
     closeUp.configure(nil)
     applyPartVisibility(.inside)
     appliedPart = nil
   }
+
+  static let labelScale: CGFloat = 2.5
 
   var isOutside: Bool { part == .outside }
   /// The glide is in progress (or the door sequence is running).
