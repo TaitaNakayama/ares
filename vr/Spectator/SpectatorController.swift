@@ -26,6 +26,11 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var camFovX: Float = 110
   private var smoother = OrientationSmoother()
   private var renderedQ = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+  // Where the judge stands (the walk outside): the headset's stream when live, else this scene's own walk.
+  private var targetPos = SIMD3<Float>(0, 1.6, 0)
+  private var targetYaw: Float = 0
+  private var shownPos = SIMD3<Float>(0, 1.6, 0)
+  private var shownYaw: Float = 0
   private var lastRender: TimeInterval = 0
   private var frames = 0
   private var fpsWindowStart = CACurrentMediaTime()
@@ -77,6 +82,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     cam.camera = c
     cam.simdPosition = SIMD3(0, 1.6, 0)
     world.scene.rootNode.addChildNode(cam)
+    world.attachFade(to: cam)
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
     scnView.prepare(all, completionHandler: nil)
@@ -88,6 +94,10 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     link.start()
     #if DEBUG
     scnView.onDrag = { [weak self] dx, dy in self?.mouseDrag(dx: dx, dy: dy) }
+    scnView.onClick = { [weak self] in
+      guard let self else { return }
+      if self.world.director.closeUp.isOpen { self.world.setCloseUpMirror(false) } else { self.world.openCloseUpAtHead() }
+    }
     #endif
     timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
     RunLoop.main.add(timer!, forMode: .common)
@@ -156,8 +166,15 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     camLock.unlock()
 
     // The judge's raw head pose drives the scene (hover, robots looking at them), as in the headset.
+    // Live, the head position and yaw come from the headset's stream; otherwise from this scene's own walk.
     let headQ: simd_quatf = mode == .live ? sample.q : shownQ
+    if mode == .live, let p = sample.p { world.director.externalHead = (p, sample.yaw ?? 0) } else { world.director.externalHead = nil }
     world.update(time: now - start, headView: simd_float4x4(headQ).inverse, fps: fps, link: link)
+    if mode == .live { world.setCloseUpMirror(sample.closeUp) }
+    camLock.lock()
+    targetPos = world.director.eye
+    targetYaw = world.director.yaw
+    camLock.unlock()
 
     let (st, _) = link.snapshot()
     // In the recording there's no narration stream: take each robot's newest line from the state.
@@ -229,6 +246,14 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     }
     let q = smoother.step(toward: target, dt: dt, timeConstant: tau)
     renderedQ = q
+    // Position and scene yaw follow the same way, lightly smoothed.
+    let a = Float(1 - exp(-dt / (camMode == .replay ? 0.25 : 0.10)))
+    shownPos += (targetPos - shownPos) * a
+    var dy = targetYaw - shownYaw
+    while dy > .pi { dy -= 2 * .pi }
+    while dy < -.pi { dy += 2 * .pi }
+    shownYaw += dy * a
+    let pos = shownPos, yawNow = shownYaw
     let fov = camFovX
     frames += 1
     if now - fpsWindowStart >= 1 {
@@ -237,7 +262,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       fpsWindowStart = now
     }
     camLock.unlock()
-    cam.simdOrientation = q
+    cam.simdPosition = pos
+    cam.simdOrientation = simd_quatf(angle: yawNow, axis: SIMD3(0, 1, 0)) * q
     if abs(Float(cam.camera?.fieldOfView ?? 0) - fov) > 0.1 { cam.camera?.fieldOfView = CGFloat(fov) }
   }
 
@@ -307,7 +333,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
 final class SpectatorSCNView: SCNView {
   #if DEBUG
   var onDrag: ((CGFloat, CGFloat) -> Void)?
+  var onClick: (() -> Void)?
   override func mouseDragged(with event: NSEvent) { onDrag?(event.deltaX, event.deltaY) }
+  override func mouseDown(with event: NSEvent) { onClick?() }
   #endif
   override var acceptsFirstResponder: Bool { true }
 }

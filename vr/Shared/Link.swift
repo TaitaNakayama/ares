@@ -11,6 +11,10 @@ struct VRState: Decodable {
   struct Earth: Decodable { var id: String; var vendor: String?; var replyEtaText: String?; var replyInMin: Int? }
   struct Robot: Decodable { var name: String?; var text: String?; var short: String?; var mood: String?; var outcome: String?; var seq: Int? }
   struct Sun: Decodable { var elevation: Double?; var azimuth: Double? }
+  /// The real Perseverance reference the scientist shows (all optional; the app has bundled defaults).
+  struct Science: Decodable { var scientist: String?; var instrument: String?; var sol: Double?; var target: String?; var credit: String?; var image: String?; var source: String?; var caption: String? }
+  /// Two-part demo: `part` outside/inside, `station` pad/science/solar/door (absent in old tapes = inside).
+  struct SceneInfo: Decodable { var part: String?; var station: String?; var science: Science? }
   var seed: String?
   var policyVersion: Int?
   var beat: Int?
@@ -30,6 +34,7 @@ struct VRState: Decodable {
   /// Roles whose LLM brain is deciding right now (absent in old tapes).
   var thinking: [String]?
   var agentMode: String?
+  var scene: SceneInfo?
 }
 
 /// WebSocket link to the Mac. Tries every baked server URL until one answers,
@@ -257,6 +262,18 @@ final class Link: NSObject, @unchecked Sendable {
         serverThinking = Set(v.thinking ?? [])
         lock.unlock()
       }
+    case "scene":
+      // The server's push on enter: flip the part without waiting for the next vr_state.
+      if forcedReplay { break }
+      lock.lock()
+      if var st = state, let part = obj["part"] as? String {
+        var sc = st.scene ?? VRState.SceneInfo()
+        sc.part = part
+        st.scene = sc
+        state = st
+        stateVersion += 1
+      }
+      lock.unlock()
     case "thinking":
       if let role = obj["role"] as? String {
         let on = obj["on"] as? Bool ?? false
@@ -321,11 +338,21 @@ final class Link: NSObject, @unchecked Sendable {
 
   /// The judge's head orientation for the Mac's spectator view (`vr_pose`): world-from-head rotation,
   /// the decision card under the reticle, whether cards are up, the eye's horizontal field of view.
-  func sendPose(_ q: simd_quatf, gaze: Int?, cards: Bool, fovX: Float) {
+  /// `pos` is the head position in the scene (the walk outside), `yaw` the scene yaw applied to the head
+  /// (so the spectator camera is `Rot(yaw) * q` at `pos`), `closeUp` whether the science close-up is open.
+  func sendPose(_ q: simd_quatf, gaze: Int?, cards: Bool, fovX: Float, pos: SIMD3<Float> = SIMD3(0, 1.6, 0), yaw: Float = 0, closeUp: Bool = false) {
     guard case .connected = status, let t = task else { return }
     let v = q.vector
-    let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, gaze ?? -1, cards ? "true" : "false", fovX)
+    let s = String(format: "{\"type\":\"vr_pose\",\"q\":[%.5f,%.5f,%.5f,%.5f],\"p\":[%.3f,%.3f,%.3f],\"wy\":%.4f,\"cu\":%@,\"gaze\":%ld,\"cards\":%@,\"fov\":%.1f}", v.x, v.y, v.z, v.w, pos.x, pos.y, pos.z, yaw, closeUp ? "true" : "false", gaze ?? -1, cards ? "true" : "false", fovX)
     t.send(.string(s)) { _ in }
+  }
+
+  /// The judge tapped the pressure door: the server takes the story inside (`vr_enter`).
+  func enter() {
+    guard !isReplay else { return }
+    let msg = ["type": "vr_enter"]
+    guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
+    task?.send(.string(s)) { _ in }
   }
 
   func decide(escalationId: String, optionId: String) {

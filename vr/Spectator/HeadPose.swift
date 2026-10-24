@@ -11,6 +11,10 @@ final class HeadPose: @unchecked Sendable {
     var gaze: Int?
     var cardsShown: Bool
     var fovX: Float?
+    /// The judge's head position and scene yaw (the walk outside); nil from older headset builds.
+    var p: SIMD3<Float>?
+    var yaw: Float?
+    var closeUp = false
   }
 
   private let lock = NSLock()
@@ -24,8 +28,10 @@ final class HeadPose: @unchecked Sendable {
     guard q.length > 0.5 else { return }
     let gaze = (m["gaze"] as? Int).flatMap { $0 >= 0 ? $0 : nil }
     let fov = (m["fov"] as? Double).map(Float.init)
+    var pos: SIMD3<Float>?
+    if let pa = m["p"] as? [Double], pa.count == 3 { pos = SIMD3(Float(pa[0]), Float(pa[1]), Float(pa[2])) }
     lock.lock()
-    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX)
+    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX, p: pos, yaw: (m["wy"] as? Double).map(Float.init), closeUp: m["cu"] as? Bool ?? false)
     lock.unlock()
   }
 

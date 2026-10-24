@@ -39,6 +39,14 @@ final class BaseScene {
   }
   var cardsShown: Bool { cardsVisible }
 
+  /// Part 1 (outside): the outdoor set, the walk, the scientist, the door. See Stations.swift.
+  private(set) var director: OutdoorDirector!
+  /// False while a debug spike owns `viewOffset` (GroundSpike).
+  var drivesView = true
+  /// "scientist" or "door" while the reticle is on it (outside).
+  private var hoveredSpecial: String?
+  /// Called when the judge presses the door (the headset sends `vr_enter`).
+  var onEnter: (() -> Void)?
   private let interactiveMask = 1 << 3
   private let reticleHolder = SCNNode()
   private let reticle = SCNNode()
@@ -66,6 +74,7 @@ final class BaseScene {
   private var now: TimeInterval = 0
   private var latest: VRState?
   private var cardsVisible = false
+  private var lastHeadView = matrix_identity_float4x4
   /// After a choice, cards stay hidden briefly; if the item is still waiting (e.g. after "wait"), they return with fresh options.
   private var hideUntil: TimeInterval = 0
 
@@ -85,9 +94,18 @@ final class BaseScene {
     videoCam.camera = vc
     head.addChildNode(videoCam)
     scene.rootNode.addChildNode(head)
-    Room.build(into: scene.rootNode)
+    var indoor: [SCNNode] = []
+    let rootNode = scene.rootNode
+    func added(_ build: () -> Void) {
+      let before = Set(rootNode.childNodes.map { ObjectIdentifier($0) })
+      build()
+      indoor += rootNode.childNodes.filter { !before.contains(ObjectIdentifier($0)) }
+    }
+    added { Room.build(into: rootNode) }
     outside = Outside(scene: scene)
-    screens = WallScreens(root: scene.rootNode)
+    var wallScreens: WallScreens!
+    added { wallScreens = WallScreens(root: rootNode) }
+    screens = wallScreens
     robots = RobotCrew.build(into: scene.rootNode)
     buildReticle()
     buildCards()
@@ -96,7 +114,14 @@ final class BaseScene {
     debug.node.position = Room.ring(180, r: Room.radius - 0.1, y: 1.6)
     debug.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
     scene.rootNode.addChildNode(debug.node)
+    director = OutdoorDirector(scene: scene, outside: outside, indoorNodes: indoor + [debug.node, cardRoot], indoorRobots: robots)
   }
+
+  /// A full-view black quad on this camera node for the fade to black (the headset passes `head`, the Mac its camera).
+  func attachFade(to camera: SCNNode) { director.attachFade(to: camera) }
+
+  /// The robots the judge can see and gaze at: the two at their outdoor stations, or the five indoors.
+  private var liveRobots: [Robot] { director.isOutside ? Array(director.outdoorRobots.values) : Array(robots.values) }
 
   private func buildReticle() {
     let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.0025)
@@ -142,12 +167,15 @@ final class BaseScene {
       latest = st
       applyState(st)
     }
+    director.update(now: time)
+    if drivesView { viewOffset = director.viewOffset }
+    lastHeadView = headView
     let worldFromHead = (headView * viewOffset).inverse
     let origin = SIMD3(worldFromHead.columns.3.x, worldFromHead.columns.3.y, worldFromHead.columns.3.z)
     let fwd = -simd_normalize(SIMD3(worldFromHead.columns.2.x, worldFromHead.columns.2.y, worldFromHead.columns.2.z))
     var hitNode: SCNNode?
     var dist: Float = 2.5
-    if cardsVisible {
+    if cardsVisible && !director.isOutside {
       let hits = scene.rootNode.hitTestWithSegment(from: SCNVector3(origin), to: SCNVector3(origin + fwd * 10), options: [
         SCNHitTestOption.categoryBitMask.rawValue: interactiveMask,
         SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue,
@@ -160,7 +188,7 @@ final class BaseScene {
     // Robots (body or nametag): a simple ray test; cards take priority.
     var robotHit: (role: String, d: Float)?
     if hitNode == nil {
-      for r in robots.values {
+      for r in liveRobots {
         for (c, rad) in [(r.worldPosition, Float(0.34)), (r.worldPosition + SIMD3(0, 0.62, 0), Float(0.2))] {
           let t = simd_dot(c - origin, fwd)
           guard t > 0.3, simd_length(c - (origin + fwd * t)) < rad else { continue }
@@ -168,14 +196,30 @@ final class BaseScene {
         }
       }
     }
+    // The scientist and the pressure door (outside): whichever the reticle reaches first.
+    var special: (id: String, d: Float)?
+    if hitNode == nil && director.isOutside {
+      if let d = director.scientistHit(origin: origin, fwd: fwd) { special = ("scientist", d) }
+      if let d = director.doorHit(origin: origin, fwd: fwd), d < (special?.d ?? .infinity) { special = ("door", d) }
+      if let s = special, let rh = robotHit, rh.d < s.d { special = nil }
+      if special != nil { robotHit = nil }
+    }
+    hoveredSpecial = special?.id
+    director.doorHovered = special?.id == "door"
+    director.scientist.hovered = special?.id == "scientist" && !director.closeUp.isOpen
     hoveredRobot = robotHit?.role
     if let rh = robotHit { dist = max(0.5, rh.d - 0.4) }
+    if let s = special { dist = max(0.5, s.d - 0.4) }
+    if director.closeUp.isOpen {
+      // The close-up: looking away for 3 s closes it.
+      if director.closeUp.tick(now: time, eye: origin, forward: fwd) { Sound.shared.play("hover", volume: 0.3) }
+    }
     reticleHolder.simdPosition = origin + fwd * dist
     reticleHolder.simdOrientation = simd_quatf(worldFromHead)
-    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil || robotHit != nil ? 1.7 : 1.0))
+    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil || robotHit != nil || special != nil ? 1.7 : 1.0))
     setHover(hitNode)
-    let needs = !(latest?.waiting ?? []).isEmpty
-    if needs && !cardsVisible && now >= hideUntil { refreshCards(latest) }
+    let needs = !(latest?.waiting ?? []).isEmpty && !director.isOutside
+    if (needs && !cardsVisible && now >= hideUntil) || (director.isOutside && cardsVisible) { refreshCards(latest) }
     // One bubble at a time: the newest speaker's.
     let speaker = now - captionAt < 9 ? captionRole : nil
     let nowThinking = link.thinkingRoles
@@ -186,10 +230,11 @@ final class BaseScene {
       lastDecisionHeard = link.lastDecision
     }
     decisionPrimed = true
-    for r in robots.values {
+    for r in liveRobots {
       r.hovered = r.role == hoveredRobot
       r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker, thinking: thinkingRoles.contains(r.role))
     }
+    if director.isOutside { director.scientist.update(now: time, user: origin, bubbleWanted: speaker == "scientist") }
     updateArrow(worldFromHead: worldFromHead)
     screens.update(latest, now: time, linkText: link.statusText)
     updateDebug(link: link, fps: fps)
@@ -197,7 +242,7 @@ final class BaseScene {
 
   /// Head-locked arrow at the edge of the view toward the newest speaker, only while that robot is out of view.
   private func updateArrow(worldFromHead: simd_float4x4) {
-    guard showsSpeakerArrow, let role = captionRole, now - captionAt < 9, let robot = robots[role], robot.isSpeaking(now: now) else { arrow.node.isHidden = true; return }
+    guard showsSpeakerArrow, let role = captionRole, now - captionAt < 9, let robot = (director.isOutside ? director.outdoorRobots[role] : robots[role]), robot.isSpeaking(now: now) else { arrow.node.isHidden = true; return }
     let wp = robot.worldPosition
     let local4 = (worldFromHead.inverse) * SIMD4(wp.x, wp.y + 0.1, wp.z, 1)
     guard let place = OffscreenArrow.place(local: SIMD3(local4.x, local4.y, local4.z)) else { arrow.node.isHidden = true; return }
@@ -215,13 +260,21 @@ final class BaseScene {
       if !lastSaved.isEmpty { savedChangedAt = now; Sound.shared.play("saved", volume: 0.8) }
       lastSaved = saved
     }
+    director.apply(st, now: now)
     outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.show(Consequence.active(in: st))
     Sound.shared.setStorm(tau: st.tau ?? 0.6)
     var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
-      guard let robot = robots[role], let seq = r.seq else { continue }
+      guard let seq = r.seq else { continue }
+      if role == "scientist" {
+        director.scientist.hear(text: r.short ?? r.text ?? "", seq: seq, now: now)
+        if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
+        continue
+      }
+      guard let robot = robots[role] else { continue }
       robot.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
+      director.outdoorRobots[role]?.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
       if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
     }
     if let n = newest, let seq = n.r.seq, seq != captionSeq { showCaption(role: n.role, r: n.r, seq: seq) }
@@ -253,6 +306,7 @@ final class BaseScene {
     guard now - lastTap > 0.35 else { return }
     lastTap = now
     taps += 1
+    if let used = tapOutside() { lastTapText = used; return }
     guard cardsVisible, let h = hovered, let name = h.name, name.hasPrefix("card:"), let i = Int(name.dropFirst(5)), i < cardTargets.count, !cardTargets[i].esc.isEmpty else {
       if let role = hoveredRobot, now - (lastAsk[role] ?? -100) > 3 {
         lastAsk[role] = now
@@ -274,6 +328,41 @@ final class BaseScene {
     showCards(false)
   }
 
+  /// Button presses that belong to part 1: closing the close-up, the scientist (no vr_ask), the pressure door.
+  private func tapOutside() -> String? {
+    guard director.isOutside else { return nil }
+    if director.closeUp.isOpen {
+      director.closeUp.close()
+      Sound.shared.play("select", volume: 0.5)
+      return "closed close-up"
+    }
+    switch hoveredSpecial {
+    case "scientist":
+      openCloseUpAtHead()
+      return "close-up"
+    case "door":
+      Sound.shared.play("select", volume: 0.9)
+      director.beginEnter(now: now, local: true)
+      onEnter?()
+      return "entering"
+    default:
+      return nil
+    }
+  }
+
+  /// Opens the science close-up in front of the current head pose (the button, the spectator's mirror, a debug click).
+  func openCloseUpAtHead() {
+    let wf = (lastHeadView * viewOffset).inverse
+    let fwd = -simd_normalize(SIMD3(wf.columns.2.x, wf.columns.2.y, wf.columns.2.z))
+    director.openCloseUp(eye: SIMD3(wf.columns.3.x, wf.columns.3.y, wf.columns.3.z), forward: fwd, now: now)
+  }
+
+  /// The spectator mirrors the headset's close-up.
+  func setCloseUpMirror(_ open: Bool) {
+    if open && !director.closeUp.isOpen && director.isOutside { openCloseUpAtHead() }
+    if !open && director.closeUp.isOpen { director.closeUp.close() }
+  }
+
   private func showCards(_ on: Bool) {
     guard on != cardsVisible else { return }
     cardsVisible = on
@@ -288,7 +377,7 @@ final class BaseScene {
   }
 
   private func refreshCards(_ st: VRState?) {
-    let waiting = st?.waiting?.first
+    let waiting = director.isOutside ? nil : st?.waiting?.first
     let opts = Array((waiting?.options ?? []).prefix(cards.count))
     showCards(waiting != nil && !opts.isEmpty && now >= hideUntil)
     cardTargets = (0..<cards.count).map { i in
