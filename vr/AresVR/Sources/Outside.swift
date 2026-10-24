@@ -342,7 +342,8 @@ final class Outside {
     let horizon = Self.skyColor(dir: simd_normalize(SIMD3(sunWorld.x, 0.02, sunWorld.z) * -1 + SIMD3(0, 0.02, 0)), sun: sunWorld, tau: tau, sunElev: Float(sunElevation))
     scene?.fogColor = UIColor(red: CGFloat(horizon.x), green: CGFloat(horizon.y), blue: CGFloat(horizon.z), alpha: 1)
 
-    dust.birthRate = CGFloat(max(0, (tau - 1.2)) * 400)
+    // A trickle even on clear days keeps the particle shader warm (no hitch when the storm starts).
+    dust.birthRate = CGFloat(max(0.5, (tau - 1.2) * 400))
 
     let key = "\(Int(tau * 10))|\(Int(sunAzimuth / 4))|\(Int(sunElevation / 2))"
     if key != lastSkyKey && !skyBusy {

@@ -77,6 +77,11 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     scnRenderer.scene = world.scene
     scnRenderer.pointOfView = world.eyes[0]
     scnRenderer.isJitteringEnabled = false
+    // Compile every material's shaders up front (hidden cards included) so the first
+    // storm or decision doesn't hitch in the headset.
+    var all: [Any] = []
+    world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
+    scnRenderer.prepare(all, completionHandler: nil)
     link = Link(world: world)
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
     link.onRecenter = { [weak self] in self?.cardboard.recenter() }
