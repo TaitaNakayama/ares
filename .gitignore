@@ -5,3 +5,7 @@
 /data/raw/
 data/assets-raw/
 node_modules/
+vr/Vendor/Cardboard/lib/
+vr/AresVR.xcodeproj/
+vr/build/
+terrain/.venv/

@@ -1,0 +1,154 @@
+{
+  "origin": {
+    "lat_planetocentric_deg": 18.4446,
+    "lon_east_deg": 77.4509,
+    "ground_elevation_m_mola": -2569.894287109375,
+    "note": "local height 0 = this ground point; eye is eye_height above it"
+  },
+  "eye_height_m": 2.0,
+  "crs": {
+    "proj4": "+proj=aeqd +lat_0=18.4446 +lon_0=77.4509 +x_0=0 +y_0=0 +R=3396190 +units=m +no_defs=True",
+    "description": "azimuthal equidistant, centred on the origin, sphere R=3396190 m"
+  },
+  "frame": {
+    "x": "east",
+    "y": "up",
+    "z": "north (right) / south (left)",
+    "handedness": "right",
+    "units": "metres",
+    "vertical_exaggeration": 1.0,
+    "curvature_removed": true,
+    "curvature_formula": "h -= r^2/(2*3396190 m)"
+  },
+  "sector": {
+    "view_azimuth_deg": 305.0,
+    "half_span_deg": 80.0,
+    "skirt_deg": 2.0,
+    "azimuth_range_deg": [
+      223.0,
+      387.0
+    ],
+    "azimuth_convention": "compass, clockwise from north"
+  },
+  "extents": {
+    "near_radius_m": [
+      4.0,
+      2350.0
+    ],
+    "far_radius_m": [
+      2150.0,
+      25000.0
+    ],
+    "near_far_overlap_m": [
+      2150.0,
+      2350.0
+    ]
+  },
+  "near": {
+    "file": "near.obj",
+    "albedo": "near_albedo.jpg",
+    "height_png": "near_height.png",
+    "vertices": 44388,
+    "triangles": 87906,
+    "grid_rings": 161,
+    "grid_azimuth_segments": 273,
+    "r_min_m": 4.0,
+    "r_max_m": 2350.0,
+    "height_min_m": -8.640628902808213,
+    "height_max_m": 105.2643415088758,
+    "uv_square": {
+      "center_east_m": -641.5575105072284,
+      "center_north_m": 315.6592060962596,
+      "side_m": 4150.054425998674,
+      "note": "u=(E-(cE-side/2))/side, v=(N-(cN-side/2))/side, v=0 is the BOTTOM (south) image edge"
+    },
+    "albedo_px": 4096,
+    "albedo_m_per_px": 1.0131968813473324,
+    "height_png_px": 2048,
+    "height_png_decode": {
+      "min_m": -50.17035656422877,
+      "max_m": 120.69296542160305,
+      "formula": "h = min + (uint16/65535)*(max-min)"
+    }
+  },
+  "far": {
+    "file": "far.obj",
+    "albedo": "far_albedo.jpg",
+    "height_png": "far_height.png",
+    "vertices": 34375,
+    "triangles": 67952,
+    "grid_rings": 124,
+    "grid_azimuth_segments": 274,
+    "r_min_m": 2150.0,
+    "r_max_m": 25000.0,
+    "height_min_m": -1.9291368361665877,
+    "height_max_m": 877.8120119551568,
+    "uv_square": {
+      "center_east_m": -6824.9644688830385,
+      "center_north_m": 3358.0705134168293,
+      "side_m": 44149.50262994804,
+      "note": "u=(E-(cE-side/2))/side, v=(N-(cN-side/2))/side, v=0 is the BOTTOM (south) image edge"
+    },
+    "albedo_px": 4096,
+    "albedo_m_per_px": 10.778687165514658,
+    "height_png_px": 2048,
+    "height_png_decode": {
+      "min_m": -199.31850557458395,
+      "max_m": 1020.7776873037138,
+      "formula": "h = min + (uint16/65535)*(max-min)"
+    }
+  },
+  "triangles_total": 155858,
+  "max_elevation_angle_deg": {
+    "az_range": [
+      295.0,
+      315.0
+    ],
+    "dense_rays": 4.298805522520847,
+    "at_az_deg": 308.0,
+    "at_r_m": 10610.427606901725,
+    "mesh_vertices": 4.183952241871537
+  },
+  "calibration": {
+    "ctx_minus_hirise_median_m": 1.38525390625,
+    "hirise_valid_fraction_of_grid": 0.8824801323635879
+  },
+  "albedo": {
+    "far": "CTX 5 m orthomosaic (reprojected, contrast-compressed, tinted)",
+    "near": "synthetic: low-passed CTX ortho tone + DTM slope/curvature + noise (no HiRISE ortho used)",
+    "palette_dark_srgb": [
+      0.30000001192092896,
+      0.17000000178813934,
+      0.10999999940395355
+    ],
+    "palette_light_srgb": [
+      0.800000011920929,
+      0.5699999928474426,
+      0.38999998569488525
+    ],
+    "palette_rule": "rgb = dark + (light-dark)*gray, gray in 0.05..0.95"
+  },
+  "sources": [
+    {
+      "role": "near height",
+      "name": "HiRISE DTM 1 m (Mars 2020 TRN)",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+      "used": "5 km window pre-cropped to data/raw/hirise_dtm_5km_1m.tif"
+    },
+    {
+      "role": "far height",
+      "name": "CTX DEM 20 m (Mars 2020 Science Investigation)",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/CTX/ScienceInvestigationMaps_JPL/M20_JezeroCrater_CTXDEM_20m.tif"
+    },
+    {
+      "role": "far albedo",
+      "name": "CTX orthomosaic 5 m",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/CTX/ScienceInvestigationMaps_JPL/M20_JezeroCrater_CTXortho_mosaic_5m.tif"
+    },
+    {
+      "role": "doi",
+      "url": "https://doi.org/10.5066/P906QQT8"
+    }
+  ],
+  "credit": "Terrain: NASA/JPL-Caltech/UArizona (HiRISE), MSSS (CTX); USGS Astrogeology Mars 2020 TRN products."
+}
