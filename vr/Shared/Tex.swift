@@ -83,6 +83,10 @@ enum Tex {
       if let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(white: 0, alpha: 0.0).cgColor, PlatformColor(red: 0.10, green: 0.07, blue: 0.04, alpha: 0.45).cgColor] as CFArray, locations: [0, 1]) {
         c.drawLinearGradient(g, start: CGPoint(x: 0, y: 800), end: CGPoint(x: 0, y: 1024), options: [])
       }
+      // Warm light pool from the ceiling strips: a soft gradient over the top of the wall (baked, no light cost).
+      if let g = CGGradient(colorsSpace: cs, colors: [PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.42).cgColor, PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.12).cgColor, PlatformColor(red: 1.0, green: 0.72, blue: 0.40, alpha: 0.0).cgColor] as CFArray, locations: [0, 0.45, 1]) {
+        c.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: 340), options: [])
+      }
       // Scuff strokes at hand height (light paint-through marks).
       for _ in 0..<14 {
         let x = rng.next() * 110 + 8, y = 560 + rng.next() * 160
@@ -204,6 +208,94 @@ enum Tex {
         c.drawRadialGradient(grad, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 64, options: [])
       }
     }
+  }
+
+  /// A bundled colour map pulled toward grey (`amount` 0...1 of the saturation removed) and slightly darkened,
+  /// so saturated props sit in the painted-metal palette while keeping a hint of their colour.
+  static func muted(_ name: String, amount: CGFloat) -> PlatformImage {
+    let size = CGSize(width: 1024, height: 1024)
+    return Bitmap.image(size: size, scale: 1, opaque: true) { c in
+      if let img = cg(name) { Tex.draw(c, img, in: CGRect(origin: .zero, size: size)) }
+      c.setBlendMode(.saturation)
+      c.setFillColor(PlatformColor(white: 0.5, alpha: amount).cgColor)
+      c.fill(CGRect(origin: .zero, size: size))
+      c.setBlendMode(.multiply)
+      c.setFillColor(PlatformColor(red: 0.84, green: 0.82, blue: 0.78, alpha: 1).cgColor)
+      c.fill(CGRect(origin: .zero, size: size))
+    }
+  }
+
+  /// Soft dark blob (contact shadow): black with a smooth alpha falloff, drawn as an ellipse that fills the square.
+  static func blob() -> PlatformImage {
+    let size = CGSize(width: 128, height: 128)
+    return Bitmap.image(size: size, scale: 1) { c in
+      let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+      let cols = [PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0.85).cgColor,
+                  PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0.55).cgColor,
+                  PlatformColor(red: 0.02, green: 0.015, blue: 0.01, alpha: 0).cgColor]
+      if let grad = CGGradient(colorsSpace: cs, colors: cols as CFArray, locations: [0, 0.55, 1]) {
+        c.drawRadialGradient(grad, startCenter: CGPoint(x: 64, y: 64), startRadius: 0, endCenter: CGPoint(x: 64, y: 64), endRadius: 64, options: [])
+      }
+    }
+  }
+
+  /// Floor decals: kind 0 = yellow stand-clear line with chevrons, 1 = scuffs and tyre-ish streaks, 2 = worn path.
+  static func floorMarks(kind: Int) -> PlatformImage {
+    let size = kind == 0 ? CGSize(width: 512, height: 128) : CGSize(width: 512, height: 512)
+    return Bitmap.image(size: size, scale: 1) { c in
+      var rng = RNG(s: UInt64(700 + kind))
+      switch kind {
+      case 0:
+        c.setFillColor(PlatformColor(red: 0.88, green: 0.68, blue: 0.14, alpha: 0.55).cgColor)
+        c.fill(CGRect(x: 0, y: 8, width: 512, height: 14))
+        c.fill(CGRect(x: 0, y: 106, width: 512, height: 14))
+        c.setStrokeColor(PlatformColor(red: 0.88, green: 0.68, blue: 0.14, alpha: 0.5).cgColor)
+        c.setLineWidth(12)
+        for i in 0..<5 {
+          let x = 70 + CGFloat(i) * 90
+          c.move(to: CGPoint(x: x, y: 34)); c.addLine(to: CGPoint(x: x + 28, y: 64)); c.addLine(to: CGPoint(x: x, y: 94))
+        }
+        c.strokePath()
+        c.setBlendMode(.destinationOut) // worn gaps
+        c.setFillColor(PlatformColor(white: 0, alpha: 0.55).cgColor)
+        for _ in 0..<16 { c.fill(CGRect(x: rng.next() * 500, y: rng.next() * 120, width: 6 + rng.next() * 30, height: 4 + rng.next() * 8)) }
+      case 1:
+        c.setLineCap(.round)
+        for _ in 0..<26 {
+          let x = rng.next() * 440 + 30, y = rng.next() * 440 + 30
+          let l = 30 + rng.next() * 110, a = rng.next() * 0.5 - 0.25
+          c.setStrokeColor(PlatformColor(white: rng.next() > 0.5 ? 0.85 : 0.0, alpha: 0.04 + rng.next() * 0.07).cgColor)
+          c.setLineWidth(2 + rng.next() * 5)
+          c.move(to: CGPoint(x: x, y: y)); c.addLine(to: CGPoint(x: x + l, y: y + l * a)); c.strokePath()
+        }
+      default:
+        let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+        let cols = [PlatformColor(white: 0.85, alpha: 0.16).cgColor, PlatformColor(white: 0.85, alpha: 0).cgColor]
+        if let g = CGGradient(colorsSpace: cs, colors: cols as CFArray, locations: [0, 1]) {
+          c.saveGState()
+          c.translateBy(x: 256, y: 256); c.scaleBy(x: 1, y: 0.4); c.translateBy(x: -256, y: -256)
+          c.drawRadialGradient(g, startCenter: CGPoint(x: 256, y: 256), startRadius: 0, endCenter: CGPoint(x: 256, y: 256), endRadius: 256, options: [])
+          c.restoreGState()
+        }
+        for _ in 0..<10 {
+          let x = rng.next() * 400 + 50, y = 210 + rng.next() * 90
+          c.setStrokeColor(PlatformColor(white: 0.9, alpha: 0.12).cgColor)
+          c.setLineWidth(2 + rng.next() * 3)
+          c.move(to: CGPoint(x: x, y: y)); c.addLine(to: CGPoint(x: x + 60 + rng.next() * 80, y: y + rng.next() * 10 - 5)); c.strokePath()
+        }
+      }
+    }
+  }
+
+  /// Alpha-blended decal that lies on a surface: unlit, no depth write.
+  static func decalMaterial(_ image: Any?) -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .constant
+    m.diffuse.contents = image
+    m.diffuse.mipFilter = .linear
+    m.writesToDepthBuffer = false
+    m.isDoubleSided = true
+    return m
   }
 
   /// Additive, depth-tested but not depth-writing glow material.
