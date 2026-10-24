@@ -1,0 +1,7 @@
+.cache/
+.DS_Store
+.env
+*.log
+/data/raw/
+data/assets-raw/
+node_modules/
