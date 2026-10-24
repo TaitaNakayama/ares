@@ -144,9 +144,14 @@ enum Dressing {
     whiteboard(lit)
     door(lit, emis)
     sideTable(lit)
+    let decals = SCNNode()
+    groundDecals(decals)
 
     root.addChildNode(bake(lit))
     root.addChildNode(bake(emis))
+    let d = bake(decals)
+    d.renderingOrder = 40
+    root.addChildNode(d)
     let g = bake(glowNodes)
     g.renderingOrder = 60
     root.addChildNode(g)
@@ -658,6 +663,72 @@ enum Dressing {
     lamps.addChildNode(box(0.1, 0.1, 0.05, emissive(PlatformColor(red: 1.0, green: 0.25, blue: 0.18, alpha: 1)), at: SCNVector3(-0.08, 2.45, 0.08)))
     lamps.addChildNode(box(0.1, 0.1, 0.05, emissive(PlatformColor(red: 0.2, green: 0.55, blue: 0.3, alpha: 1)), at: SCNVector3(0.08, 2.45, 0.08)))
     emis.addChildNode(lamps)
+  }
+
+  // ---------------------------------------------------------------- floor decals
+
+  /// Contact-shadow blobs under every machine, locker, shelf, barrel and table, plus floor markings and scuffs.
+  /// Unlit alpha decals on floor-hugging planes (no lights, no shadow maps).
+  private static func groundDecals(_ out: SCNNode) {
+    let blob = Tex.decalMaterial(Tex.blob())
+    // (angle, radius, local x, local z, width, depth)
+    let spots: [(Float, Float, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+      (-92.5, 3.66, 0, 0.04, 0.95, 0.85), (-100.5, 3.66, 0, 0.04, 0.95, 0.85), // lockers
+      (-123, 3.62, 0, 0, 2.1, 1.0),   // hydroponics
+      (-142, 3.62, 0, 0, 1.7, 0.95),  // storage rack
+      (-153.5, 3.58, 0, 0, 0.95, 0.95), (-157, 3.58, 0, 0, 0.95, 0.95), // barrels
+      (-166.5, 3.62, 0, 0.05, 1.25, 0.95), // water recycler
+      (146, 3.62, 0, 0.05, 1.45, 0.95),    // O2 scrubber
+      (126, 3.84, 0, 0.12, 1.7, 0.55),     // pressure door
+      (166, 3.62, 0, 0, 1.5, 0.9),         // side table
+    ]
+    for (deg, r, x, z, w, d) in spots {
+      let h = holder(deg, r: r, y: 0.006)
+      let n = SCNNode(geometry: SCNPlane(width: w * 1.2 + 0.2, height: d * 1.35 + 0.2))
+      n.geometry?.materials = [blob]
+      n.eulerAngles.x = -.pi / 2
+      n.position = SCNVector3(x, 0, z)
+      h.addChildNode(n)
+      out.addChildNode(h)
+    }
+    // Console arc: one long soft shadow strip under the desks.
+    var a: Float = -34
+    while a < 34 {
+      let h = holder(a + 2.5, r: 2.78, y: 0.006)
+      let n = SCNNode(geometry: SCNPlane(width: 0.75, height: 0.7))
+      n.geometry?.materials = [blob]
+      n.eulerAngles.x = -.pi / 2
+      n.position = SCNVector3(0, 0, 0.1)
+      h.addChildNode(n)
+      out.addChildNode(h)
+      a += 6
+    }
+    // Markings: stand-clear line with chevrons in front of the airlock, scuffs where the crew walks.
+    let line = Tex.decalMaterial(Tex.floorMarks(kind: 0))
+    let scuff = Tex.decalMaterial(Tex.floorMarks(kind: 1))
+    let worn = Tex.decalMaterial(Tex.floorMarks(kind: 2))
+    func lay(_ m: SCNMaterial, deg: Float, r: Float, w: CGFloat, d: CGFloat, spin: Float = 0) {
+      let h = holder(deg, r: r, y: 0.004)
+      let n = SCNNode(geometry: SCNPlane(width: w, height: d))
+      n.geometry?.materials = [m]
+      n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+      let spinner = SCNNode()
+      spinner.simdEulerAngles.y = spin
+      spinner.addChildNode(n)
+      h.addChildNode(spinner)
+      out.addChildNode(h)
+    }
+    lay(line, deg: 126, r: 3.0, w: 1.6, d: 0.4)
+    lay(line, deg: -146, r: 3.05, w: 1.5, d: 0.375, spin: 0.15)
+    lay(worn, deg: 126, r: 2.4, w: 2.4, d: 2.4)
+    lay(worn, deg: -123, r: 2.7, w: 2.2, d: 2.2, spin: 0.7)
+    lay(worn, deg: 170, r: 2.5, w: 2.0, d: 2.0, spin: 1.5)
+    lay(scuff, deg: 100, r: 2.9, w: 1.8, d: 1.8, spin: 0.4)
+    lay(scuff, deg: -100, r: 2.5, w: 1.6, d: 1.6, spin: 2.0)
+    lay(scuff, deg: 150, r: 2.2, w: 1.4, d: 1.4, spin: 1.1)
+    lay(scuff, deg: -160, r: 2.6, w: 1.6, d: 1.6, spin: 2.8)
+    lay(scuff, deg: 60, r: 3.2, w: 1.4, d: 1.4, spin: 0.9)
+    lay(scuff, deg: -60, r: 3.1, w: 1.4, d: 1.4, spin: 1.9)
   }
 
   // ---------------------------------------------------------------- side table: first aid, toolbox, mug
