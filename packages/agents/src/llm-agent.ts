@@ -416,6 +416,7 @@ function normalize(name: keyof typeof ACTION_SCHEMAS, raw: unknown, e: Engine): 
   const renamed: string[] = [];
   const a = camelKeys(raw, renamed) as Record<string, unknown>;
   if (renamed.length) notes.push(`renamed ${[...new Set(renamed)].join(", ")}`);
+  for (const [k, v] of Object.entries(a)) if (v === "" || v === null) { delete a[k]; notes.push(`dropped empty ${k}`); } // "" for an optional id means "none"
   if (name === "report_issue" && a.subject !== undefined) {
     // Models like to "attach" the report to the sender or an invented id; a report needs no subject.
     const s = a.subject as { kind?: string; id?: string } | null;
