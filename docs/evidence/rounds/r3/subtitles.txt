@@ -1,0 +1,24 @@
+   6.5s  outside      ENGINEER -> judge    [llm·cached]  Welcome, Commander. The crew keeps our base alive.
+  16.8s  outside      SCIENCE  -> judge    [llm·cached]  Arm grinding ancient river-delta rock. Want a closer look?
+  27.7s  outside      SUPPLY   -> judge    [llm·cached]  Two crates are missing. I won't pay for those.
+  38.6s  outside      ENGINEER -> rim      [llm·cached]  Crew, dust storm rising over the crater rim.
+  48.9s  outside      ENGINEER -> judge    [llm·cached]  Commander, head inside the base right now.
+  59.9s  inside       LIFE     -> judge    [llm·cached]  Welcome back inside, Commander. The air is fresh.
+  70.2s  crisis       SUPPLY   -> rules    [llm·cached]  Rules, I paid only for crates that arrived.
+  80.5s  crisis       RULES    -> judge    [llm·cached]  I'm Rules. I check every payment before money leaves.
+  91.4s  crisis       LIFE     -> engineer [llm·cached]  Storm's cutting solar power. Oxygen makers need it.
+ 101.7s  crisis       ENGINEER -> supply   [llm·cached]  We can't power everything. Supply, find batteries fast.
+ 112.0s  crisis       SUPPLY   -> rules    [llm·cached]  I found batteries for sale on Earth.
+ 121.7s  crisis       RULES    -> supply   [llm·cached]  Supply, who's selling them? We need to know quickly.
+ 132.6s  crisis       SUPPLY   -> rules    [llm·cached]  Our usual supplier, at roughly triple the normal price.
+ 143.5s  crisis       SUPPLY   -> rules    [llm·cached]  Same quote, but payment goes to a new bank account.
+ 155.0s  crisis       RULES    -> supply   [llm·cached]  That's a scam. I've blocked the payment.
+ 164.7s  crisis       RULES    -> judge    [llm·cached]  Asked Earth to verify bank change. Reply takes 25 minutes.
+ 176.2s  crisis       RULES    -> judge    [llm·cached]  Scam blocked. No batteries before Earth answers. What goes, Commander?
+ 187.7s  decision     SCIENCE  -> judge    [llm·cached]  Pausing the lab could spoil our samples.
+ 197.4s  decision     SUPPLY   -> judge    [llm·cached]  Our trusted supplier has fewer batteries, arriving later.
+ 207.7s  consequence  SUPPLY   -> judge    [llm·cached]  Batteries ordered from our trusted supplier.
+ 216.8s  consequence  ENGINEER -> judge    [llm·cached]  I'll ration power until the batteries arrive.
+ 228.3s  later        RULES    -> judge    [llm·cached]  Earth confirmed that bank account was a scam.
+ 241.9s  later        ENGINEER -> judge    [llm·cached]  Storm's thinning, power's returning. The base made it, Commander.
+ 261.8s  explore      ENGINEER -> judge    [llm·cached]  See the real Mars? Look at me and tap.
