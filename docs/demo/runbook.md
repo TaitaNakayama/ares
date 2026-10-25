@@ -10,7 +10,7 @@ Everything runs on the MacBook; the phone is the headset. Do it in this order, 2
 - If the headset can't find the Mac within a minute: run `scripts/build-ios.sh` once with the cable in and the phone unlocked (it bakes the current addresses).
 - Check: `curl -s localhost:8787/api/debug/pose` shows `openHeadsetSockets: 1` and a small `msSinceRelay` while the app is open.
 
-## 2. Start
+## 2. Start (one command: `scripts/demo.sh`; it does the steps below, waits for the phone and parks the show at the opening. Run it before every judge.)
 ```bash
 scripts/start-local-llm.sh                    # fresh Ollama, model warm
 node packages/server/src/main.ts              # :8787; look for "LLM layers: local ...; cloud ...; mode auto"
