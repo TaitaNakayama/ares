@@ -15,7 +15,7 @@ const get = (p: string) => fetch(BASE + p).then((r) => r.json()) as Promise<any>
 const post = (p: string, b: unknown) => fetch(BASE + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const ACT_ORDER = ["title", "outside", "entering", "inside", "crisis", "decision", "consequence", "later", "resolved", "explore"];
+const ACT_ORDER = ["real", "title", "outside", "entering", "inside", "crisis", "decision", "consequence", "later", "resolved", "explore"];
 const results: any[] = [];
 for (let i = 0; i < RUNS; i++) {
   const choice = CHOICES[i % CHOICES.length]!;

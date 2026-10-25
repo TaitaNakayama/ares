@@ -55,9 +55,13 @@ final class RealityCheck {
   private var creditText = ""
 
   /// `scene.reality` from the show contract. Withdrawing the offer also closes the panorama inside the base.
-  func configure(offer: Bool, caption: String?, credit: String?) {
+  /// The opening: the panorama is where the experience starts, and the card's marker reads "Tap to enter the simulation".
+  private(set) var enterOffer = false
+
+  func configure(offer: Bool, caption: String?, credit: String?, enter: Bool = false) {
     let cap = (caption?.isEmpty == false ? caption : nil) ?? ""
     let cr = (credit?.isEmpty == false ? credit : nil) ?? ""
+    if enter != enterOffer { enterOffer = enter; drawCard() }
     if offer != offered {
       offered = offer
       if !offer && wantOn && !Self.insideAllowed && !(world?.director.isOutside ?? true) { set(false) }
@@ -66,8 +70,8 @@ final class RealityCheck {
   }
 
   private func drawCard() {
-    let cap = captionText, cr = creditText
-    card.update(key: "rc|\(cap)|\(cr)") { ctx, size in
+    let cap = captionText, cr = creditText, enter = enterOffer
+    card.update(key: "rc|\(cap)|\(cr)|\(enter)") { ctx, size in
       Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1))
       ctx.setStrokeColor(Palette.amber.cgColor)
       ctx.setLineWidth(8)
@@ -80,12 +84,18 @@ final class RealityCheck {
         let credit = cr.isEmpty ? "Perseverance, Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS." : cr
         _ = Draw.text(credit, at: CGPoint(x: 34, y: 80 + h + 22), size: 31, weight: .semibold, color: Palette.dim, width: size.width - 68, maxLines: 3)
       }
-      _ = Draw.text("Tap to return", at: CGPoint(x: 34, y: size.height - 56), size: 32, weight: .bold, color: Palette.dim, width: size.width - 68)
+      if enter {
+        Draw.fill(ctx, CGRect(x: 24, y: size.height - 92, width: size.width - 48, height: 68), Palette.amber)
+        _ = Draw.text("TAP TO ENTER THE SIMULATION", at: CGPoint(x: 34, y: size.height - 80), size: 40, weight: .heavy, color: PlatformColor(red: 0.08, green: 0.06, blue: 0.02, alpha: 1), width: size.width - 68)
+      } else {
+        _ = Draw.text("Tap to return", at: CGPoint(x: 34, y: size.height - 56), size: 32, weight: .bold, color: Palette.dim, width: size.width - 68)
+      }
     }
   }
   /// True while a stereo close-up or story state would make it wrong to show (outside only, not at the storm door).
   var isAllowed: Bool {
     guard let d = world?.director else { return false }
+    if enterOffer { return true } // the opening: before anything else
     if Self.insideAllowed || offered { return !d.isEntering } // Act 4: the Engineer offers it from inside the base
     return d.isOutside && d.station != "door" && !d.isEntering
   }

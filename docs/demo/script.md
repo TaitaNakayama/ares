@@ -32,7 +32,8 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 
 | t | What happens | Speaker → to | Target line |
 |---|---|---|---|
-| 0:00 | Black. Title "JEZERO CRATER, MARS · SOL 214", and under it (round 3) "Any answer from Earth takes 25 minutes. The crew is on its own." (the stake, before anything happens; the number is the real round-trip light time). Wind. | | |
+| 0:00 | **The opening (round 4): the real Perseverance 360° panorama** (Mastcam-Z, sols 53-64, Van Zyl Overlook; NASA/JPL-Caltech/ASU/MSSS), caption "This is real Mars." with the credit, and a marker "TAP TO ENTER THE SIMULATION". The press (or the autoplay after 5 s) cuts to black. | | |
+| | Title "JEZERO CRATER, MARS · SOL 214", and under it "Any answer from Earth takes 25 minutes. The crew is on its own." (the stake, before anything happens; the number is the real round-trip light time). Wind. | | |
 | 0:05 | Fade in on the real Jezero terrain. Ahead: the base. Left: the cargo lander. Right: the solar field and the ice drill. | | |
 | 0:05 | Engineer floats up beside the judge. | engineer → judge | "Welcome, Commander. The crew has the base." [7 / 0] |
 | 0:10 | Science grinds a rock with its arm, dust puffing. (Round 4: no close-up offer; in Acts 1-3 a press does nothing except on the door marker and the decision card.) | science → judge | "Grinding into ancient delta rock. Samples for Earth." [8 / 0] |
@@ -79,7 +80,7 @@ Then:
 | The storm thins. End card over the window: "An AI crew that keeps a Mars base alive. And knows when to ask you." | | |
 
 ## Act 4: Optional explore
-- engineer → judge: "Want to see the real Mars? Look at me, tap." [9 / 0] (round 3: says how). **Cue: Engineer.** Tap: the base, crew and props fade into the real Perseverance panorama. Caption: "This is real Mars. The base isn't built yet." plus the credit (Mastcam-Z, sols 53-64, Van Zyl Overlook; NASA/JPL-Caltech/ASU/MSSS). Tap again to come back.
+- engineer → judge: "Look at any of us and tap to ask." [8 / 0] (round 4: the reality check moved to the opening; the crew is idle and available).
 - Then free exploration: look at any robot and press to ask what it's doing (live, under the same text rules); the stereo view at Science; markers. "Tap to ask" exists only here (round 4): during Acts 1-3 a press does nothing except on the door marker and the decision card, and a choice needs a 0.6 s look at the option first.
 - The console stays (freeform events and presets, scorecard, policy editor, trace, safe mode). Presets and freeform events now reach Life and Science when relevant (the pump → Life; an injury → Life; a lab or sample problem → Science; a supplier failing → Rules/Supply).
 

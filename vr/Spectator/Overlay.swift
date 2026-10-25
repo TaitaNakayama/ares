@@ -234,6 +234,7 @@ final class CueHintView: NSView {
     case "engineer": what = "Engineer"; tail = "  ·  TAP"
     case "door": what = "the door"
     case "card": what = "AN OPTION"; tail = "  ·  TAP TO CHOOSE"
+    case "enter": what = "THE MARKER"; tail = "  ·  TAP TO ENTER THE SIMULATION"
     default: return
     }
     let size = max(13, bounds.height * 0.44)

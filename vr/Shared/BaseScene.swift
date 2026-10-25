@@ -22,6 +22,8 @@ final class BaseScene {
     return m
   }()
   var onDecide: ((String, String) -> Void)?
+  /// A press on a show marker that the server acts on (`vr_tap`): "enter" in the opening panorama.
+  var onTapTarget: ((String) -> Void)?
   /// The Cardboard button with the reticle on a robot (and no card): ask that robot to explain itself.
   var onAsk: ((String) -> Void)?
   /// Roles whose agent is thinking; set from the link every frame.
@@ -356,6 +358,13 @@ final class BaseScene {
     taps += 1
     // During the story (Acts 1-3) a press does nothing except on the door marker and the decision card; asking the crew,
     // the close-up and the reality check are Act 4.
+    if latest?.scene?.act == "real" {
+      // The opening: the press on "Tap to enter the simulation" starts the story (the server flips the panorama off).
+      Sound.shared.play("select", volume: 0.9)
+      onTapTarget?("enter")
+      lastTapText = "enter the simulation"
+      return
+    }
     if inStory {
       if let (esc, opt) = decisionCards.tap(now: now) {
         lastTapText = "chose: \(opt)"

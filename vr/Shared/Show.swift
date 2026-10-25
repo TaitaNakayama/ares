@@ -134,7 +134,7 @@ final class ShowDirector {
     if hasQuote && !hadQuote { quoteGlanceUntil = lastNow + 3 }
     hadQuote = hasQuote
     let rc = st.scene?.reality
-    RealityCheck.shared.configure(offer: rc?.offer ?? false, caption: rc?.caption, credit: rc?.credit)
+    RealityCheck.shared.configure(offer: rc?.offer ?? false, caption: rc?.caption, credit: rc?.credit, enter: rc?.enter ?? false)
     RealityCheck.shared.follow(serverOn: rc?.on)
     let ti = st.scene?.title
     let text = ti?.text ?? ""
@@ -299,6 +299,7 @@ final class ShowDirector {
   static func cuePillText(_ cue: String?) -> String? {
     switch cue {
     case "card": return "LOOK AT AN OPTION · TAP TO CHOOSE"
+    case "enter": return "TAP TO ENTER THE SIMULATION"
     case "engineer": return "LOOK AT Engineer · TAP"
     case "science": return "LOOK AT Science · TAP"
     default: return nil

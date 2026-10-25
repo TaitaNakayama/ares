@@ -9,8 +9,8 @@ import { CREW, crewOf, type CrewId, type MarsWorld } from "@ares/world-mars";
  * rules (10 words, one number, no semicolons); the scripted target line is said when it fails.
  */
 
-export type Act = "title" | "outside" | "entering" | "inside" | "crisis" | "decision" | "consequence" | "later" | "resolved" | "explore";
-type Cue = "science" | "door" | "card" | "engineer" | null;
+export type Act = "real" | "title" | "outside" | "entering" | "inside" | "crisis" | "decision" | "consequence" | "later" | "resolved" | "explore";
+type Cue = "science" | "door" | "card" | "engineer" | "enter" | null;
 type To = "judge" | CrewId | "rim";
 
 interface CrewState {
@@ -70,7 +70,7 @@ const kindOf = (o: { id: string; leverId?: string; actions: { type: string }[] }
   o.leverId === "drill_off" || o.id === "lever-drill_off" ? "drill" : o.leverId === "lab_pause" || o.id === "lever-lab_pause" ? "lab" : o.actions.some((a) => a.type === "approve_requisition") ? "buy" : undefined;
 
 export class Show {
-  act: Act = "title";
+  act: Act = "real";
   active = false;
   private title: { text: string; style: "black" | "window" | "end"; sub?: string } | null = null;
   private cue: Cue = null;
@@ -135,7 +135,7 @@ export class Show {
     this.unsub?.();
     this.unsub = undefined;
     Object.assign(this, {
-      act: "title", active: false, title: this.openingTitle(), cue: null, crew: Show.initialCrew(), speaking: null, queue: [], pumping: false, lastLineEnd: 0,
+      act: "real", active: false, title: null, cue: null, crew: Show.initialCrew(), speaking: null, queue: [], pumping: false, lastLineEnd: 0,
       closeupOpen: false, realityOn: false, decision: null, reacted: new Set<string>(), crisisAt: 0, stormStarted: false, stormRealAt: 0, stormEnded: false, savedBig: null, incoming: null, earthAnswered: false, laterShown: false, quoteSaid: false, payoffShown: false, waitForHold: undefined, closed: false, batteryReq: undefined, autoplayChoice: undefined,
     });
     this.tradeoffs.clear();
@@ -181,6 +181,17 @@ export class Show {
     this.autoplayChoice = opts.autoplay;
     this.startedAt = Date.now();
     this.unsub = this.orch.on((m) => this.onMessage(m));
+    // The opening: the real Perseverance panorama with "Tap to enter the simulation"; a press (or the autoplay) begins the story.
+    this.realityOn = true;
+    this.set({ act: "real", title: null, cue: "enter" });
+  }
+
+  /** The judge pressed the enter marker in the real panorama: into the simulated base, and Act 1 begins. */
+  begin(by: string): string {
+    if (!this.active) return "the show is not running";
+    if (this.act !== "real") return `not now (${this.act})`;
+    console.log(`[show] begin (${by})`);
+    this.realityOn = false;
     this.set({ act: "title", title: this.openingTitle(), cue: null });
     // Act 1: outside.
     this.at(5000, () => this.set({ act: "outside", title: null }));
@@ -202,6 +213,7 @@ export class Show {
         onStart: () => this.at(2500, () => { if (this.act === "outside") { this.set({ cue: "door" }); this.at(20_000, () => { if (this.act === "outside") void this.enter("auto"); }); } }),
       });
     });
+    return "the story begins";
   }
 
   /** The judge walks to the door and goes in (door tap, or auto after 20 s). */
@@ -539,7 +551,8 @@ export class Show {
     this.at(8000, () => {
       this.set({ act: "explore", title: null });
       for (const c of Object.keys(this.crew) as CrewId[]) this.crewSet(c, { lookAt: null, mood: "calm" });
-      this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Offer to show the commander the real Mars: look at you and tap.", target: "Want to see the real Mars? Look at me, tap.", onStart: () => this.set({ cue: "engineer" }) });
+      // The crew is idle and available: look at any of them and press to ask (the console's typed events also reach them).
+      this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Tell the commander the crew is at their disposal: look at any of you and tap to ask.", target: "Look at any of us and tap to ask." });
     });
   }
 
@@ -551,10 +564,7 @@ export class Show {
       this.set({ cue: null });
       this.at(8000, () => { if (this.closeupOpen) { this.closeupOpen = false; this.pump(); } });
     }
-    if (target === "engineer" && this.cue === "engineer") {
-      this.realityOn = true;
-      this.set({ cue: null });
-    }
+    if (target === "enter" && this.act === "real") this.begin("headset");
   }
 
   closeup(open: boolean): void {
@@ -671,7 +681,7 @@ export class Show {
       const pick = opts.find((o) => o.kind === this.autoplayChoice) ?? opts[0];
       if (pick) once("decide", 1500 + opts.length * 5500 + 2500, () => void this.host.decide(this.decision!.id, pick.id));
     }
-    if (this.cue === "engineer") once("reality", 4000, () => { this.tap("engineer"); this.at(8000, () => this.reality(false)); });
+    if (this.act === "real") once("begin", 5000, () => this.begin("autoplay"));
   }
 
   // ---------------------------------------------------------------- what clients read
@@ -720,13 +730,13 @@ export class Show {
       speaking: this.speaking,
       scene: {
         act: this.act,
-        part: this.crew.engineer.place === "outside" && ["title", "outside", "entering"].includes(this.act) ? "outside" : "inside",
+        part: this.crew.engineer.place === "outside" && ["real", "title", "outside", "entering"].includes(this.act) ? "outside" : "inside",
         station: null,
         mode: "show",
         title: this.title,
         cue: this.cue,
         closeupOpen: this.closeupOpen,
-        reality: this.act === "explore" ? { offer: true, on: this.realityOn, caption: "This is real Mars. The base isn't built yet.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
+        reality: this.act === "real" ? { offer: true, on: this.realityOn, enter: true, caption: "This is real Mars.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
       },
       world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust, quote: this.quoteFields() },
       decision: this.decision && (this.act === "decision" || (this.act === "consequence" && Date.now() - this.decisionChosenAt < DECISION_LINGER_MS)) ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy, tradeoffTarget }) => ({ id, label, icon, speaker, proposedBy, cost: tradeoffTarget.replace(/\.$/, "") })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,

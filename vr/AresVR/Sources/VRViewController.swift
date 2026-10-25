@@ -68,7 +68,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     v.delegate = self
     v.onTouchDown = { [weak self] in
       // The reality check owns the button while it is up: one tap returns to the simulated world.
-      if RealityCheck.shared.isActive { RealityCheck.toggle() } else { self?.world.tap() }
+      if RealityCheck.shared.isActive && !RealityCheck.shared.enterOffer { RealityCheck.toggle() } else { self?.world.tap() }
     }
     let lp = UILongPressGestureRecognizer(target: self, action: #selector(longPress(_:)))
     lp.minimumPressDuration = 2.0
@@ -99,6 +99,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     _ = Sound.shared // prewarm: the first use costs about 150 ms
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
+    world.onTapTarget = { [weak self] target in self?.link.tap(target: target) }
     world.onAsk = { [weak self] role in self?.link.ask(role: role) }
     world.onGazeOption = { [weak self] id in self?.link.gazeOption(id) }
     world.onStation = { [weak self] id in self?.link.goTo(station: id) }
