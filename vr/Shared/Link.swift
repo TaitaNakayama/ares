@@ -299,13 +299,14 @@ final class Link: NSObject, @unchecked Sendable {
     }
     guard task == nil, let url = attempts[t] else {
       lock.unlock()
-      t.cancel()
+      t.cancel(with: .goingAway, reason: nil)
       return false
     }
     task = t
     current = url
     lastMessageAt = Date()
-    for (other, _) in attempts where other !== t { other.cancel() }
+    // Close the losers properly (a bare cancel left them open on the server for half a minute).
+    for (other, _) in attempts where other !== t { other.cancel(with: .goingAway, reason: nil) }
     attempts = [t: url]
     lock.unlock()
     NSLog("[link] connected via %@", url.host ?? "?")

@@ -189,8 +189,21 @@ const spectatorClients = new WeakSet<WebSocket>();
 /** Token-authenticated headsets; only the newest one's head pose is relayed to spectators. */
 const headsets = new Set<WebSocket>();
 let activeHeadset: WebSocket | undefined;
+/** When each headset socket connected and last streamed a pose: a socket that never streams while another does is a loser of
+ * the headset's address race (or a dead route) and is closed, so stale sockets don't pile up. */
+const headsetSeen = new WeakMap<WebSocket, { since: number; lastPose: number }>();
+setInterval(() => {
+  const now = Date.now();
+  const live = activeHeadset && now - (headsetSeen.get(activeHeadset)?.lastPose ?? 0) < 2000;
+  if (!live) return;
+  for (const h of headsets) {
+    if (h === activeHeadset) continue;
+    const seen = headsetSeen.get(h);
+    if (seen && now - seen.since > 3000 && now - seen.lastPose > 5000) h.terminate();
+  }
+}, 2000);
 /** Pose relay diagnostics (GET /api/debug/pose): what the spectator's LIVE camera depends on. */
-const poseStats = { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, headsetSockets: 0, connects: 0, closes: 0, since: Date.now() };
+const poseStats = { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, headsetSockets: 0, connects: 0, closes: 0, switches: 0, since: Date.now() };
 let vrStats: Record<string, unknown> = {};
 let spectatorStats: Record<string, unknown> = {};
 let recDir: string | undefined;
@@ -625,7 +638,7 @@ const server = http.createServer(async (req, res) => {
       h.terminate();
       return send(res, 200, { ok: true, droppedAt: Date.now() });
     }
-    if (path === "/api/debug/pose" && req.method === "DELETE") { Object.assign(poseStats, { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, connects: 0, closes: 0, since: Date.now() }); return send(res, 200, { ok: true }); }
+    if (path === "/api/debug/pose" && req.method === "DELETE") { Object.assign(poseStats, { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, connects: 0, closes: 0, switches: 0, since: Date.now() }); return send(res, 200, { ok: true }); }
     if (path.startsWith("/api/trace/")) {
       const t = session.orch.engine.trace(decodeURIComponent(path.slice("/api/trace/".length)));
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
@@ -850,6 +863,7 @@ wss.on("connection", (ws, req) => {
   if (spectator) spectatorClients.add(ws);
   if (headset) {
     headsets.add(ws);
+    headsetSeen.set(ws, { since: Date.now(), lastPose: 0 });
     activeHeadset = ws;
     poseStats.connects++;
     poseStats.headsetSockets = headsets.size;
@@ -866,6 +880,14 @@ wss.on("connection", (ws, req) => {
       // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
       if (m.type === "vr_pose") {
         poseStats.received++;
+        // The socket the headset streams on is the one it chose: when it races several addresses to this Mac, the newest
+        // connection can be a loser it is about to close, and the poses on its winner were being dropped.
+        const seen = headsetSeen.get(ws);
+        if (seen) seen.lastPose = Date.now();
+        if (headset && ws !== activeHeadset && validPose(m as Record<string, unknown>)) {
+          activeHeadset = ws;
+          poseStats.switches++;
+        }
         if (ws !== activeHeadset) poseStats.droppedNotActive++;
         else if (!validPose(m as Record<string, unknown>)) poseStats.droppedInvalid++;
         else {
