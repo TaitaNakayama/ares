@@ -53,6 +53,7 @@ export function useAres() {
         if (m.type === "narration" && m.narration) {
           const n = m.narration;
           setExtra((x) => (x.some((y) => y.seq === n.seq) ? x : [...x, n]));
+          refreshSoon(); // keeps state.vr (act, cue, speaking) current with the line
         } else if (m.type === "vr_state" && m.state) setVr(m.state);
         else if (m.type === "thinking" && m.role) {
           const role = m.role;

@@ -1,13 +1,20 @@
 import type { ReactNode } from "react";
-import { ROLE_COLORS, ROLE_NAMES, ROLE_TITLES } from "../lib";
+import { crewOf, ROLE_COLORS, ROLE_NAMES, ROLE_TITLES } from "../lib";
 
-export function RoleChip({ role, name, showRole }: { role: string; name?: string; showRole?: boolean }) {
-  const c = ROLE_COLORS[role] ?? "var(--muted)";
+/** Crew chip. `actorId` (preferred) or `role` picks the crew member; `showRole` adds Supply's sub-role (Receiving / Bills / Payments). */
+export function RoleChip({ role, actorId, name, showRole }: { role: string; actorId?: string; name?: string; showRole?: boolean }) {
+  const crew = crewOf(actorId, role);
+  const c = crew?.color ?? ROLE_COLORS[role] ?? "var(--muted)";
+  let label: string;
+  if (crew) {
+    label = crew.sub && showRole ? `${crew.name} · ${crew.sub}` : crew.name;
+  } else {
+    label = (name ?? ROLE_NAMES[role] ?? role) + (showRole && ROLE_TITLES[role] ? ` · ${ROLE_TITLES[role]}` : "");
+  }
   return (
     <span className="chip" style={{ color: c, borderColor: c }}>
       <i style={{ background: c }} />
-      {name ?? ROLE_NAMES[role] ?? role}
-      {showRole && ROLE_TITLES[role] ? ` · ${ROLE_TITLES[role]}` : ""}
+      {label}
     </span>
   );
 }
