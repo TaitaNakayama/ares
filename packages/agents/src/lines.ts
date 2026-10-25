@@ -105,10 +105,15 @@ export async function speak(llm: LlmProvider | ModelRouter | undefined, req: Spe
     const left = deadline - Date.now();
     if (left < 800) return fallback("deadline");
     try {
-      const call = llm.complete({ system, user, tools: [sayTool], maxOutputTokens: 80 });
+      const call = llm.complete({ system, user, tools: [sayTool], maxOutputTokens: 300 });
       const res = await Promise.race([call, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("deadline")), left))]);
-      const said = (res.toolCalls.find((c) => c.name === "say")?.args as { text?: string } | undefined)?.text ?? res.text;
-      const line = (said ?? "").trim().replace(/^["“]|["”]$/g, "");
+      const said = (res.toolCalls.find((c) => c.name === "say")?.args as { text?: string } | undefined)?.text;
+      // Only a say call counts: provider notes ("[incomplete: …]") or prose are not a line.
+      if (typeof said !== "string") {
+        if (attempt === 1) return fallback(`no say call${res.text ? `: ${res.text.slice(0, 60)}` : ""}`);
+        continue;
+      }
+      const line = said.trim().replace(/^["“]|["”]$/g, "");
       const verdict = checkSpoken(line, `${req.facts}\n${req.target}`);
       if (verdict === "ok") return { text: line, via: "llm", ms: Date.now() - t0 };
       user = `${user}\n\nYour line "${line}" broke a rule (${verdict}). Say it again, shorter: at most 10 words, at most one number, no semicolons.`;

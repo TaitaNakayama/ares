@@ -200,7 +200,7 @@ export class MarsWorld implements World {
     this.market = generateMarket(this.rng.fork("market"), this.start);
     this.cyclesTotal = opts.cycles ?? 40;
     // Loads (SIMULATED): life support (the oxygen makers, water recycling, heat) 12 kW, the ice drill 5 kW, the lab 4 kW (freezers, instruments).
-    this.power = new PowerModel({ arrayScale: 934, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 12, iceDrill: 5, science: 4 } });
+    this.power = new PowerModel({ arrayScale: 1000, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 12, iceDrill: 5, science: 4 } });
     this.lastPowerT = this.mode === "demo" ? this.start - 32 * DAY : this.start;
     for (const v of this.market.vendors) this.bankTruth.set(bankKey(v.bank), true);
   }
@@ -815,8 +815,9 @@ export class MarsWorld implements World {
   /** Power level the screens and the alarm follow: critical while the storm drains the batteries faster than they can last. */
   powerLevel(t: Time): "ok" | "low" | "critical" {
     const st = this.power.state(this.tauAt(t));
-    if (!Number.isFinite(st.solsLeft) || st.solsLeft >= 4.6) return "ok";
-    return st.solsLeft < 4.0 ? "critical" : "low";
+    // All three loads in the storm: ~4.4 sols (critical). Giving up the drill, the lab, or non-essentials: ~6 sols (ok).
+    if (!Number.isFinite(st.solsLeft) || st.solsLeft >= 5.8) return "ok";
+    return st.solsLeft < 5.0 ? "critical" : "low";
   }
 
   /** The domain tools each world agent has. Engine actions (requests, reports) come from the engine's policy; these change the base itself. */
