@@ -1,0 +1,26 @@
+   5.0s  outside      ENGINEER -> judge    [llm·cached]  Welcome, Commander. The crew keeps our base alive.
+  11.7s  outside      SCIENCE  -> judge    [llm·cached]  Arm grinding ancient river-delta rock. Want a closer look?
+  18.8s  outside      SUPPLY   -> judge    [llm·cached]  Two crates are missing. I won't pay for those.
+  25.9s  outside      ENGINEER -> rim      [llm·cached]  Crew, dust storm rising over the crater rim.
+  32.6s  outside      ENGINEER -> judge    [llm·cached]  Commander, head inside the base right now.
+  43.6s  inside       LIFE     -> judge    [llm·cached]  Welcome back inside, Commander. The air is fresh.
+  50.3s  inside       SUPPLY   -> rules    [llm·cached]  Rules, I paid only for crates that arrived.
+  57.0s  crisis       RULES    -> judge    [llm]  Good catch on the missing crates, Supply. Otherwise quiet, Commander.
+  64.5s  crisis       LIFE     -> engineer [llm·cached]  Storm's cutting solar power. Oxygen makers need it.
+  71.2s  crisis       ENGINEER -> life     [llm·cached]  We can't power air, drill, and lab together.
+  77.9s  crisis       LIFE     -> engineer [llm·cached]  Engineer, air must always come first.
+  83.8s  crisis       SUPPLY   -> rules    [llm·cached]  I found batteries for sale on Earth.
+  90.1s  crisis       RULES    -> supply   [llm·cached]  Supply, who's selling them? We need to know quickly.
+  97.2s  crisis       SUPPLY   -> rules    [llm·cached]  Our usual supplier, but roughly triple the normal price.
+ 104.3s  crisis       SUPPLY   -> rules    [llm·cached]  Same quote, but payment goes to a new bank account.
+ 111.8s  crisis       RULES    -> supply   [llm·cached]  That's a scam. I've blocked the payment.
+ 118.1s  crisis       RULES    -> judge    [llm·cached]  Asked Earth to verify bank change. Reply takes 25 minutes.
+ 126.1s  crisis       RULES    -> judge    [llm·cached]  Power won't outlast Earth's reply. Commander, what goes offline?
+ 133.2s  decision     LIFE     -> judge    [llm·cached]  Stopping the ice drill pauses our water supply.
+ 139.9s  decision     SCIENCE  -> judge    [llm·cached]  Pausing the lab could spoil our samples.
+ 146.2s  decision     SUPPLY   -> judge    [llm·cached]  Our trusted supplier has fewer batteries, arriving later.
+ 152.9s  consequence  SCIENCE  -> judge    [llm·cached]  Lab's paused. I'll keep the samples cold.
+ 159.2s  consequence  ENGINEER -> judge    [llm·cached]  Power's steady. The oxygen makers are stable.
+ 167.9s  later        RULES    -> judge    [llm·cached]  Earth confirmed that bank account was a scam.
+ 178.4s  later        RULES    -> judge    [llm·cached]  Scam supplier blocked. The base is safe, Commander.
+ 194.6s  explore      ENGINEER -> judge    [llm·cached]  Commander, want to see where we really are?
