@@ -124,6 +124,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     cam.camera = c
     cam.simdPosition = SIMD3(0, 1.6, 0)
     world.scene.rootNode.addChildNode(cam)
+    world.show.showsCuePill = false // the overlay draws its own cue pill
     world.attachFade(to: cam)
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
@@ -312,6 +313,10 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       let cardYaw = world.crew.decisionFrame?.yaw
       if let cp = RealityCheck.shared.cardPosition {
         aim = toward(cp, bias: 8) // the real-Mars panorama: its caption card
+      } else if !outside, let tp = world.show.titleAim {
+        aim = toward(tp, bias: 0) // the window / end title: centred and whole in the frame
+      } else if !outside, world.show.quoteGlance(now: CACurrentMediaTime() - start) {
+        aim = toward(world.quoteScreenPosition, bias: 0) // the flagged quote has just appeared on the centre screen
       } else if outside, (st?.world?.dust ?? 0) > 0.25, !(st?.speaking?.text ?? "").isEmpty {
         // The storm warning: turn to the crater rim where the dust wall is rising.
         aim = (atan2(Spots.rimDir.x, -Spots.rimDir.y), 9)
@@ -320,7 +325,15 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       } else if !outside, act == "later" || act == "resolved", !(st?.money?.savedBig ?? "").isEmpty {
         aim = (32 * .pi / 180, 0) // the payoff: the MONEY screen (63 degrees right) enters the frame, the window title stays in it
       } else if let sp = st?.speaking?.speaker, let b = world.crew.bots[sp], b.isVisible, !(st?.speaking?.text ?? "").isEmpty {
-        aim = toward(b.pos)
+        // The speaker's head and its bubble, together.
+        let head = b.pos + SIMD3(0, 0.3, 0)
+        if let bc = world.crew.bubbleCentre {
+          let mid = (head + bc) / 2
+          let (hd, pt) = toward(mid, bias: 0)
+          aim = (hd, pt)
+        } else {
+          aim = toward(head)
+        }
       } else if let cue = st?.scene?.cue {
         switch cue {
         case "science", "engineer":

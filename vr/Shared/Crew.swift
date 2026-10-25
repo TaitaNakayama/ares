@@ -146,6 +146,14 @@ final class Crew {
   let bubble = SpeechBubble()
   private var bubbleShownKey = ""
   private var bubbleOffset = SIMD3<Float>(0, 0.2, 0)
+  /// A window or end title is up: tags and the bubble fade to nothing (set by BaseScene from the show).
+  var labelsHidden = false
+  private var labelMask: CGFloat = 1
+  /// Largest angular size a bubble may have (degrees): a robot that floats close to the camera must not give a giant clipped bubble.
+  static let maxBubbleHeightDeg: Float = 10
+  static let maxBubbleWidthDeg: Float = 30
+  /// Where the bubble hangs now (world), nil while none is up: the director camera frames it together with the speaker.
+  var bubbleCentre: SIMD3<Float>? { bubble.node.isHidden || bubble.node.opacity < 0.3 ? nil : bubble.node.simdPosition }
 
   // per frame
   private var lastNow: TimeInterval = 0
@@ -362,6 +370,8 @@ final class Crew {
     self.link = link
     let dt = Float(min(0.1, max(0.001, now - lastNow)))
     lastNow = now
+    labelMask += ((labelsHidden ? 0 : 1) - labelMask) * CGFloat(min(1, dt * 9))
+    if labelMask < 0.01 { labelMask = 0 } else if labelMask > 0.99 { labelMask = 1 }
     guard let director else { return }
     let part = partName()
     let partFlipped = lastPart != nil && lastPart != part
@@ -413,7 +423,7 @@ final class Crew {
           homeYaw = atan2(v.x, v.z)
         }
         let dist = simd_length(tpos - eye)
-        tagScale = max(1, min(4, dist / 3))
+        tagScale = 1.6 * max(1, min(4, dist / 3)) // outdoors the judge must read the tags from the start spot
       } else {
         var m = (approaching && st?.approach == true) ? CrewMarks.approach : CrewMarks.inside(id)
         // At the decision Rules stops short and to the left of the card (cards span about +-34 degrees from its yaw), never in front of it.
@@ -443,6 +453,8 @@ final class Crew {
       bot.target = tpos
       bot.homeYaw = homeYaw
       bot.tagScale = tagScale
+      bot.labelMask = labelMask
+      bot.askHint = act == "explore" ? "look + tap to ask" : "tap to ask"
       bot.armOut = armOut && shows
       bot.maxSpeed = (st?.approach == true) ? 1.3 : (part == "outside" ? 1.8 : 1.1)
       // Visibility: fade when the place changes; snap while the fade-to-black covers a part switch.
@@ -540,7 +552,7 @@ final class Crew {
     let end = c.shownAt + c.hold + 10
     let tail = Float(max(0, min(1, (end - now) / 1.5)))
     let fadeIn = Float(max(0, min(1, (now - c.shownAt) / 0.2)))
-    let a = min(tail, fadeIn)
+    let a = min(tail, fadeIn) * Float(labelMask)
     guard a > 0.01 else { bubble.node.isHidden = true; return }
     bubble.node.isHidden = false
     bubble.node.opacity = CGFloat(a)
@@ -551,7 +563,15 @@ final class Crew {
     let right = SIMD3<Float>(-radial.z, 0, radial.x)
     let outside = part == "outside"
     let decisionBubble = !outside && act == "decision" && decisionFrame != nil
-    let k: Float = outside ? max(1, min(6, dist / 3)) : (decisionBubble ? 0.85 : 1)
+    let k0: Float = outside ? max(1, min(6, dist / 3)) : (decisionBubble ? 0.85 : 1)
+    var k = k0
+    if !decisionBubble {
+      // Angular cap: height at most ~10 degrees (12 outdoors, where everything is far and drawn bigger), width at most 30.
+      let d = max(0.6, dist)
+      let maxH = (outside ? 12 : Crew.maxBubbleHeightDeg) * Float.pi / 180, maxW = Crew.maxBubbleWidthDeg * Float.pi / 180
+      let kh = 2 * d * tan(maxH / 2) / Float(SpeechBubble.h), kw = 2 * d * tan(maxW / 2) / Float(SpeechBubble.w)
+      k = max(0.35, min(k, kh, kw))
+    }
     let w = Float(SpeechBubble.w) * k, h = Float(SpeechBubble.h) * k
     let side: Float = p.x < 0 ? 1 : -1
     var centre: SIMD3<Float>
@@ -600,6 +620,7 @@ final class Crew {
       let target = right * bestSide * best.x + SIMD3(0, best.y, 0)
       bubbleOffset += (target - bubbleOffset) * 0.12
       centre = Crew.clampInside(base + bubbleOffset, halfW: w / 2, halfH: h / 2)
+      centre = Crew.keepInView(centre, w: w, h: h, eye: eye, fwd: fwd)
     }
     bubble.node.simdPosition = centre
     bubble.node.simdScale = SIMD3(repeating: k)
@@ -623,12 +644,35 @@ final class Crew {
     let a = ScreenRects.box(center: center, right: right, w: w, h: h, user: user, refAz: refAz)
     var total: Float = 0
     for o in others {
-      let b = ScreenRects.box(center: o.pos, right: right, w: 0.7, h: 1.0, user: user, refAz: refAz)
-      let ox = min(a.az1, b.az1) - max(a.az0, b.az0)
-      let oy = min(a.el1, b.el1) - max(a.el0, b.el0)
-      if ox > 0, oy > 0 { total += ox * oy }
+      // The body, and the nametag floating over it (a bubble must not cross another robot's tag).
+      for (c, bw, bh, weight) in [(o.pos, Float(0.7), Float(1.0), Float(1)), (o.tagPosition, 1.12 * o.tagScale, 0.17 * o.tagScale, Float(2))] {
+        let b = ScreenRects.box(center: c, right: right, w: bw, h: bh, user: user, refAz: refAz)
+        let ox = min(a.az1, b.az1) - max(a.az0, b.az0)
+        let oy = min(a.el1, b.el1) - max(a.el0, b.el0)
+        if ox > 0, oy > 0 { total += weight * ox * oy }
+      }
     }
     return total
+  }
+
+  /// Keeps a bubble fully inside the head's view (about +-34 degrees across, +-20 up and down from where it looks), when it is at all in front.
+  static func keepInView(_ c: SIMD3<Float>, w: Float, h: Float, eye: SIMD3<Float>, fwd: SIMD3<Float>) -> SIMD3<Float> {
+    let fh = SIMD3(fwd.x, 0, fwd.z)
+    guard simd_length(fh) > 0.1 else { return c }
+    let f = simd_normalize(fh)
+    let rgt = SIMD3<Float>(-f.z, 0, f.x)
+    let v = c - eye
+    let hd = max(0.5, hypot(v.x, v.z))
+    var rel = atan2(simd_dot(v, rgt), simd_dot(v, f))
+    guard abs(rel) < 75 * .pi / 180 else { return c } // speaker behind or far to the side: the bubble stays by it (the arrow shows where)
+    let deg = Float.pi / 180
+    let maxRel = max(8 * deg, 34 * deg - atan2(w / 2, hd))
+    rel = max(-maxRel, min(maxRel, rel))
+    let centreEl = asin(max(-1, min(1, fwd.y)))
+    let halfV = atan2(h / 2, hd)
+    let lo = centreEl - 20 * deg + halfV, hi = centreEl + 20 * deg - halfV
+    let el = lo < hi ? max(lo, min(hi, atan2(v.y, hd))) : centreEl
+    return eye + SIMD3(f.x * cos(rel) * hd + rgt.x * sin(rel) * hd, tan(el) * hd, f.z * cos(rel) * hd + rgt.z * sin(rel) * hd)
   }
 
   /// Inside the round room: below the ceiling, off the floor, away from the wall.
