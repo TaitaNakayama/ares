@@ -136,7 +136,9 @@ final class WallScreens {
     let left = p?.solsLeft
     let drill = s?.world?.drill.map { $0 != "off" } ?? p?.drillOn ?? true
     let time = s?.time ?? ""
-    let key = "\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
+    let labPaused = s?.world?.lab == "paused"
+    let water: String? = s?.world?.drill == "off" ? s?.world?.life?.waterDays.map { "WATER · \(Int($0.rounded())) DAYS" } : nil
+    let key = "\(water ?? "")|\(labPaused)|\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
     let tauH = tauHistory, solarH = solarHistory, loadH = loadHistory
     let solar = p?.solarKWhPerSol ?? 0, load = p?.loadKWhPerSol ?? 0
     power.update(key: key) { ctx, size in
@@ -179,6 +181,8 @@ final class WallScreens {
       Icon.drill(ctx, CGRect(x: c3.minX + 28, y: c3.minY + 20, width: 40, height: 52), Palette.dim)
       _ = Draw.text("Ice drill", at: CGPoint(x: c3.minX + 88, y: c3.minY + 10), size: Kit.Size.label, color: Palette.dim)
       Kit.chip(ctx, at: CGPoint(x: c3.minX + 28, y: c3.minY + 84), text: drill ? "ON" : "OFF", color: drill ? Palette.green : Palette.amber)
+      if let water { Kit.textRight(water, right: c3.maxX - 20, y: c3.minY + 92, size: 44, weight: .heavy, color: Palette.cyan, width: 340) }
+      if labPaused { Kit.textRight("LAB PAUSED", right: c3.maxX - 20, y: c3.minY + 14, size: 40, weight: .heavy, color: Palette.amber, width: 300) }
       let c4 = CGRect(x: 604, y: 512, width: 716, height: 176)
       Kit.card(ctx, c4)
       let dustTone = tau > 2 ? Palette.amber : Palette.text
@@ -206,10 +210,13 @@ final class WallScreens {
       if let big, !big.isEmpty {
         Kit.chrome(ctx, size, accent: Palette.green)
         Kit.header(ctx, size, title: "MONEY", color: Palette.gold, icon: Icon.coins, right: linkText, rightColor: linkText.hasPrefix("Live") ? Palette.green : Palette.red)
+        // "$1.4M SAVED" may arrive whole: the number alone goes big, "SAVED" sits under it. Fit the number to the card with margin.
+        var num = big.trimmingCharacters(in: .whitespaces)
+        if num.uppercased().hasSuffix("SAVED") { num = String(num.dropLast(5)).trimmingCharacters(in: .whitespaces) }
         var fs: CGFloat = 330
         var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
-        while (big as NSString).size(withAttributes: [.font: font]).width > size.width - 80, fs > 100 { fs -= 10; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
-        _ = Draw.text(big, at: CGPoint(x: 0, y: 150), size: fs, weight: .heavy, color: Palette.green, width: size.width, align: .center)
+        while (num as NSString).size(withAttributes: [.font: font]).width > size.width - 160, fs > 60 { fs -= 6; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+        _ = Draw.text(num, at: CGPoint(x: 0, y: 150), size: fs, weight: .heavy, color: Palette.green, width: size.width, maxLines: 1, align: .center)
         _ = Draw.text("SAVED", at: CGPoint(x: 0, y: 150 + font.lineHeight * 0.95), size: 86, weight: .heavy, color: Palette.text, width: size.width, align: .center)
         _ = Draw.text("The new account was a scam. Payment blocked.", at: CGPoint(x: 0, y: size.height - 150), size: 44, weight: .semibold, color: Palette.dim, width: size.width, align: .center)
         Kit.footer("Suppliers, prices and budget are SIMULATED", size: size)

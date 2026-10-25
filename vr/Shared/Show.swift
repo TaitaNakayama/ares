@@ -29,7 +29,7 @@ final class ShowDirector {
   private var blackLevel: Float = 0
   private var shownBlackText = ""
   /// The window text ("25 MINUTES LATER") and the end card, both drawn on the glass.
-  private let windowText = SpritePanel(width: 3.4, height: 0.9, pixelsPerMeter: 360)
+  private let windowText = SpritePanel(width: 3.4, height: 1.4, pixelsPerMeter: 360)
   private let endCard = SpritePanel(width: 3.5, height: 1.5, pixelsPerMeter: 360)
   private var windowTarget: Float = 0
   private var windowLevel: Float = 0
@@ -48,10 +48,10 @@ final class ShowDirector {
 
   init(scene: SCNScene, outside: Outside) {
     self.outside = outside
-    for (panel, y, order, w, h) in [(windowText, Float(1.78), 90, Float(3.4), Float(0.9)), (endCard, Float(1.74), 91, Float(3.5), Float(1.5))] {
+    for (panel, y, order, w, h) in [(windowText, Float(2.58), 90, Float(3.4), Float(1.4)), (endCard, Float(1.74), 91, Float(3.5), Float(1.5))] {
       let n = panel.node
       n.position = Room.ring(0, r: 2.2, y: y) // in front of the crew (Rules hovers at the console, 2.6 m out), same visual size as at the glass
-      n.simdScale = SIMD3(repeating: 2.2 / 3.5)
+      n.simdScale = SIMD3(repeating: (panel === windowText ? 1.6 : 2.2) / 3.5) // the window title sits high and a bit smaller (clear of the ice drill's sign)
       n.look(at: SCNVector3(0, y, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
       n.renderingOrder = order
       n.opacity = 0
@@ -94,6 +94,7 @@ final class ShowDirector {
     applyWorld(st.world)
     let rc = st.scene?.reality
     RealityCheck.shared.configure(offer: rc?.offer ?? false, caption: rc?.caption, credit: rc?.credit)
+    RealityCheck.shared.follow(serverOn: rc?.on)
     let ti = st.scene?.title
     let text = ti?.text ?? ""
     let style = ti?.style ?? ""
@@ -150,16 +151,23 @@ final class ShowDirector {
   }
 
   private func drawWindow(_ text: String) {
-    windowText.update(key: "w|" + text) { ctx, size in
-      let r = CGRect(origin: .zero, size: size).insetBy(dx: 6, dy: 40)
-      Draw.fill(ctx, r, PlatformColor(red: 0.06, green: 0.04, blue: 0.03, alpha: 0.55), radius: r.height / 2)
-      var fs: CGFloat = 120
-      var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
-      func width(_ f: PlatformFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: f, .kern: 6]).width }
-      while width(font) > size.width - 120, fs > 30 { fs -= 4; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+    // "SCAM BLOCKED · $1.4M SAVED" goes on two big lines; "25 MINUTES LATER" stays on one.
+    let lines = text.components(separatedBy: " · ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    windowText.update(key: "w2|" + text) { ctx, size in
+      var fs: CGFloat = 150
+      func font(_ f: CGFloat) -> PlatformFont { PlatformFont.systemFont(ofSize: f, weight: .heavy) }
+      func widest(_ f: CGFloat) -> CGFloat { lines.map { ($0 as NSString).size(withAttributes: [.font: font(f), .kern: 6]).width }.max() ?? 0 }
+      while widest(fs) > size.width - 140, fs > 30 { fs -= 4 }
+      let lh = font(fs).lineHeight
+      let total = lh * CGFloat(lines.count)
+      let r = CGRect(x: 6, y: (size.height - total) / 2 - 34, width: size.width - 12, height: total + 68)
+      Draw.fill(ctx, r, PlatformColor(red: 0.06, green: 0.04, blue: 0.03, alpha: 0.62), radius: min(r.height / 2, 90))
       let para = NSMutableParagraphStyle()
       para.alignment = .center
-      (text as NSString).draw(with: CGRect(x: 0, y: (size.height - font.lineHeight) / 2, width: size.width, height: font.lineHeight), options: [.usesLineFragmentOrigin], attributes: [.font: font, .foregroundColor: PlatformColor(white: 0.97, alpha: 1), .kern: 6, .paragraphStyle: para], context: nil)
+      for (i, l) in lines.enumerated() {
+        let c = (lines.count > 1 && i == lines.count - 1) ? PlatformColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1) : PlatformColor(white: 0.97, alpha: 1)
+        (l as NSString).draw(with: CGRect(x: 0, y: (size.height - total) / 2 + CGFloat(i) * lh, width: size.width, height: lh), options: [.usesLineFragmentOrigin], attributes: [.font: font(fs), .foregroundColor: c, .kern: 6, .paragraphStyle: para], context: nil)
+      }
     }
   }
 
