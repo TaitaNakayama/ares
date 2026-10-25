@@ -32,8 +32,9 @@ interface LineSpec {
   /** Pause before this line (at least 1 s). */
   gapMs?: number;
   onStart?: () => void;
-  /** Words already decided (an answer to the judge's question). */
+  /** Words already decided (an answer to the judge's question), and what produced them. */
   text?: string;
+  via?: "llm" | "rules";
 }
 
 interface Entry {
@@ -95,7 +96,7 @@ export class Show {
   private batteryReq?: string;
   private autoplayChoice?: OptionKind;
   /** Log of every spoken line (for the eval and the reviewer). */
-  readonly log: { at: number; act: Act; speaker: CrewId; to: To; text: string; via: "llm" | "rules"; reason?: string; ms: number }[] = [];
+  readonly log: { at: number; act: Act; speaker: CrewId; to: To; text: string; via: "llm" | "rules"; cached?: boolean; reason?: string; ms: number }[] = [];
   private unsub?: () => void;
   private startedAt = 0;
 
@@ -207,7 +208,7 @@ export class Show {
       this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", facts: "Oxygen 99%. Air quality good.", target: "Welcome back, Commander. Air's fresh." }));
       // The crates come back: Supply tells Rules it paid only for what arrived, and Rules signs off a quiet day.
       this.at(3000, () => this.line({ speaker: "supply", actor: "money", to: "rules", intent: "Tell Rules you paid only for the crates that actually arrived.", facts: "The filter invoice was paid for the delivered crates only.", target: "We only paid for the crates that came." }));
-      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Approve that, and tell the commander it's otherwise a quiet day, nothing suspicious.", facts: "No open flags. No pending payments.", target: "Good catch. Otherwise, a quiet day." }));
+      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Praise Supply for catching the missing crates, then tell the commander it is otherwise a quiet day.", facts: "No open flags. No pending payments.", target: "Good catch. Otherwise, a quiet day." }));
       this.at(11_000, () => this.crisis());
     });
     return "entering the base";
@@ -546,13 +547,13 @@ export class Show {
   async ask(crewId: string): Promise<void> {
     const c = crewId as CrewId;
     if (!(c in CREW) || this.act === "decision") return;
-    let text: string;
+    let said: { text: string; via: "llm" | "rules" };
     try {
-      text = await this.orch.ask(ACTOR[c], undefined, { narrate: false });
+      said = await this.orch.askLine(ACTOR[c], undefined, { narrate: false });
     } catch {
       return;
     }
-    this.line({ speaker: c, actor: ACTOR[c], to: "judge", intent: "", target: text, text });
+    this.line({ speaker: c, actor: ACTOR[c], to: "judge", intent: "", target: said.text, text: said.text, via: said.via });
   }
 
   // ---------------------------------------------------------------- the line queue
@@ -563,7 +564,7 @@ export class Show {
   }
 
   private words(spec: LineSpec): Promise<Spoken> {
-    if (spec.text) return Promise.resolve({ text: spec.text, via: "llm", ms: 0 });
+    if (spec.text) return Promise.resolve({ text: spec.text, via: spec.via ?? "llm", ms: 0 });
     return speak(this.host.router, { name: CREW[spec.speaker].name, persona: CREW[spec.speaker].job, to: TO_NAME(spec.to), intent: spec.intent, facts: spec.facts ?? this.powerFacts(), target: spec.target }, { deadlineMs: 6000 });
   }
 
@@ -612,7 +613,7 @@ export class Show {
         if (!this.active) break;
         const holdMs = holdMsFor(said.text);
         this.speaking = { seq: ++this.seq, speaker: next.spec.speaker, to: next.spec.to, text: said.text, holdMs, via: said.via };
-        this.log.push({ at: Date.now() - this.startedAt, act: this.act, speaker: next.spec.speaker, to: next.spec.to, text: said.text, via: said.via, reason: said.reason, ms: said.ms });
+        this.log.push({ at: Date.now() - this.startedAt, act: this.act, speaker: next.spec.speaker, to: next.spec.to, text: said.text, via: said.via, ...(said.cached ? { cached: true } : {}), reason: said.reason, ms: said.ms });
         this.crewSet(next.spec.speaker, { lookAt: next.spec.to === "judge" || next.spec.to === "rim" ? next.spec.to : next.spec.to });
         this.orch.say(next.spec.actor, said.text, { via: said.via, mood: this.crew[next.spec.speaker].mood === "alarmed" ? "suspicious" : this.crew[next.spec.speaker].mood === "worried" ? "worried" : "calm" });
         next.spec.onStart?.();

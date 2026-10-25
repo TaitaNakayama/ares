@@ -82,6 +82,8 @@ export interface SpeakRequest {
 export interface Spoken {
   text: string;
   via: "llm" | "rules";
+  /** The model's words replayed from the on-disk response cache (an identical request was answered before). */
+  cached?: boolean;
   reason?: string;
   ms: number;
 }
@@ -115,7 +117,7 @@ export async function speak(llm: LlmProvider | ModelRouter | undefined, req: Spe
       }
       const line = said.trim().replace(/^["“]|["”]$/g, "");
       const verdict = checkSpoken(line, `${req.facts}\n${req.target}`);
-      if (verdict === "ok") return { text: line, via: "llm", ms: Date.now() - t0 };
+      if (verdict === "ok") return { text: line, via: "llm", ...(res.cached ? { cached: true } : {}), ms: Date.now() - t0 };
       user = `${user}\n\nYour line "${line}" broke a rule (${verdict}). Say it again, shorter: at most 10 words, at most one number, no semicolons.`;
       if (attempt === 1) return fallback(`rule: ${verdict}`);
     } catch (err) {

@@ -187,6 +187,11 @@ export class Orchestrator {
 
   /** The commander asks an agent what's going on; it answers live from the current state. */
   async ask(who: string, question?: string, opts: { narrate?: boolean } = {}): Promise<string> {
+    return (await this.askLine(who, question, opts)).text;
+  }
+
+  /** `ask` with what produced the answer: the model (`llm`) or the code-written status line (`rules`). */
+  async askLine(who: string, question?: string, opts: { narrate?: boolean } = {}): Promise<{ text: string; via: "llm" | "rules" }> {
     const self = this.engine.actors.get(who) ?? [...this.engine.actors.values()].find((a) => a.role === who);
     if (!self) throw new Error(`no agent for ${who}`);
     const role = self.role as AgentRole;
@@ -194,20 +199,20 @@ export class Orchestrator {
     const brain = this.brains.find((b) => mine(b) && b.kind === "llm") ?? this.brains.find(mine);
     if (!brain) throw new Error(`no agent for ${who}`);
     const ctx = this.contextFor(self);
-    const llm = brain as { answer?: (c: BrainContext, q?: string) => Promise<{ text: string; via: string }> };
-    let text: string;
+    const llm = brain as { answer?: (c: BrainContext, q?: string) => Promise<{ text: string; via: "llm" | "rules" }> };
+    let said: { text: string; via: "llm" | "rules" };
     if (llm.answer) {
       this.emit({ type: "thinking", actorId: self.id, role, on: true, at: this.engine.now });
       try {
-        text = (await llm.answer(ctx, question)).text;
+        said = await llm.answer(ctx, question);
       } finally {
         this.emit({ type: "thinking", actorId: self.id, role, on: false, at: this.engine.now });
       }
     } else {
-      text = statusLine(role, ctx);
+      said = { text: statusLine(role, ctx), via: "rules" };
     }
-    if (opts.narrate !== false) this.narrate(self.id, text, "attentive");
-    return text;
+    if (opts.narrate !== false) this.narrate(self.id, said.text, "attentive");
+    return said;
   }
 
   private async dispatchWorld(event: WorldEvent): Promise<void> {

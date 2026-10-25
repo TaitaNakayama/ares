@@ -36,7 +36,7 @@ for (let i = 0; i < RUNS; i++) {
   }
   const state = await get("/api/state");
   const snap = state.snapshot;
-  const lines = log.lines as { at: number; act: string; speaker: string; text: string; via: string; reason?: string }[];
+  const lines = log.lines as { at: number; act: string; speaker: string; text: string; via: string; cached?: boolean; reason?: string }[];
   const broken = lines.map((l) => ({ l, v: checkSpoken(l.text, l.text) })).filter((x) => x.v !== "ok");
   const world = log.show.world;
   const money = log.show.moneyExtra;
@@ -57,15 +57,16 @@ for (let i = 0; i < RUNS; i++) {
     "the Act 4 offer was made": lines.some((l) => l.act === "explore" && l.speaker === "engineer"),
   };
   const llm = lines.filter((l) => l.via === "llm").length;
-  const r = { seed, choice, seconds: (Date.now() - t0) / 1000, acts, lines: lines.length, llmLines: llm, fallbacks: lines.filter((l) => l.via === "rules").map((l) => `${l.speaker}: ${l.reason}`), broken: broken.map((x) => `${x.l.speaker}: "${x.l.text}" (${x.v})`), checks, headsetFpsMin: Number.isFinite(fpsMin) ? fpsMin : null, log: lines };
+  const cached = lines.filter((l) => l.via === "llm" && l.cached).length;
+  const r = { seed, choice, seconds: (Date.now() - t0) / 1000, acts, lines: lines.length, llmLines: llm, cachedLines: cached, fallbacks: lines.filter((l) => l.via === "rules").map((l) => `${l.speaker}: ${l.reason}`), broken: broken.map((x) => `${x.l.speaker}: "${x.l.text}" (${x.v})`), checks, headsetFpsMin: Number.isFinite(fpsMin) ? fpsMin : null, log: lines };
   results.push(r);
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
   const at = (a: string) => acts.find((x) => x.act === a)?.t.toFixed(0) ?? "-";
-  console.log(`${seed.padEnd(10)} ${choice.padEnd(5)} ${r.seconds.toFixed(0)}s  inside@${at("inside")} card@${at("decision")} later@${at("later")} explore@${at("explore")}  lines ${lines.length} (llm ${llm})  ${failed.length ? `FAILED: ${failed.join("; ")}` : "all checks pass"}${r.fallbacks.length ? `  rules lines: ${r.fallbacks.join(" | ")}` : ""}${r.broken.length ? `  BROKEN: ${r.broken.join(" | ")}` : ""}  headset fps min ${r.headsetFpsMin?.toFixed(1) ?? "n/a"}`);
+  console.log(`${seed.padEnd(10)} ${choice.padEnd(5)} ${r.seconds.toFixed(0)}s  inside@${at("inside")} card@${at("decision")} later@${at("later")} explore@${at("explore")}  lines ${lines.length} (llm ${llm}, ${cached} of them cached)  ${failed.length ? `FAILED: ${failed.join("; ")}` : "all checks pass"}${r.fallbacks.length ? `  rules lines: ${r.fallbacks.join(" | ")}` : ""}${r.broken.length ? `  BROKEN: ${r.broken.join(" | ")}` : ""}  headset fps min ${r.headsetFpsMin?.toFixed(1) ?? "n/a"}`);
 }
 const names = Object.keys(results[0]?.checks ?? {});
 console.log("\nChecks, runs passing:");
 for (const n of names) console.log(`  ${n.padEnd(48)} ${results.filter((r) => r.checks[n]).length}/${results.length}`);
 const all = results.flatMap((r) => r.log);
-console.log(`Lines: ${all.length}, by the model ${all.filter((l: any) => l.via === "llm").length} (${Math.round((100 * all.filter((l: any) => l.via === "llm").length) / Math.max(1, all.length))}%), rule-breaking lines shown: ${results.reduce((s, r) => s + r.broken.length, 0)}`);
+console.log(`Lines: ${all.length}, by the model ${all.filter((l: any) => l.via === "llm").length} (${Math.round((100 * all.filter((l: any) => l.via === "llm").length) / Math.max(1, all.length))}%; ${all.filter((l: any) => l.via === "llm" && l.cached).length} replayed from the response cache), rule-breaking lines shown: ${results.reduce((s, r) => s + r.broken.length, 0)}`);
 if (OUT) writeFileSync(OUT, JSON.stringify(results, null, 1));
