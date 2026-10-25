@@ -449,7 +449,7 @@ final class ShowDecisionView: NSView {
 // MARK: - Badges
 
 final class BadgeView: NSView {
-  enum Mode: Equatable { case live, replay, mouse }
+  enum Mode: Equatable { case live, replay, mouse, director }
   var mode: Mode = .replay { didSet { if mode != oldValue { needsDisplay = true } } }
   var beat: (n: Int, of: Int)? { didSet { if beat?.n != oldValue?.n { needsDisplay = true } } }
   var debugText = "" { didSet { if debugText != oldValue { needsDisplay = true } } }
@@ -464,6 +464,7 @@ final class BadgeView: NSView {
       case .live: return ("LIVE", SpectatorPalette.red, "the commander's view")
       case .replay: return ("REPLAY", SpectatorPalette.amber, "recorded run")
       case .mouse: return ("DEBUG", SpectatorPalette.violet, "mouse camera, no headset")
+      case .director: return ("SHOW", SpectatorPalette.violet, "camera follows the story")
       }
     }()
     let label = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .heavy), .foregroundColor: NSColor.white, .kern: 2])

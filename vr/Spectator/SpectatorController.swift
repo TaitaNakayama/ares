@@ -21,6 +21,12 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var chosen: (label: String, at: TimeInterval)?
   private var mode: BadgeView.Mode = .replay
   private var lastReplay: Bool?
+  /// `--director`: the spectator camera follows the story (the speaker, the cue, the decision card) instead of a mouse or a drift.
+  private let directorArg = CommandLine.arguments.contains("--director")
+  /// Shared with the render thread: where the director wants to look (world heading in radians, ring convention: 0 = -Z, right positive; pitch in degrees), nil = straight ahead.
+  private var directorOn = false
+  private var directorAim: (heading: Float, pitch: Float)?
+  private var subtitlesCleared = false
 
   // Camera state shared with SceneKit's render thread.
   private let camLock = NSLock()
@@ -185,11 +191,11 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     lastTick = now
     let live = pose.isLive(now: now)
     #if DEBUG
-    let newMode: BadgeView.Mode = live ? .live : .mouse
+    let newMode: BadgeView.Mode = live ? .live : (directorArg ? .director : .mouse)
     let replay = !live && !link.isConnectedToServer
     #else
-    let newMode: BadgeView.Mode = live ? .live : .replay
-    let replay = !live
+    let newMode: BadgeView.Mode = live ? .live : (directorArg ? .director : .replay)
+    let replay = !live && (!directorArg || !link.isConnectedToServer)
     #endif
     if newMode != mode || replay != lastReplay {
       // Switching between the live run and the recording: old lines belong to the other story.
@@ -250,6 +256,16 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       if speaking.update(st?.speaking, crew: st?.crew, now: now) { overlay.subtitles.items = speaking.current.map { [$0] } ?? [] }
     } else if subtitles.tick(now: now) { overlay.subtitles.items = subtitles.visible }
     overlay.cue.cue = st?.scene?.cue
+    // A window or end card stands alone: no subtitle under it.
+    let titleStyle = st?.scene?.title?.style ?? ""
+    let wantClear = (titleStyle == "end" || titleStyle == "window") && !(st?.scene?.title?.text ?? "").isEmpty
+    if wantClear {
+      if !overlay.subtitles.items.isEmpty { overlay.subtitles.items = [] }
+    } else if subtitlesCleared, showState {
+      overlay.subtitles.items = speaking.current.map { [$0] } ?? []
+    }
+    subtitlesCleared = wantClear
+    updateDirector(st)
 
     let showDecision = st?.decision?.options?.isEmpty == false
     let waiting = showDecision ? nil : st?.waiting?.first
@@ -273,6 +289,55 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     }
   }
 
+  /// The director camera: where a judge would look. Speaker first, else the decision card, else the cue, else straight ahead.
+  private func updateDirector(_ st: VRState?) {
+    var on = false
+    var aim: (heading: Float, pitch: Float)?
+    #if DEBUG
+    let allowed = directorArg
+    #else
+    let allowed = true
+    #endif
+    if allowed, mode != .live, let act = st?.scene?.act, act != "title", st?.scene?.title?.style != "black" {
+      on = true
+      let eye = world.director.eye
+      let outside = world.director.isOutside
+      func toward(_ p: SIMD3<Float>, bias: Float = 4) -> (Float, Float) {
+        let d = p - eye
+        let h = max(0.3, hypot(d.x, d.z))
+        return (atan2(d.x, -d.z), max(-30, min(35, atan2(d.y, h) * 180 / .pi + bias)))
+      }
+      let cardYaw = world.crew.decisionFrame?.yaw
+      if let cp = RealityCheck.shared.cardPosition {
+        aim = toward(cp, bias: 8) // the real-Mars panorama: its caption card
+      } else if outside, (st?.world?.dust ?? 0) > 0.25, !(st?.speaking?.text ?? "").isEmpty {
+        // The storm warning: turn to the crater rim where the dust wall is rising.
+        aim = (atan2(Spots.rimDir.x, -Spots.rimDir.y), 9)
+      } else if act == "decision", !outside {
+        aim = (cardYaw ?? 0, 12)
+      } else if !outside, act == "later" || act == "resolved", !(st?.money?.savedBig ?? "").isEmpty {
+        aim = (32 * .pi / 180, 0) // the payoff: the MONEY screen (63 degrees right) enters the frame, the window title stays in it
+      } else if let sp = st?.speaking?.speaker, let b = world.crew.bots[sp], b.isVisible, !(st?.speaking?.text ?? "").isEmpty {
+        aim = toward(b.pos)
+      } else if let cue = st?.scene?.cue {
+        switch cue {
+        case "science", "engineer":
+          if let b = world.crew.bots[cue], b.isVisible { aim = toward(b.pos) }
+        case "door":
+          if outside { aim = toward(SIMD3(Spots.door.look.x, 1.8, Spots.door.look.y), bias: 0) }
+        case "card":
+          aim = (cardYaw ?? 0, 10)
+        default: break
+        }
+      }
+      if aim == nil && !outside { aim = (0, 4) } // inside: the window and the screens
+    }
+    camLock.lock()
+    directorOn = on
+    directorAim = aim
+    camLock.unlock()
+  }
+
   /// Screen point (overlay coordinates, top-left origin) of a view direction from the camera position.
   private func project(direction d: SIMD3<Float>, cameraQ: simd_quatf, fovX: Float) -> CGPoint? {
     let v = cameraQ.inverse.act(d)
@@ -293,8 +358,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     camLock.lock()
     let dt = lastRender == 0 ? 1.0 / 60 : min(0.1, now - lastRender)
     lastRender = now
-    let target: simd_quatf
-    let tau: Double
+    var target: simd_quatf
+    var tau: Double
     switch camMode {
     case .live:
       target = pose.latest().q
@@ -306,14 +371,19 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       target = CameraMath.drift(at: now - start)
       #endif
       tau = 0.06
-    case .replay:
+    case .replay, .director:
       target = CameraMath.drift(at: now - start)
       tau = 1.2
+    }
+    if camMode != .live, directorOn {
+      // Where the judge looks: turn smoothly (about 1.2 s) toward the aim. Scene yaw is added on top of this, so subtract it.
+      if let a = directorAim { target = CameraMath.orientation(yaw: (a.heading + shownYaw) * 180 / .pi, pitch: a.pitch) } else { target = CameraMath.orientation(yaw: 0, pitch: 0) }
+      tau = 0.4
     }
     let q = smoother.step(toward: target, dt: dt, timeConstant: tau)
     renderedQ = q
     // Position and scene yaw follow the same way, lightly smoothed.
-    let a = Float(1 - exp(-dt / (camMode == .replay ? 0.25 : 0.10)))
+    let a = Float(1 - exp(-dt / (camMode == .replay || camMode == .director ? 0.25 : 0.10)))
     shownPos += (targetPos - shownPos) * a
     var dy = targetYaw - shownYaw
     while dy > .pi { dy -= 2 * .pi }
