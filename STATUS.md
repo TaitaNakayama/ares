@@ -41,7 +41,10 @@ The one idea: on Mars nobody can call Earth for help; an AI crew keeps the base 
 
 **Done (headset, merged):** the five crew robots (silhouettes, colours, icon nametags), one bubble at a time beside the speaker (clamped in the room, the roof clipping fixed), the speaker glows and turns to whoever it addresses, the others look at it, idle jobs, Rules' alarmed look and approach, cues on Science and the Engineer, the contract decoding and senders (Mac-verified; phone untested: it was locked).
 
-**In progress:** the show staging on the headset (title, Act 1 layout, the door, inside, the crisis visuals, the three-option card with gaze, the consequences, the window titles, the end card, the reality check from inside, spectator subtitles in colour and full-screen 60 fps). Then: iteration rounds with a fresh-eyes reviewer acting as a first-time judge, 10+ checked runs, the video, the docs.
+**Iteration rounds** (evidence in `docs/evidence/rounds/`; a fresh first-time-judge reviewer each round, scores: clear / believable / readable / felt / would-remember):
+- **Round 1** (0a55a1d): 8/8/5/6/6. The reviewer's one-idea sentence said "purchasing", not the brief's idea. Worst issues: the end card overlapped, the payoff number and the decision bubble were clipped, "25 MINUTES LATER" hid the OFFLINE sign, the water days weren't on screen, the reality check didn't show, the dialogue was flat, the missing crates were dropped, no felt reason to go inside.
+- **Round 2 server fixes** (7c3cc42): survival framing in the welcome, the storm earlier, the crates callback inside, pushback in the crisis ("Air comes first. Always." / "Who's selling them?"), the payoff card on its own, the closing line once the supplier is locked. Checked live runs on the round-2 server (`.cache/show-check-r2.json`): 3/3 (drill, lab, batteries; three seeds) pass all 9 checks; 78 lines, 78 by the model, 0 broke the text rules; inside at 42-47 s, card at 127-131 s, explore at 193-199 s.
+- **Round 2 headset fixes** (in progress): the reality check follows the server, decision bubble and window-title placement, the payoff/money number fit, WATER and LAB on the screens, a spectator director camera, a more visible storm outside.
 
 ## Sunday: see [docs/demo/runbook.md](demo/runbook.md) for start-up, the run, and fallbacks.
 
