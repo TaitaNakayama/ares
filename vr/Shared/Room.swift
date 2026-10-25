@@ -8,6 +8,8 @@ import UIKit
 /// Round control room, radius 4 m, with a curved window facing -Z (toward the delta).
 /// Static geometry is flattened so the whole shell costs a handful of draw calls.
 enum Room {
+  /// The crisis rig (red beacons on the ceiling, the interior lights dimmed and pulsing red); driven by `ShowDirector`.
+  nonisolated(unsafe) static var alarm: AlarmRig?
   static let radius: Float = 4.0
   static let windowHalfAngle: Float = 40 // degrees either side of -Z
   static let sill: Float = 0.85
@@ -216,6 +218,7 @@ enum Room {
     lamp.light?.attenuationEndDistance = 9
     lamp.position = SCNVector3(0, 2.9, 0.5)
     root.addChildNode(lamp)
+    var rigLights: [AlarmRig.Lamp] = [AlarmRig.Lamp(light: lamp.light!, base: lamp.light!.intensity, color: (1.0, 0.88, 0.72))]
     for side: Float in [-1, 1] {
       let fill = SCNNode()
       fill.light = SCNLight()
@@ -226,7 +229,11 @@ enum Room {
       fill.light?.attenuationEndDistance = 5
       fill.position = SCNVector3(side * 2.7, 1.8, -1.2)
       root.addChildNode(fill)
+      rigLights.append(AlarmRig.Lamp(light: fill.light!, base: fill.light!.intensity, color: (0.62, 0.74, 0.85)))
     }
+    let rig = AlarmRig(lights: rigLights)
+    root.addChildNode(rig.node)
+    alarm = rig
     Dressing.build(into: root)
   }
 
@@ -240,5 +247,70 @@ enum Room {
 
   static func floorMaterial() -> SCNMaterial {
     Tex.material(Tex.floorImage())
+  }
+}
+
+
+/// The alarm made visible: while `world.alarm` the interior lights drop to about 60 % with a slow red pulse (1.5 s) and three red
+/// beacons on the ceiling pulse with them. No new lights: it modulates the room's existing three and a few emissive materials.
+final class AlarmRig {
+  struct Lamp { let light: SCNLight; let base: CGFloat; let color: (CGFloat, CGFloat, CGFloat) }
+  let node = SCNNode()
+  private let lamps: [Lamp]
+  private var beacons: [(core: SCNMaterial, glow: SCNNode)] = []
+  private var active = false
+  private var level: Float = 0
+  private var last: TimeInterval = 0
+
+  init(lights: [Lamp]) {
+    lamps = lights
+    let housing = Room.mat(PlatformColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1), rough: 0.7)
+    for deg: Float in [-38, 38, 180] {
+      let h = SCNNode()
+      h.position = Room.ring(deg, r: 3.2, y: Room.height - 0.06)
+      let base = SCNNode(geometry: SCNCylinder(radius: 0.17, height: 0.06))
+      base.geometry?.materials = [housing]
+      h.addChildNode(base)
+      let core = SCNMaterial()
+      core.lightingModel = .constant
+      core.diffuse.contents = PlatformColor(red: 1, green: 0.1, blue: 0.08, alpha: 1)
+      let dome = SCNNode(geometry: SCNSphere(radius: 0.15))
+      dome.geometry?.materials = [core]
+      dome.position = SCNVector3(0, -0.07, 0)
+      h.addChildNode(dome)
+      let g = SCNNode(geometry: SCNPlane(width: 1.5, height: 1.5))
+      g.geometry?.materials = [Tex.glowMaterial(PlatformColor(red: 1, green: 0.12, blue: 0.08, alpha: 1), strength: 1)]
+      g.position = SCNVector3(0, -0.12, 0)
+      g.renderingOrder = 57
+      let bb = SCNBillboardConstraint()
+      bb.freeAxes = .all
+      g.constraints = [bb]
+      h.addChildNode(g)
+      node.addChildNode(h)
+      beacons.append((core, g))
+    }
+    node.isHidden = true
+  }
+
+  func setActive(_ on: Bool) { active = on }
+
+  func update(now: TimeInterval) {
+    let dt = Float(min(0.1, max(0, now - last)))
+    last = now
+    let target: Float = active ? 1 : 0
+    if level != target { level = level < target ? min(target, level + dt / 0.5) : max(target, level - dt / 0.5) } else if level == 0 { return }
+    node.isHidden = level <= 0.001
+    let pulse = Float(0.5 + 0.5 * sin(now * 2 * .pi / 1.5))
+    let dim = CGFloat(1 - level * (0.4 - 0.12 * pulse)) // about 60 %, swinging 52 - 64 %
+    let red = CGFloat(level * (0.2 + 0.5 * pulse))
+    for l in lamps {
+      l.light.intensity = l.base * dim
+      l.light.color = PlatformColor(red: l.color.0 + (1 - l.color.0) * red, green: l.color.1 * (1 - 0.85 * red), blue: l.color.2 * (1 - 0.88 * red), alpha: 1)
+    }
+    let b = CGFloat(0.35 + 0.65 * pulse)
+    for bc in beacons {
+      bc.core.diffuse.contents = PlatformColor(red: 0.35 + 0.65 * b, green: 0.05 * b, blue: 0.04 * b, alpha: 1)
+      bc.glow.opacity = CGFloat(level) * b
+    }
   }
 }

@@ -25,7 +25,7 @@ struct VRState: Decodable {
     var closeupOpen: Bool?
     var reality: Reality?
   }
-  struct Title: Decodable { var text: String?; var style: String? }
+  struct Title: Decodable { var text: String?; var style: String?; var sub: String? }
   struct Reality: Decodable { var offer: Bool?; var on: Bool?; var caption: String?; var credit: String? }
   /// One crew member (keyed by id: engineer | life | science | supply | rules).
   struct Crew: Decodable {
@@ -39,8 +39,11 @@ struct VRState: Decodable {
     struct WLife: Decodable { var o2Pct: Double?; var waterDays: Double? }
     var power: WPower?; var life: WLife?; var lab: String?; var drill: String?
     var tau: Double?; var alarm: Bool?; var dust: Double?
+    var quote: Quote?
   }
-  struct DecisionOption: Decodable { var id: String; var label: String?; var icon: String?; var speaker: String?; var proposedBy: String? }
+  /// The flagged supplier quote (round 3), shown on the centre console screen.
+  struct Quote: Decodable { var vendor: String?; var qty: Int?; var unit: String?; var normal: String?; var ratio: Double?; var total: String?; var newAccount: Bool?; var status: String? }
+  struct DecisionOption: Decodable { var id: String; var label: String?; var icon: String?; var speaker: String?; var proposedBy: String?; var cost: String? }
   struct Decision: Decodable { var id: String?; var options: [DecisionOption]?; var gazed: String?; var chosen: String? }
   var seed: String?
   var policyVersion: Int?

@@ -144,8 +144,8 @@ enum ShowColors {
 /// highlights it (and is reported through `onGaze`); the button chooses the one under the reticle (`tap`).
 final class DecisionCards {
   struct Option: Equatable {
-    let id: String; let label: String; let icon: String; let speaker: String; let color: PlatformColor
-    static func == (a: Option, b: Option) -> Bool { a.id == b.id && a.label == b.label && a.icon == b.icon && a.speaker == b.speaker }
+    let id: String; let label: String; let icon: String; let speaker: String; let color: PlatformColor; var cost: String = ""
+    static func == (a: Option, b: Option) -> Bool { a.id == b.id && a.label == b.label && a.icon == b.icon && a.speaker == b.speaker && a.cost == b.cost }
   }
   enum Mark { case idle, gaze, chosen, dim }
 
@@ -198,7 +198,7 @@ final class DecisionCards {
     let opts: [Option] = (d?.options ?? []).prefix(3).map { o in
       let sp = o.speaker ?? ""
       let c = ShowColors.hex(crew?[sp]?.color) ?? ShowColors.crew(sp)
-      return Option(id: o.id, label: o.label ?? o.id, icon: o.icon ?? "", speaker: sp, color: c)
+      return Option(id: o.id, label: o.label ?? o.id, icon: o.icon ?? "", speaker: sp, color: c, cost: o.cost ?? "")
     }
     guard let d, !opts.isEmpty else {
       if isActive { dismiss(after: 0.1) }
@@ -259,7 +259,8 @@ final class DecisionCards {
 
   private func draw(_ i: Int, _ mark: Mark) {
     let o = options[i]
-    let key = "\(o.id)|\(o.label)|\(o.icon)|\(o.speaker)|\(mark)"
+    let key = "\(o.id)|\(o.label)|\(o.icon)|\(o.speaker)|\(o.cost)|\(mark)"
+    let cost = o.cost
     let accent = o.color
     let name = ShowColors.name(o.speaker)
     panels[i].update(key: key) { ctx, size in
@@ -278,9 +279,13 @@ final class DecisionCards {
       ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 9, dy: 9), cornerWidth: 32, cornerHeight: 32, transform: nil))
       ctx.strokePath()
       let ic = accent.withAlphaComponent(mark == .dim ? 0.35 : 1)
-      Self.drawIcon(ctx, kind: o.icon, center: CGPoint(x: size.width / 2, y: 188), size: 210, color: ic)
+      Self.drawIcon(ctx, kind: o.icon, center: CGPoint(x: size.width / 2, y: cost.isEmpty ? 188 : 150), size: cost.isEmpty ? 210 : 170, color: ic)
       let tc: PlatformColor = mark == .dim ? PlatformColor(white: 0.5, alpha: 1) : PlatformColor(white: 0.97, alpha: 1)
-      _ = Draw.text(o.label, at: CGPoint(x: 28, y: 322), size: 68, weight: .heavy, color: tc, width: size.width - 56, maxLines: 3, align: .center)
+      _ = Draw.text(o.label, at: CGPoint(x: 28, y: cost.isEmpty ? 322 : 254), size: cost.isEmpty ? 68 : 58, weight: .heavy, color: tc, width: size.width - 56, maxLines: cost.isEmpty ? 3 : 2, align: .center)
+      // What it costs, in the speaker's colour (replaces nothing but the empty space; the speaker's name stays at the foot).
+      if !cost.isEmpty {
+        _ = Draw.text(cost, at: CGPoint(x: 28, y: 392), size: 40, weight: .heavy, color: accent.withAlphaComponent(mark == .dim ? 0.45 : 1), width: size.width - 56, maxLines: 3, align: .center)
+      }
       // Who speaks its trade-off.
       if !name.isEmpty {
         ctx.setFillColor(accent.withAlphaComponent(mark == .dim ? 0.35 : 1).cgColor)

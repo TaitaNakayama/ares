@@ -63,6 +63,10 @@ final class Robot {
   var thinking = false
   /// Nametag size multiplier (outdoors the judge is metres away).
   var tagScale: Float = 1
+  /// 0...1: nametag visibility multiplier (the window / end titles hide every tag).
+  var labelMask: CGFloat = 1
+  /// What the tag says while the reticle is on the robot.
+  var askHint = "tap to ask"
   /// Science only: the grinding arm is out.
   var armOut = false
   var mood = "calm"
@@ -440,7 +444,7 @@ final class Robot {
         d.scale = SCNVector3(sc, sc, sc)
       }
     }
-    nametag.setSuffix(thinking ? " · thinking…" : hovered ? " · tap to ask" : "")
+    nametag.setSuffix(thinking ? " · thinking…" : hovered ? " · " + askHint : "")
     nametag.setActive(speaking)
     applyMood(mood)
     if speaking && !wasSpeaking { speakingSince = now }
@@ -518,8 +522,8 @@ final class Robot {
     let pulseTag: Float = speaking ? 1 + 0.07 * sin(Float(now - speakingSince) * 7) : 1
     let ts = tagScale * pulseTag
     nametag.node.simdScale = SIMD3(repeating: ts)
-    nametag.node.opacity += (tagFade - nametag.node.opacity) * 0.15
-
+    nametag.node.opacity += (tagFade * labelMask - nametag.node.opacity) * 0.3
+    nametag.node.isHidden = nametag.node.opacity < 0.01
     // Rim: bright while speaking (with a decaying burst at the start), plus the cue halo.
     let since = Float(now - speakingSince)
     let burst = speaking ? 0.7 * max(0, 1 - since / 1.2) : 0

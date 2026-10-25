@@ -138,14 +138,23 @@ final class WallScreens {
     let time = s?.time ?? ""
     let labPaused = s?.world?.lab == "paused"
     let water: String? = s?.world?.drill == "off" ? s?.world?.life?.waterDays.map { "WATER · \(Int($0.rounded())) DAYS" } : nil
-    let key = "\(water ?? "")|\(labPaused)|\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
+    let alarm = s?.world?.alarm ?? false
+    let key = "\(alarm)|\(water ?? "")|\(labPaused)|\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
     let tauH = tauHistory, solarH = solarHistory, loadH = loadHistory
     let solar = p?.solarKWhPerSol ?? 0, load = p?.loadKWhPerSol ?? 0
     power.update(key: key) { ctx, size in
       let crit = wl == "critical", lowLevel = wl == "low"
       let accent = crit ? Palette.red : lowLevel ? Palette.amber : Palette.orange
       Kit.chrome(ctx, size, accent: accent)
-      Kit.header(ctx, size, title: crit ? "POWER · CRITICAL" : lowLevel ? "POWER · LOW" : "POWER", color: accent, icon: crit ? Icon.warning : Icon.bolt, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
+      if alarm {
+        // The crisis: the header becomes a solid red band.
+        Draw.fill(ctx, CGRect(x: 8, y: 8, width: size.width - 16, height: 92), PlatformColor(red: 0.86, green: 0.10, blue: 0.09, alpha: 1), radius: 14)
+        Icon.warning(ctx, CGRect(x: 28, y: 24, width: 60, height: 60), .white)
+        _ = Draw.text("POWER CRITICAL", at: CGPoint(x: 108, y: 20), size: 64, weight: .heavy, color: .white)
+        if !time.isEmpty { Kit.textRight(time, right: size.width - 32, y: 34, size: Kit.Size.label, color: PlatformColor(white: 1, alpha: 0.9), width: 560) }
+      } else {
+        Kit.header(ctx, size, title: crit ? "POWER · CRITICAL" : lowLevel ? "POWER · LOW" : "POWER", color: accent, icon: crit ? Icon.warning : Icon.bolt, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
+      }
       let low = (left ?? 99) < 6 || crit || lowLevel
       let tone = crit ? Palette.red : low ? Palette.amber : Palette.green
       // Battery ring.
@@ -284,8 +293,14 @@ final class WallScreens {
     let beat = s?.storyBeat ?? 0
     let beats = s?.storyBeats ?? 7
     let mode = s?.agentMode
-    let key = "\(w?.id ?? "")|\(w?.decideByText ?? "")|\(earth?.id ?? "")|\(earth?.replyInMin ?? -1)|\(earth?.replyEtaText ?? "")|\(Int(light * 10))|\(time)|\(beat)|\(mode ?? "")"
+    let q = s?.world?.quote
+    let qKey = q.map { "\($0.vendor ?? "")|\($0.qty ?? 0)|\($0.unit ?? "")|\($0.normal ?? "")|\($0.ratio ?? 0)|\($0.total ?? "")|\($0.newAccount ?? false)|\($0.status ?? "")" } ?? ""
+    let key = "\(qKey)|\(w?.id ?? "")|\(w?.decideByText ?? "")|\(earth?.id ?? "")|\(earth?.replyInMin ?? -1)|\(earth?.replyEtaText ?? "")|\(Int(light * 10))|\(time)|\(beat)|\(mode ?? "")"
     waiting.update(key: key) { ctx, size in
+      if let q {
+        Self.drawQuote(ctx, size, q, time: time)
+        return
+      }
       let tone = w != nil ? Palette.amber : Palette.green
       Kit.chrome(ctx, size, accent: tone)
       Kit.header(ctx, size, title: w != nil ? "WAITING FOR YOU" : "ALL CLEAR", color: tone, icon: w != nil ? Icon.warning : Icon.check, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
@@ -319,6 +334,34 @@ final class WallScreens {
         let w = (size.width - 64) / CGFloat(beats) - 12
         Draw.fill(ctx, CGRect(x: x, y: y0 + 56, width: w, height: 14), i <= beat ? (i == beat ? Palette.amber : Palette.green) : PlatformColor(white: 1, alpha: 0.14), radius: 7)
       }
+    }
+  }
+
+  /// The flagged quote on the centre console: vendor, qty x unit, the price jump, the new account, the total, and Earth's verdict.
+  private static func drawQuote(_ ctx: CGContext, _ size: CGSize, _ q: VRState.Quote, time: String) {
+    let scam = q.status == "scam"
+    let accent = scam ? Palette.red : Palette.amber
+    Kit.chrome(ctx, size, accent: accent)
+    Kit.header(ctx, size, title: "QUOTE FLAGGED", color: accent, icon: Icon.warning, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
+    _ = Draw.text(q.vendor ?? "Supplier", at: CGPoint(x: 32, y: 98), size: 56, weight: .heavy, width: size.width - 64)
+    let unit = q.unit ?? ""
+    _ = Draw.text("\(q.qty ?? 0) × \(unit)", at: CGPoint(x: 32, y: 168), size: 64, weight: .heavy, color: Palette.text, width: 640)
+    Kit.textRight("Total \(q.total ?? "")", right: size.width - 32, y: 168, size: 64, weight: .heavy, color: Palette.gold, width: 640)
+    if let ratio = q.ratio, ratio > 1.05 {
+      let r = ratio == ratio.rounded() ? String(Int(ratio)) : String(format: "%.1f", ratio)
+      _ = Draw.text("\(r)× its normal \(q.normal ?? "")", at: CGPoint(x: 32, y: 246), size: 52, weight: .heavy, color: Palette.red, width: size.width - 64)
+    }
+    if q.newAccount == true {
+      Draw.fill(ctx, CGRect(x: 32, y: 312, width: 560, height: 70), Palette.red.withAlphaComponent(0.20), radius: 35)
+      _ = Draw.text("NEW BANK ACCOUNT", at: CGPoint(x: 56, y: 322), size: 48, weight: .heavy, color: Palette.red, width: 530)
+    }
+    let band = CGRect(x: 24, y: 404, width: size.width - 48, height: 120)
+    if scam {
+      Draw.fill(ctx, band, PlatformColor(red: 0.62, green: 0.08, blue: 0.08, alpha: 1), radius: 20)
+      _ = Draw.text("SCAM · PAYMENT BLOCKED", at: CGPoint(x: band.minX, y: band.minY + 28), size: 62, weight: .heavy, color: .white, width: band.width, align: .center)
+    } else if q.status == "checking" {
+      Draw.fill(ctx, band, Palette.amber.withAlphaComponent(0.18), radius: 20)
+      _ = Draw.text("Checking with Earth…", at: CGPoint(x: band.minX, y: band.minY + 28), size: 62, weight: .heavy, color: Palette.amber, width: band.width, align: .center)
     }
   }
 

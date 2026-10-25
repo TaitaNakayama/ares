@@ -192,6 +192,7 @@ final class BaseScene {
     director.update(now: time)
     stepTau(now: time)
     show.update(now: time)
+    crew.labelsHidden = show.labelsHidden
     if drivesView { viewOffset = director.viewOffset }
     lastHeadView = headView
     let worldFromHead = (headView * viewOffset).inverse
@@ -456,6 +457,9 @@ final class BaseScene {
       }
     }
   }
+
+  /// World position of the centre console screen (the QUOTE card shows there), for the director camera.
+  var quoteScreenPosition: SIMD3<Float> { screens.waiting.node.simdPosition }
 
   /// Where the director camera should look (yaw right-positive, pitch up-positive, degrees).
   func directorTarget(now: TimeInterval) -> (Float, Float) {

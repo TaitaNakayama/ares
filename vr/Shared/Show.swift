@@ -23,10 +23,20 @@ final class ShowDirector {
 
   // MARK: cards
 
-  private let titleText = SpritePanel(width: 1.3, height: 0.31, pixelsPerMeter: 700)
+  private let titleText = SpritePanel(width: 1.3, height: 0.5, pixelsPerMeter: 700)
   private var cameraCards: [(black: SCNNode, text: SCNNode)] = []
   private var blackTarget: Float = 0
   private var blackLevel: Float = 0
+  private var textLevel: Float = 0
+  private var shownSub = ""
+  /// The cue pill on the headset (the spectator draws its own in the overlay).
+  var showsCuePill = true
+  private let cuePill = SpritePanel(width: 0.74, height: 0.1, pixelsPerMeter: 700)
+  private var cuePillNodes: [SCNNode] = []
+  private var cueShown = ""
+  private var cueLevel: Float = 0
+  private var quoteGlanceUntil: TimeInterval = 0
+  private var hadQuote = false
   private var shownBlackText = ""
   /// The window text ("25 MINUTES LATER") and the end card, both drawn on the glass.
   private let windowText = SpritePanel(width: 3.4, height: 1.4, pixelsPerMeter: 360)
@@ -57,6 +67,9 @@ final class ShowDirector {
       n.opacity = 0
       n.isHidden = true
       panel.node.geometry?.firstMaterial?.isDoubleSided = false
+      // Always in front of the robots, their tags and bubbles.
+      panel.node.geometry?.firstMaterial?.readsFromDepthBuffer = false
+      n.renderingOrder = 8_000 + order
       _ = (w, h)
       scene.rootNode.addChildNode(n)
     }
@@ -84,7 +97,30 @@ final class ShowDirector {
     t.isHidden = blackLevel <= 0.001
     camera.addChildNode(t)
     cameraCards.append((q, t))
+    if showsCuePill {
+      let c = cuePill.node.clone()
+      c.position = SCNVector3(0, -0.34, -0.9)
+      c.renderingOrder = 31_100
+      c.opacity = 0
+      c.isHidden = true
+      c.geometry?.firstMaterial?.readsFromDepthBuffer = false
+      camera.addChildNode(c)
+      cuePillNodes.append(c)
+    }
   }
+
+  /// Where the window / end title hangs (world), for the spectator's director camera; nil when none is up.
+  var titleAim: SIMD3<Float>? {
+    if windowTarget > 0 { return windowText.node.simdPosition }
+    if endTarget > 0 { return endCard.node.simdPosition }
+    return nil
+  }
+
+  /// A window or end title is up: nametags and bubbles step aside.
+  var labelsHidden: Bool { windowTarget > 0 || endTarget > 0 }
+
+  /// The flagged quote just appeared: the director looks at the centre screen for about 3 s.
+  func quoteGlance(now: TimeInterval) -> Bool { now < quoteGlanceUntil }
 
   // MARK: state
 
@@ -92,6 +128,9 @@ final class ShowDirector {
     act = st.scene?.act
     cue = st.scene?.cue
     applyWorld(st.world)
+    let hasQuote = st.world?.quote != nil
+    if hasQuote && !hadQuote { quoteGlanceUntil = lastNow + 3 }
+    hadQuote = hasQuote
     let rc = st.scene?.reality
     RealityCheck.shared.configure(offer: rc?.offer ?? false, caption: rc?.caption, credit: rc?.credit)
     RealityCheck.shared.follow(serverOn: rc?.on)
@@ -102,9 +141,11 @@ final class ShowDirector {
     // Black title: opaque black with the text. It fades in quickly and out slowly (the real terrain fades in).
     if style == "black" && !text.isEmpty {
       blackTarget = 1
-      if text != shownBlackText {
+      let sub = ti?.sub ?? ""
+      if text != shownBlackText || sub != shownSub {
         shownBlackText = text
-        drawTitle(text)
+        shownSub = sub
+        drawTitle(text, sub: sub)
         if blackLevel == 0 && lastNow == 0 { blackLevel = 1 } // the very first state: no flash of the world before the title
       }
     } else {
@@ -132,12 +173,13 @@ final class ShowDirector {
     guard let w else { return }
     outside?.setPanels(level: Float(w.power?.panels ?? 1))
     Sound.shared.setAlarm(w.alarm ?? false)
+    Room.alarm?.setActive(w.alarm ?? false)
     Dressing.lab?.set(on: (w.lab ?? "on") != "paused")
     if let d = w.drill { outside?.setDrill(on: d != "off") }
   }
 
-  private func drawTitle(_ text: String) {
-    titleText.update(key: "t|" + text) { ctx, size in
+  private func drawTitle(_ text: String, sub: String) {
+    titleText.update(key: "t2|" + text + "|" + sub) { ctx, size in
       var fs: CGFloat = 76
       var font = PlatformFont.systemFont(ofSize: fs, weight: .semibold)
       let kern: CGFloat = 5
@@ -146,7 +188,19 @@ final class ShowDirector {
       let para = NSMutableParagraphStyle()
       para.alignment = .center
       let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: PlatformColor(white: 0.96, alpha: 1), .kern: kern, .paragraphStyle: para]
-      (text as NSString).draw(with: CGRect(x: 0, y: (size.height - font.lineHeight) / 2, width: size.width, height: font.lineHeight), options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+      // The title alone sits in the middle; with a sub line the pair is centred (title above, the stake smaller and dimmer below).
+      let subFont = PlatformFont.systemFont(ofSize: 38, weight: .medium)
+      let subPara = NSMutableParagraphStyle()
+      subPara.alignment = .center
+      subPara.lineBreakMode = .byWordWrapping
+      let subAttrs: [NSAttributedString.Key: Any] = [.font: subFont, .foregroundColor: PlatformColor(white: 0.66, alpha: 1), .paragraphStyle: subPara]
+      let subH = sub.isEmpty ? 0 : ceil((sub as NSString).boundingRect(with: CGSize(width: size.width - 80, height: 400), options: [.usesLineFragmentOrigin], attributes: subAttrs, context: nil).height)
+      let gap: CGFloat = sub.isEmpty ? 0 : 26
+      let top = (size.height - (font.lineHeight + gap + subH)) / 2
+      (text as NSString).draw(with: CGRect(x: 0, y: top, width: size.width, height: font.lineHeight), options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+      if !sub.isEmpty {
+        (sub as NSString).draw(with: CGRect(x: 40, y: top + font.lineHeight + gap, width: size.width - 80, height: subH + 4), options: [.usesLineFragmentOrigin], attributes: subAttrs, context: nil)
+      }
     }
   }
 
@@ -212,20 +266,57 @@ final class ShowDirector {
   func update(now: TimeInterval) {
     let dt = Float(min(0.1, max(0, now - lastNow)))
     lastNow = now == 0 ? 0.0001 : now
-    // Black: in at once-ish (0.35 s), out over 1.4 s.
-    if blackLevel < blackTarget { blackLevel = min(blackTarget, blackLevel + dt / 0.35) } else if blackLevel > blackTarget { blackLevel = max(blackTarget, blackLevel - dt / 1.4) }
+    // Black: in at once-ish (0.35 s); out within 0.4 s (the text a little sooner), so it never hangs over the world.
+    if blackLevel < blackTarget { blackLevel = min(blackTarget, blackLevel + dt / 0.35) } else if blackLevel > blackTarget { blackLevel = max(blackTarget, blackLevel - dt / 0.4) }
+    if textLevel < blackTarget { textLevel = min(blackTarget, textLevel + dt / 0.35) } else if textLevel > blackTarget { textLevel = max(blackTarget, textLevel - dt / 0.25) }
     for c in cameraCards {
       c.black.opacity = CGFloat(blackLevel)
       c.black.isHidden = blackLevel <= 0.001
-      c.text.opacity = CGFloat(blackLevel)
-      c.text.isHidden = blackLevel <= 0.001
+      c.text.opacity = CGFloat(textLevel)
+      c.text.isHidden = textLevel <= 0.001
     }
-    if windowLevel < windowTarget { windowLevel = min(windowTarget, windowLevel + dt / 0.8) } else if windowLevel > windowTarget { windowLevel = max(windowTarget, windowLevel - dt / 1.2) }
+    if windowLevel < windowTarget { windowLevel = min(windowTarget, windowLevel + dt / 0.8) } else if windowLevel > windowTarget { windowLevel = max(windowTarget, windowLevel - dt / 0.3) }
     windowText.node.opacity = CGFloat(windowLevel)
     windowText.node.isHidden = windowLevel <= 0.001
-    if endLevel < endTarget { endLevel = min(endTarget, endLevel + dt / 1.2) } else if endLevel > endTarget { endLevel = max(endTarget, endLevel - dt / 1.2) }
+    if endLevel < endTarget { endLevel = min(endTarget, endLevel + dt / 1.2) } else if endLevel > endTarget { endLevel = max(endTarget, endLevel - dt / 0.3) }
     endCard.node.opacity = CGFloat(endLevel)
     endCard.node.isHidden = endLevel <= 0.001
+    Room.alarm?.update(now: now)
+    // The cue pill (headset): "LOOK AT AN OPTION · TAP TO CHOOSE" and friends, in the cue's colour.
+    let want = showsCuePill ? Self.cuePillText(cue) : nil
+    if let w = want, w != cueShown { cueShown = w; drawCuePill(w, color: cue) }
+    let cueTarget: Float = (want != nil && blackLevel < 0.3 && windowLevel < 0.1 && endLevel < 0.1) ? 1 : 0
+    cueLevel += (cueTarget - cueLevel) * min(1, dt * 8)
+    for n in cuePillNodes {
+      n.opacity = CGFloat(cueLevel)
+      n.isHidden = cueLevel < 0.02
+    }
+  }
+
+  /// Text of the cue pill, or nil for none. (The headset has the door's own sign and the Science glow.)
+  static func cuePillText(_ cue: String?) -> String? {
+    switch cue {
+    case "card": return "LOOK AT AN OPTION · TAP TO CHOOSE"
+    case "engineer": return "LOOK AT Engineer · TAP"
+    case "science": return "LOOK AT Science · TAP"
+    default: return nil
+    }
+  }
+
+  private func drawCuePill(_ text: String, color: String?) {
+    let accent: PlatformColor = (color == "science" || color == "engineer") ? ShowColors.crew(color) : Palette.amber
+    cuePill.update(key: "cue|" + text) { ctx, size in
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.82), radius: size.height / 2)
+      ctx.setStrokeColor(accent.withAlphaComponent(0.9).cgColor)
+      ctx.setLineWidth(4)
+      ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2), cornerWidth: size.height / 2 - 2, cornerHeight: size.height / 2 - 2, transform: nil))
+      ctx.strokePath()
+      var fs: CGFloat = 46
+      var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
+      while (text as NSString).size(withAttributes: [.font: font, .kern: 1.5]).width > size.width - 50, fs > 20 { fs -= 2; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+      let w = (text as NSString).size(withAttributes: [.font: font, .kern: 1.5]).width
+      (text as NSString).draw(at: CGPoint(x: (size.width - w) / 2, y: (size.height - font.lineHeight) / 2), withAttributes: [.font: font, .foregroundColor: accent, .kern: 1.5])
+    }
   }
 
   /// The black title is covering the view (the spectator hides its own card then).

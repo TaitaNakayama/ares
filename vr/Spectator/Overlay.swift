@@ -216,17 +216,19 @@ final class CueHintView: NSView {
 
   override func draw(_ dirtyRect: NSRect) {
     let what: String
+    var tail = ""
     switch cue {
     case "science": what = "Science"
-    case "engineer": what = "Engineer"
+    case "engineer": what = "Engineer"; tail = "  ·  TAP"
     case "door": what = "the door"
-    case "card": what = "the card"
+    case "card": what = "AN OPTION"; tail = "  ·  TAP TO CHOOSE"
     default: return
     }
     let size = max(13, bounds.height * 0.44)
     let text = NSMutableAttributedString(string: "LOOK AT  ", attributes: [.font: NSFont.systemFont(ofSize: size * 0.8, weight: .bold), .foregroundColor: NSColor(white: 0.75, alpha: 1), .kern: 1.5])
     let color: NSColor = (cue == "science" || cue == "engineer") ? ShowColors.crew(cue) : SpectatorPalette.amber
     text.append(NSAttributedString(string: what, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .heavy), .foregroundColor: color]))
+    if !tail.isEmpty { text.append(NSAttributedString(string: tail, attributes: [.font: NSFont.systemFont(ofSize: size * 0.8, weight: .bold), .foregroundColor: NSColor(white: 0.75, alpha: 1), .kern: 1.5])) }
     let ts = text.size()
     let box = NSRect(x: (bounds.width - ts.width) / 2 - 16, y: 0, width: ts.width + 32, height: bounds.height)
     NSColor(white: 0.02, alpha: 0.5).setFill()
@@ -360,7 +362,7 @@ final class DecisionCardView: NSView {
 /// The enlarged decision card for the table: three options with their icons and speakers, the one the judge is gazing at
 /// highlighted (amber) and the chosen one in green.
 final class ShowDecisionView: NSView {
-  struct Opt: Equatable { let id: String; let label: String; let icon: String; let speaker: String; let tint: NSColor }
+  struct Opt: Equatable { let id: String; let label: String; let icon: String; let speaker: String; let tint: NSColor; var cost: String = "" }
   private(set) var isUp = false
   private var options: [Opt] = []
   private var gazed: String?
@@ -374,7 +376,7 @@ final class ShowDecisionView: NSView {
   func update(_ d: VRState.Decision?, crew: [String: VRState.Crew]?, gazedFallback: Int?, localChosen: (label: String, at: TimeInterval)?, now: TimeInterval) -> Bool {
     let opts: [Opt] = (d?.options ?? []).prefix(3).map { o in
       let sp = o.speaker ?? ""
-      return Opt(id: o.id, label: o.label ?? o.id, icon: o.icon ?? "", speaker: sp, tint: ShowColors.hex(crew?[sp]?.color) ?? ShowColors.crew(sp))
+      return Opt(id: o.id, label: o.label ?? o.id, icon: o.icon ?? "", speaker: sp, tint: ShowColors.hex(crew?[sp]?.color) ?? ShowColors.crew(sp), cost: o.cost ?? "")
     }
     var dirty = false
     if !opts.isEmpty, opts != options { options = opts; dirty = true }
@@ -434,7 +436,15 @@ final class ShowDecisionView: NSView {
       NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy), .foregroundColor: NSColor(white: dim ? 0.5 : 0.97, alpha: 1), .paragraphStyle: para])
         .draw(with: NSRect(x: r.minX + 14, y: labelTop, width: r.width - 28, height: labelSize * 2.7), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
       let sp = ShowColors.name(o.speaker).uppercased()
-      if !sp.isEmpty {
+      if !o.cost.isEmpty {
+        // The tradeoff, in the speaker's colour (replaces "<NAME> WILL SAY").
+        let cp = NSMutableParagraphStyle()
+        cp.alignment = .center
+        cp.lineBreakMode = .byWordWrapping
+        let cTop = labelTop + labelSize * 2.35
+        NSAttributedString(string: o.cost, attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.66, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.45 : 1), .paragraphStyle: cp])
+          .draw(with: NSRect(x: r.minX + 14, y: cTop, width: r.width - 28, height: max(10, r.maxY - labelSize * 1.0 - cTop)), options: [.usesLineFragmentOrigin])
+      } else if !sp.isEmpty {
         NSAttributedString(string: "\(sp) WILL SAY", attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.5, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.4 : 1), .kern: 1])
           .draw(at: NSPoint(x: r.minX + 16, y: r.maxY - labelSize * 0.9))
       }
