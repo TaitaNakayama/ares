@@ -135,6 +135,8 @@ final class Crew {
   private var cue: String?
   private var act: String?
   private var sawContract = false
+  /// While the decision card is up: its yaw (radians, 0 = -Z, right positive) and the eye height it was placed at (set by BaseScene).
+  var decisionFrame: (yaw: Float, eyeY: Float)?
   private var lastSeq = -1
   private var primed = false
 
@@ -413,7 +415,9 @@ final class Crew {
         let dist = simd_length(tpos - eye)
         tagScale = max(1, min(4, dist / 3))
       } else {
-        let m = (approaching && st?.approach == true) ? CrewMarks.approach : CrewMarks.inside(id)
+        var m = (approaching && st?.approach == true) ? CrewMarks.approach : CrewMarks.inside(id)
+        // At the decision Rules stops short and to the left of the card (cards span about +-34 degrees from its yaw), never in front of it.
+        if st?.approach == true, act == "decision" { m = CrewMarks.Inside(deg: (decisionFrame?.yaw ?? 0) * 180 / .pi - 52, r: 2.1, y: 2.15, task: "judge") }
         let p = Room.ring(m.deg, r: m.r, y: m.y)
         tpos = SIMD3(Float(p.x), Float(p.y), Float(p.z))
         if atJudge && st?.approach != true {
@@ -546,11 +550,19 @@ final class Crew {
     let radial = dist > 0.01 ? toBot / dist : SIMD3<Float>(0, 0, -1)
     let right = SIMD3<Float>(-radial.z, 0, radial.x)
     let outside = part == "outside"
-    let k: Float = outside ? max(1, min(6, dist / 3)) : 1
+    let decisionBubble = !outside && act == "decision" && decisionFrame != nil
+    let k: Float = outside ? max(1, min(6, dist / 3)) : (decisionBubble ? 0.85 : 1)
     let w = Float(SpeechBubble.w) * k, h = Float(SpeechBubble.h) * k
     let side: Float = p.x < 0 ? 1 : -1
     var centre: SIMD3<Float>
-    if outside {
+    bubble.node.geometry?.firstMaterial?.readsFromDepthBuffer = !decisionBubble // above the card: a ceiling pipe must not cut it
+    if decisionBubble, let df = decisionFrame {
+      // Above the card's header (cards and header sit in front of the head at the placed yaw), never over them.
+      let dir = SIMD3<Float>(sin(df.yaw), 0, -cos(df.yaw))
+      let flat = SIMD3(eye.x, 0, eye.z)
+      centre = flat + dir * 1.95 + SIMD3(0, df.eyeY + 0.74 + 0.12 + 0.06 + h / 2, 0)
+      bubbleOffset = .zero
+    } else if outside {
       let base = p + right * side * (w / 2 + 0.3 * k) + SIMD3(0, 0.75 * k, 0) - radial * 0.2 * k
       centre = base
       // Keep it in the view: the head's horizontal field is about +-38 degrees; stay inside it, with the bubble's own half-width.

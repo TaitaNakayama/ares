@@ -168,6 +168,9 @@ final class DecisionCards {
   private(set) var isActive = false
   var onGaze: ((String?) -> Void)?
   private var wantPlace = true
+  /// Where the cards were placed: the head's yaw (radians, 0 = -Z, right positive) and eye height, for the crew to keep clear of them.
+  private(set) var placedYaw: Float?
+  private(set) var placedEyeY: Float = 1.6
   private var hitIndex: Int?
   private var hitSince: TimeInterval = 0
   private var reported: String?
@@ -208,6 +211,7 @@ final class DecisionCards {
       decisionId = newId
       if fresh { chosenIndex = nil; gazedIndex = nil; hitIndex = nil; reported = nil; wantPlace = true }
       isActive = true
+      if fresh { placedYaw = nil }
       root.isHidden = false
       root.removeAllActions()
       root.runAction(.fadeIn(duration: 0.4))
@@ -352,6 +356,8 @@ final class DecisionCards {
       var f = SIMD3(fwd.x, 0, fwd.z)
       f = simd_length(f) > 0.05 ? simd_normalize(f) : SIMD3(0, 0, -1)
       let yaw0 = atan2(f.x, -f.z) // 0 = toward -z
+      placedYaw = yaw0
+      placedEyeY = eye.y
       let step = 2 * asin(Float((Self.cardW + 0.10) / 2) / Self.radius)
       let n = max(1, options.count)
       for i in 0..<3 {

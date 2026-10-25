@@ -190,6 +190,7 @@ final class BaseScene {
       applyState(st)
     }
     director.update(now: time)
+    stepTau(now: time)
     show.update(now: time)
     if drivesView { viewOffset = director.viewOffset }
     lastHeadView = headView
@@ -197,6 +198,7 @@ final class BaseScene {
     let origin = SIMD3(worldFromHead.columns.3.x, worldFromHead.columns.3.y, worldFromHead.columns.3.z)
     let fwd = -simd_normalize(SIMD3(worldFromHead.columns.2.x, worldFromHead.columns.2.y, worldFromHead.columns.2.z))
     if !director.isOutside { decisionCards.update(now: time, eye: origin, fwd: fwd) }
+    crew.decisionFrame = decisionCards.isActive ? decisionCards.placedYaw.map { ($0, decisionCards.placedEyeY) } : nil
     var hitNode: SCNNode?
     var dist: Float = 2.5
     if cardsVisible && !director.isOutside {
@@ -278,6 +280,24 @@ final class BaseScene {
     arrow.node.isHidden = false
   }
 
+  private var tauTarget = 0.6, tauApplied = 0.6, tauSun: (Double, Double) = (120, 45)
+  private var tauShown: Double?
+  private var lastTauStep: TimeInterval = 0
+
+  /// Per frame: ease the shown dust toward the server's (up to 1 tau per second, i.e. the full storm in about 4 s).
+  private func stepTau(now: TimeInterval) {
+    let dt = min(0.1, max(0, now - lastTauStep))
+    lastTauStep = now
+    guard let shown = tauShown, shown != tauTarget else { return }
+    let step = 1.0 * dt
+    let next = abs(tauTarget - shown) <= step ? tauTarget : shown + (tauTarget > shown ? step : -step)
+    tauShown = next
+    if abs(next - tauApplied) >= 0.08 || next == tauTarget {
+      tauApplied = next
+      outside.apply(tau: next, sunAzimuth: tauSun.0, sunElevation: tauSun.1)
+    }
+  }
+
   private func applyState(_ st: VRState?) {
     guard let st else { return }
     if let saved = st.money?.savedText, saved != lastSaved {
@@ -286,7 +306,11 @@ final class BaseScene {
     }
     director.apply(st, now: now)
     let tauNow = ShowDirector.effectiveTau(st)
-    outside.apply(tau: tauNow, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
+    // The dust rises over about 4 s instead of jumping (the storm wall grows over the rim as the Engineer warns).
+    tauSun = (st.sun?.azimuth ?? 120, st.sun?.elevation ?? 45)
+    tauTarget = tauNow
+    if tauShown == nil { tauShown = tauNow; tauApplied = tauNow; outside.apply(tau: tauNow, sunAzimuth: tauSun.0, sunElevation: tauSun.1) }
+    else { outside.apply(tau: tauApplied, sunAzimuth: tauSun.0, sunElevation: tauSun.1) }
     outside.show(Consequence.active(in: st))
     show.apply(st, now: now) // after the legacy consequences: the show contract's `world` has the last word
     Sound.shared.setStorm(tau: tauNow)
