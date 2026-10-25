@@ -33,7 +33,7 @@ Setup before each judge: console open, **Reset**, phone in the viewer, spectator
 - **Real vs invented**: real terrain (HiRISE), real sun (Mars24), real storm power curve (Opportunity 2018), real light time, real Perseverance images with credits. Suppliers, prices ($400/kg freight, ~$38k per battery module) and budgets are SIMULATED.
 
 ## Numbers we quote
-The earlier 30-seed LLM story eval (30/30 promised outcomes, 4% rules fallbacks) predates the crew redesign; say so if asked. Live-show checker (`scripts/show-check.ts`): first run 23/23 model lines within the text rules and all 9 promised outcomes; run again before submission.
+The earlier 30-seed LLM story eval (30/30 promised outcomes, 4% rules fallbacks) predates the crew redesign; say so if asked. Live-show checker (`scripts/show-check.ts`): Ten checked live runs (all three choices, ten seeds): 10/10 kept all 9 promised outcomes; 260 spoken lines, all by the model and all within the text rules. The model's answers are cached on disk by exact request (so a venue network drop doesn't lose them) and replayed lines are labelled `cached` in the logs; the run on an empty cache had 26/26 fresh model lines.
 
 ## If something breaks
 - **Model slow or odd**: SAFE MODE. The show still runs.
