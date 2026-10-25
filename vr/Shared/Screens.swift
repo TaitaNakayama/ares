@@ -134,7 +134,7 @@ final class WallScreens {
     let soc = s?.world?.power?.socPct ?? p?.socPct ?? 0
     let tau = s?.tau ?? 0
     let left = p?.solsLeft
-    let drill = p?.drillOn ?? true
+    let drill = s?.world?.drill.map { $0 != "off" } ?? p?.drillOn ?? true
     let time = s?.time ?? ""
     let key = "\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
     let tauH = tauHistory, solarH = solarHistory, loadH = loadHistory
@@ -198,8 +198,23 @@ final class WallScreens {
     let m = s?.money
     let pays = Array((m?.payments ?? []).prefix(2))
     let time = s?.time ?? ""
-    let key = "\(m?.cashText ?? "")|\(m?.runwayDays ?? 0)|\(m?.savedText ?? "")|\(m?.committedText ?? "")|\(pays.map { $0.id }.joined())|\(linkText)|\(time)"
+    let big = m?.savedBig
+    let incoming = m?.incoming
+    let key = "\(m?.cashText ?? "")|\(m?.runwayDays ?? 0)|\(m?.savedText ?? "")|\(m?.committedText ?? "")|\(pays.map { $0.id }.joined())|\(linkText)|\(time)|\(big ?? "")|\(incoming?.label ?? "")|\(incoming?.eta ?? "")"
     money.update(key: key) { ctx, size in
+      // Later: ONE big number, what Earth's answer saved.
+      if let big, !big.isEmpty {
+        Kit.chrome(ctx, size, accent: Palette.green)
+        Kit.header(ctx, size, title: "MONEY", color: Palette.gold, icon: Icon.coins, right: linkText, rightColor: linkText.hasPrefix("Live") ? Palette.green : Palette.red)
+        var fs: CGFloat = 330
+        var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
+        while (big as NSString).size(withAttributes: [.font: font]).width > size.width - 80, fs > 100 { fs -= 10; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+        _ = Draw.text(big, at: CGPoint(x: 0, y: 150), size: fs, weight: .heavy, color: Palette.green, width: size.width, align: .center)
+        _ = Draw.text("SAVED", at: CGPoint(x: 0, y: 150 + font.lineHeight * 0.95), size: 86, weight: .heavy, color: Palette.text, width: size.width, align: .center)
+        _ = Draw.text("The new account was a scam. Payment blocked.", at: CGPoint(x: 0, y: size.height - 150), size: 44, weight: .semibold, color: Palette.dim, width: size.width, align: .center)
+        Kit.footer("Suppliers, prices and budget are SIMULATED", size: size)
+        return
+      }
       Kit.chrome(ctx, size, accent: Palette.gold)
       Kit.header(ctx, size, title: "MONEY", color: Palette.gold, icon: Icon.coins, right: linkText, rightColor: linkText.hasPrefix("Live") ? Palette.green : Palette.red)
       let runway = m?.runwayDays ?? 0
@@ -224,6 +239,16 @@ final class WallScreens {
       Kit.card(ctx, c4)
       _ = Draw.text("Committed", at: CGPoint(x: c4.minX + 28, y: c4.minY + 6), size: Kit.Size.label, color: Palette.dim)
       _ = Draw.text(m?.committedText.map { Self.short($0) } ?? "—", at: CGPoint(x: c4.minX + 28, y: c4.minY + 64), size: 72, weight: .heavy, color: Palette.text, width: c4.width - 56)
+      // Cargo on its way (the batteries were bought).
+      if let incoming, let label = incoming.label, !label.isEmpty {
+        let c6 = CGRect(x: 24, y: 504, width: 1296, height: 196)
+        Kit.card(ctx, c6, accent: Palette.orange)
+        Icon.box(ctx, CGRect(x: c6.minX + 36, y: c6.minY + 34, width: 130, height: 128), Palette.orange)
+        _ = Draw.text("Incoming cargo", at: CGPoint(x: c6.minX + 200, y: c6.minY + 14), size: Kit.Size.label, color: Palette.dim, width: 700)
+        _ = Draw.text(label + (incoming.eta.map { " · " + $0 } ?? ""), at: CGPoint(x: c6.minX + 200, y: c6.minY + 78), size: 78, weight: .heavy, color: Palette.text, width: c6.width - 230)
+        Kit.footer("Suppliers, prices and budget are SIMULATED", size: size)
+        return
+      }
       // Last payments.
       let c5 = CGRect(x: 24, y: 504, width: 1296, height: 196)
       Kit.card(ctx, c5)

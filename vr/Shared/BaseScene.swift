@@ -34,15 +34,20 @@ final class BaseScene {
   var showsReticle = true { didSet { reticleHolder.isHidden = !showsReticle } }
   /// The decision card under the reticle (0-3), if any: streamed to the spectator view.
   var gazedCard: Int? {
+    if decisionCards.isActive { return decisionCards.gazedIndex }
     guard cardsVisible, let n = hovered?.name, n.hasPrefix("card:") else { return nil }
     return Int(n.dropFirst(5))
   }
-  var cardsShown: Bool { cardsVisible }
+  var cardsShown: Bool { cardsVisible || decisionCards.isActive }
 
   /// Part 1 (outside): the outdoor set, the walk, the scientist, the door. See Stations.swift.
   private(set) var director: OutdoorDirector!
   /// The show: title / window / end cards, the crisis in the world, the decision card's gaze. See Show.swift.
   private(set) var show: ShowDirector!
+  /// The three-option decision card (Act 3). The legacy 4-card grid below stays for states without `decision` (old tapes).
+  private let decisionCards = DecisionCards()
+  /// Gaze rested 0.6 s on an option (its id), or left the card (nil): the headset sends `vr_gaze_option`.
+  var onGazeOption: ((String?) -> Void)? { didSet { decisionCards.onGaze = onGazeOption } }
   /// False while a debug spike owns `viewOffset` (GroundSpike).
   var drivesView = true
   /// "scientist" or "door" while the reticle is on it (outside).
@@ -123,6 +128,7 @@ final class BaseScene {
     scene.rootNode.addChildNode(debug.node)
     director = OutdoorDirector(scene: scene, outside: outside, indoorNodes: indoor + [debug.node, cardRoot], indoorRobots: [:])
     show = ShowDirector(scene: scene, outside: outside)
+    scene.rootNode.addChildNode(decisionCards.root)
     adoptCrew()
   }
 
@@ -190,6 +196,7 @@ final class BaseScene {
     let worldFromHead = (headView * viewOffset).inverse
     let origin = SIMD3(worldFromHead.columns.3.x, worldFromHead.columns.3.y, worldFromHead.columns.3.z)
     let fwd = -simd_normalize(SIMD3(worldFromHead.columns.2.x, worldFromHead.columns.2.y, worldFromHead.columns.2.z))
+    if !director.isOutside { decisionCards.update(now: time, eye: origin, fwd: fwd) }
     var hitNode: SCNNode?
     var dist: Float = 2.5
     if cardsVisible && !director.isOutside {
@@ -236,9 +243,11 @@ final class BaseScene {
     }
     reticleHolder.simdPosition = origin + fwd * dist
     reticleHolder.simdOrientation = simd_quatf(worldFromHead)
-    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil || robotHit != nil || special != nil ? 1.7 : 1.0))
+    if decisionCards.isHit { dist = min(dist, 1.9) }
+    reticleHolder.simdPosition = origin + fwd * dist
+    reticleHolder.simdScale = SIMD3(repeating: dist * (hitNode != nil || robotHit != nil || special != nil || decisionCards.isHit ? 1.7 : 1.0))
     setHover(hitNode)
-    let needs = !(latest?.waiting ?? []).isEmpty && !director.isOutside
+    let needs = (!(latest?.waiting ?? []).isEmpty || decisionCards.isActive) && !director.isOutside
     if (needs && !cardsVisible && now >= hideUntil) || (director.isOutside && cardsVisible) { refreshCards(latest) }
     let nowThinking = link.thinkingRoles
     if !nowThinking.subtracting(thinkingRoles).isEmpty { Sound.shared.thinkingStarted() }
@@ -282,6 +291,7 @@ final class BaseScene {
     show.apply(st, now: now) // after the legacy consequences: the show contract's `world` has the last word
     Sound.shared.setStorm(tau: tauNow)
     crew.apply(st, now: now)
+    decisionCards.apply(st.decision, crew: st.crew, now: now)
     refreshCards(st)
   }
 
@@ -311,6 +321,12 @@ final class BaseScene {
     lastTap = now
     taps += 1
     if let used = crew.handleTap(robot: hoveredRobot, now: now) { lastTapText = used; Sound.shared.play("select", volume: 0.7); return }
+    if RealityCheck.shared.wantOn { RealityCheck.shared.set(false); lastTapText = "reality check off"; return } // any tap brings you back
+    if let (esc, opt) = decisionCards.tap() {
+      lastTapText = "chose: \(opt)"
+      onDecide?(esc, opt)
+      return
+    }
     if let used = tapOutside() { lastTapText = used; return }
     guard cardsVisible, let h = hovered, let name = h.name, name.hasPrefix("card:"), let i = Int(name.dropFirst(5)), i < cardTargets.count, !cardTargets[i].esc.isEmpty else {
       if let role = hoveredRobot, now - (lastAsk[role] ?? -100) > 3 {
@@ -391,7 +407,7 @@ final class BaseScene {
   }
 
   private func refreshCards(_ st: VRState?) {
-    let waiting = director.isOutside ? nil : st?.waiting?.first
+    let waiting = (director.isOutside || st?.decision?.options?.isEmpty == false) ? nil : st?.waiting?.first
     let opts = Array((waiting?.options ?? []).prefix(cards.count))
     showCards(waiting != nil && !opts.isEmpty && now >= hideUntil)
     cardTargets = (0..<cards.count).map { i in

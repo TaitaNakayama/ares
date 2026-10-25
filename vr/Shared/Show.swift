@@ -50,7 +50,8 @@ final class ShowDirector {
     self.outside = outside
     for (panel, y, order, w, h) in [(windowText, Float(1.78), 90, Float(3.4), Float(0.9)), (endCard, Float(1.74), 91, Float(3.5), Float(1.5))] {
       let n = panel.node
-      n.position = Room.ring(0, r: 3.5, y: y)
+      n.position = Room.ring(0, r: 2.2, y: y) // in front of the crew (Rules hovers at the console, 2.6 m out), same visual size as at the glass
+      n.simdScale = SIMD3(repeating: 2.2 / 3.5)
       n.look(at: SCNVector3(0, y, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
       n.renderingOrder = order
       n.opacity = 0
@@ -91,6 +92,8 @@ final class ShowDirector {
     act = st.scene?.act
     cue = st.scene?.cue
     applyWorld(st.world)
+    let rc = st.scene?.reality
+    RealityCheck.shared.configure(offer: rc?.offer ?? false, caption: rc?.caption, credit: rc?.credit)
     let ti = st.scene?.title
     let text = ti?.text ?? ""
     let style = ti?.style ?? ""

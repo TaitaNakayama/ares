@@ -100,6 +100,7 @@ final class VRViewController: UIViewController, MTKViewDelegate {
     link = Link()
     world.onDecide = { [weak self] escalationId, optionId in self?.link.decide(escalationId: escalationId, optionId: optionId) }
     world.onAsk = { [weak self] role in self?.link.ask(role: role) }
+    world.onGazeOption = { [weak self] id in self?.link.gazeOption(id) }
     world.onStation = { [weak self] id in self?.link.goTo(station: id) }
     world.onEnter = {[weak self] in self?.link.enter() }
     world.attachFade(to: world.head)

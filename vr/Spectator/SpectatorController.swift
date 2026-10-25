@@ -207,7 +207,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     RealityCheck.shared.update(now: now - start, eye: cam.simdPosition, forward: cam.simdWorldFront)
     #if DEBUG
     // Captures: `--reality` toggles the reality check once outside and the walk is over.
-    if CommandLine.arguments.contains("--reality"), world.director.isOutside, !world.director.isWalking, now - start > 3, !realityShown, RealityCheck.shared.isAllowed {
+    if CommandLine.arguments.contains("--reality"), (world.director.isOutside && !world.director.isWalking) || RealityCheck.shared.offered, now - start > 3, !realityShown, RealityCheck.shared.isAllowed {
       realityShown = true
       RealityCheck.toggle()
     }

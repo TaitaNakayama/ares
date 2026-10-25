@@ -40,7 +40,7 @@ enum Spots {
   /// The lit footpath to the door: straight in from the start spot.
   static let doorPath: [SIMD2<Float>] = [[0.1, -14], [0.1, -12], [0, -10], [0, -8], [0, -6.9]]
   /// Lamp posts either side of it.
-  static let doorLights: [SIMD2<Float>] = [[2.3, -12.2], [-2.3, -12.2], [2.4, -9.0], [-2.4, -8.2], [2.4, -6.8], [-2.4, -6.8]]
+  static let doorLights: [SIMD2<Float>] = [[2.3, -12.2], [-3.1, -12.6], [2.4, -9.0], [-3.4, -7.6], [2.4, -6.8], [-2.4, -6.8]]
 
   static func spot(_ station: String?) -> Spot? {
     switch station {
@@ -54,13 +54,13 @@ enum Spots {
   }
 
   // Set pieces (world x, z).
-  static let lander = SIMD2<Float>(14.5, -8.5)
-  static let crates = SIMD2<Float>(7.4, -10.4)
+  static let lander = SIMD2<Float>(11.8, -8.6)
+  static let crates = SIMD2<Float>(6.2, -10.6)
   /// Supply scans the crates from here (outside).
   static let cargoKeeper = SIMD2<Float>(4.4, -11.8)
   /// The rock Science grinds (outcrop) and where Science hovers beside it (scientist).
-  static let outcrop = SIMD2<Float>(-4.6, -8.8)
-  static let scientist = SIMD2<Float>(-2.4, -11.0)
+  static let outcrop = SIMD2<Float>(-2.2, -9.8)
+  static let scientist = SIMD2<Float>(-0.9, -11.6)
   /// Engineer floats up here, beside the judge (a little to the right).
   static let engineer = SIMD2<Float>(-2.2, -13.4)
   static let fieldCenter = SIMD2<Float>(-19.5, -15.5)

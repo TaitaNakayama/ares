@@ -230,6 +230,18 @@ enum Icon {
     ctx.setLineCap(.butt)
   }
 
+  /// A cargo box with a strap and a label: "something is on its way".
+  static let box: Fn = { ctx, r, c in
+    let body = CGRect(x: r.minX + 2, y: r.minY + r.height * 0.26, width: r.width - 4, height: r.height * 0.70)
+    ctx.setStrokeColor(c.cgColor); ctx.setLineWidth(5); ctx.setLineJoin(.round)
+    ctx.stroke(body)
+    let lid = CGMutablePath()
+    lid.move(to: CGPoint(x: body.minX - 4, y: body.minY)); lid.addLine(to: CGPoint(x: body.minX + 6, y: r.minY + 2)); lid.addLine(to: CGPoint(x: body.maxX - 6, y: r.minY + 2)); lid.addLine(to: CGPoint(x: body.maxX + 4, y: body.minY)); lid.closeSubpath()
+    ctx.addPath(lid); ctx.strokePath()
+    ctx.move(to: CGPoint(x: body.midX, y: body.minY)); ctx.addLine(to: CGPoint(x: body.midX, y: body.maxY)); ctx.strokePath()
+    Draw.fill(ctx, CGRect(x: body.minX + 10, y: body.maxY - 18, width: body.width * 0.28, height: 8), c, radius: 3)
+  }
+
   static let drill: Fn = { ctx, r, c in
     let p = CGMutablePath()
     p.move(to: CGPoint(x: r.midX - r.width * 0.22, y: r.minY)); p.addLine(to: CGPoint(x: r.midX + r.width * 0.22, y: r.minY))

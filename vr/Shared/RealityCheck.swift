@@ -46,10 +46,45 @@ final class RealityCheck {
   private(set) var loadSeconds: Double = 0
 
   var isActive: Bool { wantOn || fade > 0 }
+
+  /// Act 4: the show offers it (`scene.reality.offer`), with its own caption and credit.
+  private(set) var offered = false
+  private var captionText = ""
+  private var creditText = ""
+
+  /// `scene.reality` from the show contract. Withdrawing the offer also closes the panorama inside the base.
+  func configure(offer: Bool, caption: String?, credit: String?) {
+    let cap = (caption?.isEmpty == false ? caption : nil) ?? ""
+    let cr = (credit?.isEmpty == false ? credit : nil) ?? ""
+    if offer != offered {
+      offered = offer
+      if !offer && wantOn && !Self.insideAllowed && !(world?.director.isOutside ?? true) { set(false) }
+    }
+    if cap != captionText || cr != creditText { captionText = cap; creditText = cr; drawCard() }
+  }
+
+  private func drawCard() {
+    let cap = captionText, cr = creditText
+    card.update(key: "rc|\(cap)|\(cr)") { ctx, size in
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1))
+      ctx.setStrokeColor(Palette.amber.cgColor)
+      ctx.setLineWidth(8)
+      ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 5, dy: 5))
+      _ = Draw.text("REAL MARS · NOT A SIMULATION", at: CGPoint(x: 34, y: 20), size: 40, weight: .heavy, color: Palette.amber, width: size.width - 68)
+      if cap.isEmpty {
+        _ = Draw.text(Self.caption, at: CGPoint(x: 34, y: 78), size: 36, weight: .semibold, color: Palette.text, width: size.width - 68, maxLines: 6)
+      } else {
+        let h = Draw.text(cap, at: CGPoint(x: 34, y: 80), size: 64, weight: .heavy, color: Palette.text, width: size.width - 68, maxLines: 3)
+        let credit = cr.isEmpty ? "Perseverance, Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS." : cr
+        _ = Draw.text(credit, at: CGPoint(x: 34, y: 80 + h + 22), size: 31, weight: .semibold, color: Palette.dim, width: size.width - 68, maxLines: 3)
+      }
+      _ = Draw.text("Tap to return", at: CGPoint(x: 34, y: size.height - 56), size: 32, weight: .bold, color: Palette.dim, width: size.width - 68)
+    }
+  }
   /// True while a stereo close-up or story state would make it wrong to show (outside only, not at the storm door).
   var isAllowed: Bool {
     guard let d = world?.director else { return false }
-    if Self.insideAllowed { return !d.isEntering } // Act 4: the Engineer offers it from inside the base
+    if Self.insideAllowed || offered { return !d.isEntering } // Act 4: the Engineer offers it from inside the base
     return d.isOutside && d.station != "door" && !d.isEntering
   }
 
@@ -79,15 +114,7 @@ final class RealityCheck {
     for m in card.node.geometry?.materials ?? [] { m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false }
     world.scene.rootNode.addChildNode(sphere)
     world.scene.rootNode.addChildNode(card.node)
-    card.update(key: "rc-caption") { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1))
-      ctx.setStrokeColor(Palette.amber.cgColor)
-      ctx.setLineWidth(8)
-      ctx.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 5, dy: 5))
-      _ = Draw.text("REAL MARS · NOT A SIMULATION", at: CGPoint(x: 34, y: 20), size: 40, weight: .heavy, color: Palette.amber, width: size.width - 68)
-      _ = Draw.text(Self.caption, at: CGPoint(x: 34, y: 78), size: 36, weight: .semibold, color: Palette.text, width: size.width - 68, maxLines: 6)
-      _ = Draw.text("Press the button to return", at: CGPoint(x: 34, y: size.height - 56), size: 32, weight: .bold, color: Palette.dim, width: size.width - 68)
-    }
+    drawCard()
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       let t0 = CACurrentMediaTime()
       guard let url = Bundle.main.url(forResource: Self.panoName, withExtension: "jpg"),
