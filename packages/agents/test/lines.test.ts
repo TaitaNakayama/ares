@@ -22,7 +22,7 @@ describe("spoken lines", () => {
   });
   it("counts number words and digits", () => {
     expect(numbersIn("nine days and 25 minutes").length).toBe(2);
-    expect(holdMsFor("Dust storm incoming.")).toBe(2500 + 3 * 400);
+    expect(holdMsFor("Dust storm incoming.")).toBe(4000 + 3 * 600);
   });
   it("speak: a rule-breaking answer gets one shorter retry, then the target line", async () => {
     const answers = ["The batteries we found on Earth cost three times the usual amount; scam", "Too long again, this line is still far too long for the rule"];

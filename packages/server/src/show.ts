@@ -5,7 +5,7 @@ import { CREW, crewOf, type CrewId, type MarsWorld } from "@ares/world-mars";
 /**
  * The show: the four acts of the experience (docs/demo/script.md). Events and staging are scripted here;
  * what the agents do and their exact words are live. Lines go through one queue: one bubble at a time,
- * at least 1 s apart, each held 2.5 s + 0.4 s per word. The model is asked for each line under the text
+ * at least 1.5 s apart, each held 4 s + 0.6 s per word. The model is asked for each line under the text
  * rules (10 words, one number, no semicolons); the scripted target line is said when it fails.
  */
 
@@ -29,7 +29,7 @@ interface LineSpec {
   intent: string;
   facts?: string;
   target: string;
-  /** Pause before this line (at least 1 s). */
+  /** Pause before this line (at least 1.5 s). */
   gapMs?: number;
   onStart?: () => void;
   /** Words already decided (an answer to the judge's question), and what produced them. */
@@ -632,7 +632,7 @@ export class Show {
           this.at(w.delay, w.fn);
           continue;
         }
-        const gap = Math.max(1000, next.spec.gapMs ?? 1000);
+        const gap = Math.max(1500, next.spec.gapMs ?? 1500);
         const sinceEnd = Date.now() - (this.lastLineEnd || 0);
         if (this.speaking && sinceEnd < gap) await sleep(gap - sinceEnd);
         const said = await next.words;

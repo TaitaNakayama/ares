@@ -17,8 +17,8 @@ while true; do
   cp $ROOT/.cache/captures/spectator.jpg $f 2>/dev/null || true
   if [ "$act" != "$last" ]; then cp $f $OUT/$(printf "%02d" $n)-$act.jpg 2>/dev/null || true; last=$act; fi
   el=$(( $(date +%s) - t0 ))
-  if [[ "$act" == explore* ]] && [ $el -gt 200 ]; then break; fi
-  if [ $el -gt 330 ]; then break; fi
+  if [[ "$act" == explore* ]] && [ $el -gt 260 ]; then break; fi
+  if [ $el -gt 420 ]; then break; fi
 done
 curl -s $BASE/api/show/log | python3 -c "
 import json,sys; s=json.load(sys.stdin)

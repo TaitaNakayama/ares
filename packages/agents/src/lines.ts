@@ -62,9 +62,9 @@ export function wordCount(line: string): number {
   return words(line).length;
 }
 
-/** How long a line stays up at least: 2.5 s plus 0.4 s per word. */
+/** How long a line stays up at least: 4 s plus 0.6 s per word (judges read slower than we do). */
 export function holdMsFor(line: string): number {
-  return 2500 + 400 * wordCount(line);
+  return 4000 + 600 * wordCount(line);
 }
 
 export interface SpeakRequest {

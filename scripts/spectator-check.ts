@@ -13,6 +13,8 @@ const PATTERN = opt("--pattern", "sweep");
 const OUT = opt("--json", "");
 /** --real: the phone is the headset (no stand-in); the camera is still compared with the pose it streams. */
 const REAL = args.includes("--real");
+/** --observe: don't start anything; watch a show someone else runs (a judge in the headset). */
+const OBSERVE = args.includes("--observe");
 const BASE = process.env.ARES_URL ?? "http://localhost:8787";
 
 const get = async (p: string) => (await fetch(`${BASE}${p}`)).json() as Promise<any>;
@@ -22,7 +24,7 @@ const angle = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 await fetch(`${BASE}/api/debug/pose`, { method: "DELETE" });
 const head = REAL ? undefined : spawn(process.execPath, [new URL("./fake-headset.ts", import.meta.url).pathname, "--secs", String(SECS + 10), "--pattern", PATTERN], { stdio: "ignore", env: { ...process.env, ARES_URL: BASE } });
 await new Promise((r) => setTimeout(r, 1500));
-await post("/api/show/autoplay", { choice: CHOICE });
+if (!OBSERVE) await post("/api/show/autoplay", { choice: CHOICE });
 const t0 = Date.now();
 
 type Sample = { t: number; act: string; mode: string; yawErr: number | null; pitchErr: number | null; flips: number; poseAge: number; subtitle: string; card: boolean; speaking: string | null; chosen: boolean; title: string | null; seenTitle: string; bubbleMaxStep: number; bubbleJumps: number; tagSwitches: Record<string, number>; longFrames: number };

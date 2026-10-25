@@ -345,7 +345,7 @@ final class Crew {
     guard seq != lastSeq else { return }
     lastSeq = seq
     let words = text.split(separator: " ").count
-    let hold = max(Double(sp.holdMs ?? 0) / 1000, 2.5 + 0.4 * Double(words))
+    let hold = max(Double(sp.holdMs ?? 0) / 1000, 4 + 0.6 * Double(words))
     let line = Line(seq: seq, speaker: speaker, to: sp.to ?? "judge", text: text, hold: hold)
     if let c = current, now < c.shownAt + c.hold {
       queue.append(line)

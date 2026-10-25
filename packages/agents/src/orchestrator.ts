@@ -131,6 +131,9 @@ export class Orchestrator {
   async runUntil(t: Time): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    // The step budget guards one run against a feedback loop; it is not a lifetime budget (it was: after 50,000 events
+    // over a session, every later run threw, and a server left in Act 4 at 120x sim speed got there in minutes).
+    this.steps = 0;
     try {
       for (;;) {
         const next = this.timeline[0];
@@ -242,10 +245,19 @@ export class Orchestrator {
     await this.toBrains({ kind: "world", event: delivered, at: this.engine.now });
   }
 
+  /** The last engine events drained, for the step-limit error (what is feeding back). */
+  private recentEvents: string[] = [];
+
   private async drain(): Promise<void> {
     while (this.queue.length) {
-      if (++this.steps > this.maxSteps) throw new Error("orchestrator step limit reached (feedback loop?)");
+      if (++this.steps > this.maxSteps) {
+        const tally = new Map<string, number>();
+        for (const t of this.recentEvents) tally.set(t, (tally.get(t) ?? 0) + 1);
+        throw new Error(`orchestrator step limit reached (feedback loop?): last ${this.recentEvents.length} events ${[...tally].map(([k, v]) => `${k}x${v}`).join(" ")}; queue ${this.queue.length}, timeline ${this.timeline.length}, sim ${new Date(this.engine.now).toISOString()}`);
+      }
       const e = this.queue.shift()!;
+      this.recentEvents.push(e.type);
+      if (this.recentEvents.length > 40) this.recentEvents.shift();
       this.scheduleAll(this.world.onEngineEvent(e, this.engine));
       await this.toBrains({ kind: "engine", event: e });
     }

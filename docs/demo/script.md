@@ -19,7 +19,7 @@ Segregation of duties is unchanged in the engine: Supply's three duties are thre
 ## Text rules (everywhere, including live model lines)
 1. One speech bubble at a time. Lines are queued (on the server), at least 1 s apart.
 2. At most 10 words. No semicolons. At most one number (digits or number words). Spoken like a crewmate, not a report.
-3. A line stays up at least 2.5 s + 0.4 s per word, and until the next line replaces it (it fades after 10 s more if nothing follows).
+3. A line stays up at least 4 s + 0.6 s per word, with at least 1.5 s between lines, and until the next line replaces it (it fades after 10 s more if nothing follows).
 4. Numbers live on the wall screens as visuals (gauges, bars, icons), not in speech.
 5. Bubbles sit beside their agent, clamped inside the room (below the ceiling, away from walls), facing the viewer.
 6. The speaker glows, turns toward whoever it addresses, and its nametag (name + icon) pulses.

@@ -186,7 +186,7 @@ final class SubtitleView: NSView {
 // MARK: - One line at a time (the show's `speaking`)
 
 /// Subtitles from `speaking` only: ONE line at a time, in the speaker's colour with name and icon, held at least
-/// 2.5 s + 0.4 s per word and until the next line replaces it (it fades 10 s after the server's hold if nothing follows).
+/// 4 s + 0.6 s per word and until the next line replaces it (it fades 10 s after the server's hold if nothing follows).
 final class SpeakingTracker {
   private(set) var current: Subtitle?
   private var seq = -1
@@ -208,7 +208,7 @@ final class SpeakingTracker {
       let tint = ShowColors.hex(c?.color) ?? ShowColors.crew(id)
       current = Subtitle(seq: n, role: id, name: c?.name ?? ShowColors.name(id), text: text, refused: false, tint: tint, symbol: Self.symbols[c?.icon ?? ""])
       shownAt = now
-      minHold = 2.5 + 0.4 * Double(text.split(separator: " ").count)
+      minHold = 4 + 0.6 * Double(text.split(separator: " ").count)
       holdMs = Double(sp.holdMs ?? 0)
     } else if current != nil {
       let age = now - shownAt
