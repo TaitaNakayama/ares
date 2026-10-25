@@ -298,7 +298,24 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     #endif
 
     // Gaze dot: the judge's actual (unsmoothed) direction, projected into the smoothed camera.
-    if mode == .live, titleStyle != "black" {
+    // The speaker, if out of the picture: an edge chevron in their colour (the subtitle names them; this says where).
+    var arrowAngle: CGFloat?
+    var arrowColor = NSColor.white
+    if showState, titleStyle != "window", titleStyle != "end", let sp = st?.speaking?.speaker, !(st?.speaking?.text ?? "").isEmpty, overlay.subtitles.items.first != nil,
+       let bot = world.crew.bots[sp], bot.isVisible {
+      camLock.lock()
+      let yawNow = shownYaw, camPos = shownPos
+      camLock.unlock()
+      let d = simd_quatf(angle: -yawNow, axis: SIMD3(0, 1, 0)).act(bot.pos + SIMD3(0, 0.3, 0) - camPos)
+      let v = shownQ.inverse.act(d)
+      let onScreen = project(direction: d, cameraQ: shownQ, fovX: fovX).map { overlay.bounds.insetBy(dx: 40, dy: 40).contains($0) } ?? false
+      if !onScreen {
+        arrowAngle = atan2(CGFloat(-v.y), CGFloat(v.x))
+        arrowColor = ShowColors.hex(st?.crew?[sp]?.color) ?? ShowColors.crew(sp)
+      }
+    }
+    overlay.speakerArrow.set(angle: arrowAngle, color: arrowColor)
+    if mode == .live, titleStyle != "black", titleStyle != "window", titleStyle != "end" {
       let fwd = sample.q.act(SIMD3<Float>(0, 0, -1))
       overlay.placeDot(project(direction: fwd, cameraQ: shownQ, fovX: fovX))
     } else {

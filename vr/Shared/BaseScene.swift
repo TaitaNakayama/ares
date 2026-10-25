@@ -264,7 +264,7 @@ final class BaseScene {
     decisionPrimed = true
     crew.update(now: time, eye: origin, fwd: fwd, link: link, hovered: hoveredRobot, needsCommander: needs)
     updateArrow(worldFromHead: worldFromHead)
-    screens.update(latest, now: time, linkText: link.statusText)
+    screens.update(latest, now: time, linkText: link.publicStatusText)
     updateDebug(link: link, fps: fps)
   }
 
@@ -489,7 +489,7 @@ final class BaseScene {
   }
 
   private func updateDebug(link: Link, fps: Double) {
-    let status = link.statusText, f = Int(fps.rounded()), tapCount = taps, tapText = lastTapText
+    let status = link.publicStatusText, f = Int(fps.rounded()), tapCount = taps, tapText = lastTapText
     let seed = latest?.seed ?? "-", pv = latest?.policyVersion ?? 0
     let key = "\(status)|\(f)|\(tapCount)|\(tapText)|\(seed)"
     debug.update(key: key) { ctx, size in

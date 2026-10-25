@@ -13,11 +13,13 @@ final class OverlayView: NSView {
   let badges = BadgeView()
   let thinking = ThinkingView()
   let titleCard = TitleCardView()
+  /// Points at the speaker when the judge isn't looking at them (the mirror shows the judge's view, not the speaker).
+  let speakerArrow = SpeakerArrowView()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    for v in [badges, card, showCard, cue, subtitles, thinking, titleCard, dot] as [NSView] { addSubview(v) }
+    for v in [badges, card, showCard, cue, subtitles, thinking, titleCard, speakerArrow, dot] as [NSView] { addSubview(v) }
     card.alphaValue = 0
     showCard.alphaValue = 0
     titleCard.alphaValue = 0
@@ -43,10 +45,11 @@ final class OverlayView: NSView {
     // Subtitles sit low; while a decision card is up they go to the top, under the cue, so nothing stacks on the card.
     let subH = b.height * 0.15
     let upCard: NSView? = showCard.isUp ? showCard : (card.isUp ? card : nil)
-    let subY = upCard != nil ? cue.frame.maxY + 8 : (b.height - subH - b.height * 0.025)
+    let subY = upCard != nil ? cue.frame.maxY + 22 : (b.height - subH - b.height * 0.025)
     subtitles.frame = NSRect(x: b.width * 0.08, y: subY, width: b.width * 0.84, height: subH)
     subtitles.topAligned = upCard != nil
     titleCard.frame = NSRect(x: b.width * 0.05, y: b.height * 0.28, width: b.width * 0.9, height: b.height * 0.36)
+    speakerArrow.frame = b
   }
 
   /// `p` in this view's coordinates, or nil when the judge looks outside the picture.
@@ -372,6 +375,8 @@ final class DecisionCardView: NSView {
 /// highlighted (amber) and the chosen one in green.
 final class ShowDecisionView: NSView {
   struct Opt: Equatable { let id: String; let label: String; let icon: String; let speaker: String; let tint: NSColor; var cost: String = "" }
+  /// One line under the question: why the commander has to choose.
+  var reason = "Power runs out before Earth can answer." { didSet { if reason != oldValue { needsDisplay = true } } }
   private(set) var isUp = false
   private var options: [Opt] = []
   private var gazed: String?
@@ -414,9 +419,12 @@ final class ShowDecisionView: NSView {
     NSBezierPath(roundedRect: b, xRadius: 22, yRadius: 22).fill()
     let headSize = max(16, b.height * 0.06)
     let chosenOpt = options.first { $0.id == chosen }
-    let head = chosenOpt.map { "COMMANDER CHOSE: \($0.label.uppercased())" } ?? "WHAT DO WE GIVE UP?"
-    NSAttributedString(string: head, attributes: [.font: NSFont.systemFont(ofSize: headSize, weight: .heavy), .foregroundColor: chosenOpt != nil ? SpectatorPalette.green : SpectatorPalette.violet, .kern: 1.5])
-      .draw(at: NSPoint(x: 32, y: 20))
+    let head = NSMutableAttributedString(string: chosenOpt.map { "COMMANDER CHOSE: \($0.label.uppercased())" } ?? "WHAT DO WE GIVE UP?", attributes: [.font: NSFont.systemFont(ofSize: headSize, weight: .heavy), .foregroundColor: chosenOpt != nil ? SpectatorPalette.green : SpectatorPalette.violet, .kern: 1.5])
+    // Why there's a choice at all (the round-2 table reviewer saw the question without its reason).
+    if chosenOpt == nil, !reason.isEmpty {
+      head.append(NSAttributedString(string: "   \(reason)", attributes: [.font: NSFont.systemFont(ofSize: headSize * 0.8, weight: .semibold), .foregroundColor: NSColor(white: 0.8, alpha: 1)]))
+    }
+    head.draw(at: NSPoint(x: 32, y: 20))
     let top = 20 + headSize * 1.5 + 6
     let gap: CGFloat = 20
     let n = CGFloat(options.count)
@@ -499,7 +507,7 @@ final class TitleCardView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     guard !text.isEmpty else { return }
     let b = bounds
-    NSColor(white: 0.02, alpha: 0.72).setFill()
+    NSColor(white: 0.02, alpha: 0.9).setFill()
     NSBezierPath(roundedRect: b, xRadius: 26, yRadius: 26).fill()
     let para = NSMutableParagraphStyle()
     para.alignment = .center
@@ -521,6 +529,46 @@ final class TitleCardView: NSView {
     while size > 18, out.boundingRect(with: NSSize(width: inner.width, height: 2000), options: [.usesLineFragmentOrigin]).height > inner.height { size -= 2; build() }
     let h = out.boundingRect(with: NSSize(width: inner.width, height: 2000), options: [.usesLineFragmentOrigin]).height
     out.draw(with: NSRect(x: inner.minX, y: inner.midY - h / 2, width: inner.width, height: h + 4), options: [.usesLineFragmentOrigin])
+  }
+}
+
+// MARK: - Where the speaker is
+
+/// A chevron at the screen edge in the speaker's colour, pointing at a speaker who is out of the judge's view.
+final class SpeakerArrowView: NSView {
+  /// Direction on screen (radians, 0 = right, positive = down in this flipped view), or nil when the speaker is in view.
+  private var angle: CGFloat?
+  private var color: NSColor = .white
+  override var isFlipped: Bool { true }
+
+  func set(angle a: CGFloat?, color c: NSColor) {
+    let changed = (a == nil) != (angle == nil) || abs((a ?? 0) - (angle ?? 0)) > 0.02 || c != color
+    angle = a
+    color = c
+    if changed { needsDisplay = true }
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard let a = angle else { return }
+    let b = bounds.insetBy(dx: 60, dy: 90)
+    let c = CGPoint(x: bounds.midX, y: bounds.midY)
+    // Where the ray from the centre leaves the inset rectangle.
+    let dx = cos(a), dy = sin(a)
+    let tx = dx == 0 ? .infinity : (dx > 0 ? b.maxX - c.x : b.minX - c.x) / dx
+    let ty = dy == 0 ? .infinity : (dy > 0 ? b.maxY - c.y : b.minY - c.y) / dy
+    let t = min(tx, ty)
+    let p = CGPoint(x: c.x + dx * t, y: c.y + dy * t)
+    let s: CGFloat = 34
+    let path = NSBezierPath()
+    path.move(to: CGPoint(x: p.x + dx * s, y: p.y + dy * s))
+    path.line(to: CGPoint(x: p.x - dy * s * 0.8 - dx * s * 0.4, y: p.y + dx * s * 0.8 - dy * s * 0.4))
+    path.line(to: CGPoint(x: p.x + dy * s * 0.8 - dx * s * 0.4, y: p.y - dx * s * 0.8 - dy * s * 0.4))
+    path.close()
+    NSColor(white: 0.02, alpha: 0.85).setStroke()
+    path.lineWidth = 8
+    path.stroke()
+    color.setFill()
+    path.fill()
   }
 }
 
@@ -549,7 +597,7 @@ final class BadgeView: NSView {
     let subS = NSAttributedString(string: sub, attributes: [.font: NSFont.systemFont(ofSize: size * 0.62, weight: .semibold), .foregroundColor: NSColor(white: 0.85, alpha: 1)])
     let pillW = size * 0.9 + label.size().width + 30 + subS.size().width + 24
     let pill = NSRect(x: 24, y: 20, width: pillW, height: size * 1.7)
-    NSColor(white: 0.02, alpha: 0.75).setFill()
+    NSColor(white: 0.02, alpha: 0.9).setFill()
     NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
     color.setFill()
     NSBezierPath(ovalIn: NSRect(x: pill.minX + 16, y: pill.midY - size * 0.3, width: size * 0.6, height: size * 0.6)).fill()
@@ -561,7 +609,7 @@ final class BadgeView: NSView {
       s.append(NSAttributedString(string: "  \(name)", attributes: [.font: NSFont.systemFont(ofSize: size * 0.75, weight: .semibold), .foregroundColor: NSColor(white: 0.85, alpha: 1)]))
       let w = s.size().width + 44
       let r = NSRect(x: bounds.width - w - 24, y: 20, width: w, height: size * 1.7)
-      NSColor(white: 0.02, alpha: 0.75).setFill()
+      NSColor(white: 0.02, alpha: 0.9).setFill()
       NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2).fill()
       s.draw(at: NSPoint(x: r.minX + 22, y: r.midY - s.size().height / 2))
     }

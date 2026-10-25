@@ -502,6 +502,16 @@ final class Link: NSObject, @unchecked Sendable {
     lock.unlock()
   }
 
+  /// For the wall screens the judge sees: no addresses.
+  var publicStatusText: String {
+    switch status {
+    case .connecting: return "Connecting…"
+    case .connected: return "Live"
+    case .offline: return "Reconnecting…"
+    case .replay: return "Offline replay (recorded run)"
+    }
+  }
+
   var statusText: String {
     switch status {
     case .connecting(let h): return "Connecting \(h)…"
