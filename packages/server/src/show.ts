@@ -408,8 +408,8 @@ export class Show {
     if (o) {
       this.crew[o.speaker].approach = true;
       this.crew[o.speaker].lookAt = "judge";
-      const last = this.tradeoffAt.get(o.id) ?? 0;
-      if (Date.now() - last > 6000) {
+      // Each cost is said once per decision (it's printed on the card too); looking back at an option doesn't repeat it.
+      if (!this.tradeoffAt.has(o.id)) {
         this.tradeoffAt.set(o.id, Date.now());
         this.enqueue({ spec: { speaker: o.speaker, actor: ACTOR[o.speaker], to: "judge", intent: o.tradeoffIntent, target: o.tradeoffTarget, gapMs: 1000 }, words: this.tradeoffs.get(o.id) ?? Promise.resolve({ text: o.tradeoffTarget, via: "rules", ms: 0 }) }, true);
       }
@@ -561,7 +561,12 @@ export class Show {
   /** The judge looked at a robot and pressed: it answers live, under the same text rules. */
   async ask(crewId: string): Promise<void> {
     const c = crewId as CrewId;
-    if (!(c in CREW) || this.act === "decision") return;
+    // Free questions are Act 4. During the story a press on a robot only turns it toward the judge: an answer there pushed the story's lines back and broke its order.
+    if (!(c in CREW)) return;
+    if (this.act !== "explore") {
+      if (this.act !== "decision") this.crewSet(c, { lookAt: "judge" });
+      return;
+    }
     let said: { text: string; via: "llm" | "rules" };
     try {
       said = await this.orch.askLine(ACTOR[c], undefined, { narrate: false });

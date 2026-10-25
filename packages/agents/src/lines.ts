@@ -43,6 +43,8 @@ export function checkSpoken(line: string, facts: string): "ok" | string {
   if (n > MAX_WORDS) return `${n} words (max ${MAX_WORDS})`;
   if (t.includes(";")) return "semicolon";
   if (/\n|```|\*\*|#{1,6}\s|^[-*]\s/.test(t)) return "markdown";
+  // Provider notes ("[incomplete: max_output_tokens]"), tags and code never reach a speech bubble.
+  if (/[\[\]{}<>_|\\]/.test(t)) return "not speech";
   if (/\b(as an ai|language model|as an assistant|i cannot|i'm sorry)\b/i.test(t)) return "out of character";
   const nums = numbersIn(t);
   if (nums.length > 1) return `${nums.length} numbers (max 1)`;

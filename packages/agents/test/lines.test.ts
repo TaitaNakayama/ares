@@ -15,6 +15,11 @@ describe("spoken lines", () => {
     expect(checkSpoken("34 arrived, 2 missing.", facts)).toMatch(/2 numbers/);
     expect(checkSpoken("Water lasts 12 more days.", facts)).toMatch(/not in the facts/);
   });
+  it("never lets a provider note or markup into a bubble", () => {
+    expect(checkSpoken("[incomplete: max_output_tokens]", facts)).toBe("not speech");
+    expect(checkSpoken("Ask <rules> about quote_7", facts)).toBe("not speech");
+    expect(checkSpoken("Storm's passing. We made it, Commander.", facts)).toBe("ok");
+  });
   it("counts number words and digits", () => {
     expect(numbersIn("nine days and 25 minutes").length).toBe(2);
     expect(holdMsFor("Dust storm incoming.")).toBe(2500 + 3 * 400);

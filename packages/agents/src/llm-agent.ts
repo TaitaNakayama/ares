@@ -333,13 +333,14 @@ export class LlmBrain implements Brain {
       const res = await this.router.complete(
         {
           system: `${SYSTEM_PREFIX}\nYou are ${this.persona ?? PERSONAS[this.role]}`,
-          user: `STATE:\n${summary}\n\nThe commander ${question ? `asks: "${question.slice(0, 300)}"` : "looks at you and asks what's going on"}. Answer in one spoken line (at most 10 words, at most one number, no semicolons) with the facts above: what you are doing or watching right now, and what you need from them, if anything.`,
+          user: `STATE:\n${summary}\n\nThe commander ${question ? `asks: "${question.slice(0, 300)}"` : "looks at you and asks what's going on"}. Answer in one spoken line (at most 10 words, at most one number, no semicolons) with the facts above: what you are doing right now, in plain words a crewmate would use (no jargon, no ids). Call the say tool once.`,
           tools: [sayTool],
-          maxOutputTokens: 120,
+          maxOutputTokens: 300,
         },
         { localTimeoutMs: this.actionTimeoutMs, cloudTimeoutMs: this.actionTimeoutMs },
       );
-      const said = (res.toolCalls.find((c) => c.name === "say")?.args as { text?: string } | undefined)?.text ?? res.text.trim().split("\n")[0];
+      // Only a say call counts: provider notes ("[incomplete: …]") or prose are not a line.
+      const said = (res.toolCalls.find((c) => c.name === "say")?.args as { text?: string } | undefined)?.text;
       const line = said?.trim();
       if (line && checkLine(line, `${summary}\n${question ?? ""}`) === "ok") {
         this.history.push({ at: Date.now(), point: "ask", layer: res.layer, ms: res.ms, result: "llm" });
