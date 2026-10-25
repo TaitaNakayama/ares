@@ -26,7 +26,7 @@ struct VRState: Decodable {
     var reality: Reality?
   }
   struct Title: Decodable { var text: String?; var style: String? }
-  struct Reality: Decodable { var offer: Bool?; var caption: String?; var credit: String? }
+  struct Reality: Decodable { var offer: Bool?; var on: Bool?; var caption: String?; var credit: String? }
   /// One crew member (keyed by id: engineer | life | science | supply | rules).
   struct Crew: Decodable {
     var name: String?; var color: String?; var icon: String?

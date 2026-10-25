@@ -46,6 +46,8 @@ final class RealityCheck {
   private(set) var loadSeconds: Double = 0
 
   var isActive: Bool { wantOn || fade > 0 }
+  /// The caption card's position while the panorama is up (the spectator's director camera looks at it).
+  var cardPosition: SIMD3<Float>? { wantOn ? card.node.simdPosition : nil }
 
   /// Act 4: the show offers it (`scene.reality.offer`), with its own caption and credit.
   private(set) var offered = false
@@ -86,6 +88,19 @@ final class RealityCheck {
     guard let d = world?.director else { return false }
     if Self.insideAllowed || offered { return !d.isEntering } // Act 4: the Engineer offers it from inside the base
     return d.isOutside && d.station != "door" && !d.isEntering
+  }
+
+  /// `scene.reality.on` from the server (a tap or the autoplay): follow its changes. Edge-triggered, so a local tap that has not yet
+  /// reached the server is not undone by a stale `false`; an `on` that cannot open yet (texture still loading) is retried every frame.
+  private var serverOn: Bool?
+  private var pendingOn = false
+  func follow(serverOn on: Bool?) {
+    guard let on else { return }
+    if on != serverOn {
+      serverOn = on
+      pendingOn = on
+      if !on { set(false) }
+    }
   }
 
   /// Builds the mesh and starts loading the panorama off the main thread.
@@ -163,6 +178,8 @@ final class RealityCheck {
     lastNow = now
     self.eye = eye
     self.forward = forward
+    if pendingOn && !wantOn { set(true) }
+    if wantOn { pendingOn = false }
     if wantOn && !isAllowed { set(false) }
     let target: Float = wantOn ? 1 : 0
     if fade != target {
