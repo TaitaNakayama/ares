@@ -38,7 +38,7 @@ const CONSOLE_DIR = new URL("../../console/dist/", import.meta.url).pathname;
  * ARES_LOCAL_MODEL=off disables the local layer; ARES_AGENT_MODE=rules is safe mode from the start;
  * ARES_LLM_ROLES limits which roles reason with a model (default: all five).
  */
-const CACHE_DIR = new URL("../../../.cache/llm/", import.meta.url).pathname;
+const CACHE_DIR = process.env.ARES_LLM_CACHE ?? new URL("../../../.cache/llm/", import.meta.url).pathname;
 const LOCAL_MODEL = process.env.ARES_LOCAL_MODEL ?? "qwen3.5:9b";
 const localProvider = LOCAL_MODEL === "off" ? undefined : new OllamaProvider(LOCAL_MODEL);
 const localUp = localProvider ? await localProvider.available() : { up: false, hasModel: false };
