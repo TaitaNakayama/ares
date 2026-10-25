@@ -581,16 +581,16 @@ final class Outside {
 
   /// Rises from a low brown haze bank to a wall a few hundred metres high, darkening toward #5A3A2A as tau climbs.
   private func applyStormWall(t: Float) {
-    let hgt = 30 + 330 * pow(t, 1.5) + 40 * t
+    let hgt = 50 + 520 * pow(t, 1.25) + 60 * t
     stormWall.simdScale = SIMD3(1500, hgt * 1.0, 1)
     aimStorm(height: hgt)
-    let c = Self.mix(SIMD3(0.84, 0.64, 0.46), SIMD3(0.353, 0.227, 0.165), t: min(1, t * 1.4))
+    let c = Self.mix(SIMD3(0.70, 0.50, 0.34), SIMD3(0.28, 0.17, 0.12), t: min(1, t * 1.8))
     stormWall.geometry?.firstMaterial?.multiply.contents = PlatformColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
-    stormWall.geometry?.firstMaterial?.transparency = CGFloat(0.03 + 0.97 * min(1, t * 1.3))
+    stormWall.geometry?.firstMaterial?.transparency = CGFloat(0.06 + 0.94 * min(1, t * 1.8))
     // The front: invisible on a clear day, a low dark line by a storm warning, a tall black rim in the storm itself.
-    let vis = max(0, min(1, (t - 0.06) / 0.25))
+    let vis = max(0, min(1, (t - 0.03) / 0.14))
     stormBand.isHidden = vis < 0.01 || !outdoor
-    let bh = 14 + 110 * pow(t, 1.1)
+    let bh = 30 + 230 * pow(t, 0.9)
     stormBand.simdScale = SIMD3(1100, bh, 1)
     aimStorm(bandHeight: bh)
     stormBand.geometry?.firstMaterial?.transparency = CGFloat(vis)

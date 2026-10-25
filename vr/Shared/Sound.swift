@@ -234,7 +234,7 @@ final class Sound {
   func setStorm(tau: Double) {
     guard !muted else { return }
     startEngine()
-    ambience.storm = Float(max(0, min(1, (tau - 0.6) / 4)))
+    ambience.storm = Float(pow(max(0, min(1, (tau - 0.6) / 4)), 0.7))
   }
 
   /// Cross-fades hum and wind (~1.5 s). The headset stays in the control room, so this is for completeness.
@@ -275,7 +275,7 @@ private final class Ambience {
     let q: Float = 1.3
     for i in 0..<frames {
       mix += (outside - mix) * smooth
-      k += (storm - k) * smooth * 0.3
+      k += (storm - k) * smooth * 0.6
       if gustLeft <= 0 {
         gustTarget = (noise() + 1) * 0.5
         gustLeft = Int(sr * (2 + 3 * (noise() + 1) * 0.5))
@@ -293,7 +293,7 @@ private final class Ambience {
       low += f * band
       let high = n - low - q * band
       band += f * high
-      let level = (0.025 + 0.2 * k) * (0.5 + 0.9 * gust) * (0.3 + 0.7 * mix)
+      let level = (0.025 + 0.36 * k) * (0.35 + 1.3 * gust) * (0.3 + 0.7 * mix)
       // Alarm: a low two-tone (about 170 and 215 Hz) gated at 1.1 Hz, soft edges, under everything else.
       alarmEnv += (alarm - alarmEnv) * smooth * 2
       var al: Float = 0
