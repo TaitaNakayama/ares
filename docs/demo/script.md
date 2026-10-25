@@ -36,7 +36,7 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 | | Title "JEZERO CRATER, MARS · SOL 214", and under it "Any answer from Earth takes 25 minutes. The crew is on its own." (the stake, before anything happens; the number is the real round-trip light time). Wind. | | |
 | 0:05 | Fade in on the real Jezero terrain. Ahead: the base. Left: the cargo lander. Right: the solar field and the ice drill. | | |
 | 0:05 | Engineer floats up beside the judge. | engineer → judge | "Welcome, Commander. The crew has the base." [7 / 0] |
-| 0:10 | Science grinds a rock with its arm, dust puffing. (Round 4: no close-up offer; in Acts 1-3 a press does nothing except on the door marker and the decision card.) | science → judge | "Grinding into ancient delta rock. Samples for Earth." [8 / 0] |
+| 0:10 | Science grinds a rock with its arm, dust puffing. **Cue: Science** (glows ~12 s; a press opens the real WATSON rock image, a second press its second page, a third closes it). The storm waits until the close-up is closed, then rolls in 2 s later. In Acts 1-3 no other press does anything except the door marker and the decision card. | science → judge | "Grinding into ancient delta rock. Want a closer look?" [9 / 0] |
 | 0:20 | Supply at the lander scans crates. Beat 1 runs in the engine: delivery 34 of 36, invoice bills 36, Supply pays for 34 (round 4: not spoken; the console and the Money screen show it; one money story on the main line). | | |
 | 0:27 | Wind rises. Engineer turns to the crater rim; a dust wall rises over it. | engineer → rim | "Dust storm incoming." [3 / 0] |
 | 0:31 | Engineer turns back. | engineer → judge | "Commander, get inside. Now." [4 / 0] |

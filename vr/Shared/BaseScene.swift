@@ -366,6 +366,9 @@ final class BaseScene {
       return
     }
     if inStory {
+      // The one crew press in the story: Science's close-up (the real WATSON rock image) while Science glows.
+      if latest?.scene?.cue == "science", let used = crew.handleTap(robot: hoveredRobot, now: now) { lastTapText = used; Sound.shared.play("select", volume: 0.7); return }
+      if director.closeUp.isOpen, let used = tapOutside() { lastTapText = used; return } // page 2, then closed
       if let (esc, opt) = decisionCards.tap(now: now) {
         lastTapText = "chose: \(opt)"
         onDecide?(esc, opt)

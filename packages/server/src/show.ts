@@ -1,4 +1,4 @@
-import { compact, holdMsFor, speak, wordCount, type ModelRouter, type OrchestratorMessage, type Orchestrator, type Spoken } from "@ares/agents";
+import { checkSpoken, compact, holdMsFor, speak, wordCount, type ModelRouter, type OrchestratorMessage, type Orchestrator, type Spoken } from "@ares/agents";
 import type { EngineEvent, Escalation, Flag, Quote, Requisition, Verification } from "@ares/engine";
 import { CREW, crewOf, type CrewId, type MarsWorld } from "@ares/world-mars";
 
@@ -198,11 +198,13 @@ export class Show {
     this.at(6500, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars. The crew keeps the base alive: power, air, water.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
     this.at(9500, () =>
       this.line({
-        speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm, collecting samples for Earth.", target: "Grinding into ancient delta rock. Samples for Earth.",
+        speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm. Ask if they want a closer look.", target: "Grinding into ancient delta rock. Want a closer look?",
+        onStart: () => { this.set({ cue: "science" }); this.at(12_000, () => { if (this.cue === "science" && !this.closeupOpen) this.set({ cue: null }); }); },
       }),
     );
     this.at(13_500, () => this.orch.scheduleAll(this.world.beatDelivery(this.orch.engine)));
-    this.at(25_000, () => {
+    // The storm waits for the close-up: a judge looking at the real rock finishes before the dust rolls in.
+    this.at(25_000, () => this.afterCloseup(() => {
       this.crewSet("engineer", { lookAt: "rim", mood: "worried" });
       this.stormStarted = true;
       this.stormRealAt = Date.now();
@@ -212,8 +214,14 @@ export class Show {
         speaker: "engineer", actor: "engineer", to: "judge", intent: "Tell the commander to get inside the base, now.", target: "Commander, get inside. Now.",
         onStart: () => this.at(2500, () => { if (this.act === "outside") { this.set({ cue: "door" }); this.at(20_000, () => { if (this.act === "outside") void this.enter("auto"); }); } }),
       });
-    });
+    }));
     return "the story begins";
+  }
+
+  /** Runs `fn` now, or 2 s after the science close-up closes (and clears its cue). */
+  private afterCloseup(fn: () => void): void {
+    if (!this.closeupOpen) { if (this.cue === "science") this.set({ cue: null }); return fn(); }
+    this.at(250, () => this.afterCloseup(fn));
   }
 
   /** The judge walks to the door and goes in (door tap, or auto after 20 s). */
@@ -257,7 +265,17 @@ export class Show {
     }
     if (m.type === "world_action") return this.onWorldAction(m);
     if (m.type === "engine") this.onEngine(m.event);
+    // Act 4: what the crew says on its own (answering a typed event, filing a purchase) is spoken in the headset too,
+    // not only in the console feed. The show's own lines also arrive here (orch.say); the flag keeps them out.
+    if (m.type === "narration" && this.act === "explore" && !this.sayingOwn && this.active) {
+      const n = m.narration;
+      const sp = crewOf(n.actorId);
+      if (sp && n.voice && n.text && checkSpoken(n.text, n.text) === "ok" && !this.queue.some((q) => q.spec.text === n.text)) {
+        this.line({ speaker: sp, actor: n.actorId, to: "judge", intent: "", target: n.text, text: n.text, via: n.via ?? "rules" });
+      }
+    }
   }
+  private sayingOwn = false;
 
   private onEngine(e: EngineEvent): void {
     const eng = this.orch.engine;
@@ -568,6 +586,7 @@ export class Show {
   }
 
   closeup(open: boolean): void {
+    if (this.closeupOpen && !open) { this.closeupOpen = false; this.lastLineEnd = Math.max(this.lastLineEnd, Date.now() + 2000); }
     this.closeupOpen = open;
     if (!open) this.pump();
     this.host.notify();
@@ -655,7 +674,9 @@ export class Show {
         this.speaking = { seq: ++this.seq, speaker: next.spec.speaker, to: next.spec.to, text: said.text, holdMs, via: said.via };
         this.log.push({ at: Date.now() - this.startedAt, act: this.act, speaker: next.spec.speaker, to: next.spec.to, text: said.text, via: said.via, ...(said.cached ? { cached: true } : {}), reason: said.reason, ms: said.ms });
         this.crewSet(next.spec.speaker, { lookAt: next.spec.to === "judge" || next.spec.to === "rim" ? next.spec.to : next.spec.to });
+        this.sayingOwn = true;
         this.orch.say(next.spec.actor, said.text, { via: said.via, mood: this.crew[next.spec.speaker].mood === "alarmed" ? "suspicious" : this.crew[next.spec.speaker].mood === "worried" ? "worried" : "calm" });
+        this.sayingOwn = false;
         next.spec.onStart?.();
         this.lastLineEnd = Date.now() + holdMs;
         this.host.notify();

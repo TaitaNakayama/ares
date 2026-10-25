@@ -24,7 +24,7 @@ code, pre, .hash { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-
 .foot { padding: 10px 24px 16px; color: var(--muted); font-size: 0.78rem; border-top: 1px solid var(--line); }
 
 /* header */
-.hdr { position: sticky; top: 0; z-index: 10; background: #0d1320; border-bottom: 1px solid var(--line); padding: 12px 24px 10px; }
+.hdr { position: static; z-index: 10; background: #0d1320; border-bottom: 1px solid var(--line); padding: 12px 24px 10px; }
 .hdr-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .controls { margin-top: 10px; gap: 10px; }
 .brand { display: flex; flex-direction: column; }
@@ -52,7 +52,7 @@ code, pre, .hash { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-
 .in:focus, .json-edit:focus { outline: 2px solid var(--accent); outline-offset: 0; }
 .in.seed { width: 190px; }
 
-.tabs { display: flex; gap: 4px; padding: 0 24px; background: #0d1320; border-bottom: 1px solid var(--line); position: sticky; top: 112px; z-index: 9; }
+.tabs { display: flex; gap: 4px; padding: 0 24px; background: #0d1320; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 9; }
 .tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 20px; font-size: 1.05rem; font-weight: 600; color: var(--muted); cursor: pointer; }
 .tab.on { color: var(--text); border-color: var(--accent); }
 .tab:hover { color: var(--text); }
@@ -64,7 +64,7 @@ code, pre, .hash { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-
 .card h2 { margin: 0; font-size: 1.2rem; }
 .split { display: grid; grid-template-columns: minmax(480px, 5fr) minmax(560px, 6fr); gap: 18px; align-items: start; }
 .col { min-width: 0; }
-.trace-col { position: sticky; top: 176px; max-height: calc(100vh - 190px); overflow-y: auto; padding-right: 4px; }
+.trace-col { position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; padding-right: 4px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; align-items: start; }
 .span2 { grid-column: span 2; }
 .row-gap { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
