@@ -31,9 +31,11 @@ final class HeadPose: @unchecked Sendable {
     let gaze = (m["gaze"] as? Int).flatMap { $0 >= 0 ? $0 : nil }
     let fov = (m["fov"] as? Double).map(Float.init)
     var pos: SIMD3<Float>?
-    if let pa = m["p"] as? [Double], pa.count == 3 { pos = SIMD3(Float(pa[0]), Float(pa[1]), Float(pa[2])) }
+    // A non-finite position or yaw would poison the smoothed camera for good (NaN never recovers): dropped.
+    if let pa = m["p"] as? [Double], pa.count == 3, pa.allSatisfy(\.isFinite) { pos = SIMD3(Float(pa[0]), Float(pa[1]), Float(pa[2])) }
+    let yaw = (m["wy"] as? Double).flatMap { $0.isFinite ? Float($0) : nil }
     lock.lock()
-    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX, p: pos, yaw: (m["wy"] as? Double).map(Float.init), closeUp: m["cu"] as? Bool ?? false, reality: m["rc"] as? Bool ?? false)
+    sample = Sample(q: simd_normalize(q), at: CACurrentMediaTime(), gaze: gaze, cardsShown: m["cards"] as? Bool ?? false, fovX: fov ?? sample.fovX, p: pos, yaw: yaw, closeUp: m["cu"] as? Bool ?? false, reality: m["rc"] as? Bool ?? false)
     lock.unlock()
   }
 

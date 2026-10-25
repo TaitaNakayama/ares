@@ -31,6 +31,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var subtitlesCleared = false
   // Diagnostics for /api/spectator/stats (checked by scripts/spectator-check.ts): mode flips and the stalest pose seen since the last report.
   private var modeFlips = 0
+  private var nanResets = 0
   private var maxPoseAge: Double = 0
 
   // Camera state shared with SceneKit's render thread.
@@ -93,7 +94,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     v.rendersContinuously = true
     v.isPlaying = true
     v.preferredFramesPerSecond = 60
-    v.antialiasingMode = .multisampling4X
+    v.antialiasingMode = .multisampling2X // fixed from the start: switching it, or resizing the Metal layer by hand, left the window solid magenta
     v.isJitteringEnabled = false
     v.backgroundColor = .black
     v.delegate = self
@@ -431,6 +432,11 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     renderedQ = q
     // Position and scene yaw follow the same way, lightly smoothed.
     let a = Float(1 - exp(-dt / (camMode == .replay || camMode == .director ? 0.25 : 0.10)))
+    // A bad target (NaN from a half-built walk state) must not stick: snap back to the last good position.
+    if !(targetPos.x.isFinite && targetPos.y.isFinite && targetPos.z.isFinite) { targetPos = shownPos }
+    if !targetYaw.isFinite { targetYaw = shownYaw }
+    if !(shownPos.x.isFinite && shownPos.y.isFinite && shownPos.z.isFinite) { shownPos = SIMD3(0, 1.6, 0); nanResets += 1 }
+    if !shownYaw.isFinite { shownYaw = 0; nanResets += 1 }
     shownPos += (targetPos - shownPos) * a
     var dy = targetYaw - shownYaw
     while dy > .pi { dy -= 2 * .pi }
@@ -472,7 +478,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       return [Double(atan2(v.x, -v.z) * 180 / .pi), Double(asin(max(-1, min(1, v.y))) * 180 / .pi)]
     }
     let cd = world.crew.takeDiagnostics()
-    let diag: [String: Any] = ["cam": yawPitch(camQ), "pose": yawPitch(pose.latest().q), "modeFlips": modeFlips, "maxPoseAgeMs": Int(maxPoseAge * 1000), "headsetConnected": pose.isConnected,
+    camLock.lock(); let sp = shownPos, nr = nanResets; camLock.unlock()
+    let diag: [String: Any] = ["cam": yawPitch(camQ), "pose": yawPitch(pose.latest().q), "modeFlips": modeFlips, "camPos": [Double(sp.x), Double(sp.y), Double(sp.z)].map { $0.isFinite ? $0 : -999 }, "nanResets": nr, "maxPoseAgeMs": Int(maxPoseAge * 1000), "headsetConnected": pose.isConnected,
                                "title": link.snapshot().0?.scene?.title?.style ?? "", "bubbleMaxStep": cd.bubbleMaxStep, "bubbleJumps": cd.bubbleJumps, "tagSwitches": cd.tagSwitches, "longFrames": cd.longFrames]
     modeFlips = 0
     maxPoseAge = 0
@@ -526,18 +533,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
 final class SpectatorSCNView: SCNView {
   /// AppKit resets the layer's contentsScale to the display's backing scale; this puts the cap back (see `SpectatorController.maxPixelWidth`).
   var maxPixelWidth: CGFloat = 0
-  func capResolution() {
-    guard maxPixelWidth > 0, bounds.width > 0, let layer else { return }
-    let backing = window?.backingScaleFactor ?? 2
-    // Full screen on a Retina Mac is 3840 px across: 2x MSAA there (4x costs a third of the frame time for edges nobody sees at that density).
-    let aa: SCNAntialiasingMode = bounds.width * backing > maxPixelWidth * 1.25 ? .multisampling2X : .multisampling4X
-    if antialiasingMode != aa { antialiasingMode = aa }
-    let scale = max(1, min(backing, maxPixelWidth / bounds.width))
-    if abs(layer.contentsScale - scale) > 0.01 {
-      layer.contentsScale = scale
-      (layer as? CAMetalLayer)?.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-    }
-  }
+  /// Nothing: the view renders at the display's own scale. (Setting the layer's contentsScale and drawableSize by hand, and
+  /// switching the MSAA mode at runtime, rendered the window solid magenta on macOS 26 while an offscreen render was fine.)
+  func capResolution() {}
   override func layout() { super.layout(); capResolution() }
   override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); capResolution() }
   override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); capResolution() }
