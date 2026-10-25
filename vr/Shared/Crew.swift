@@ -518,11 +518,9 @@ final class Crew {
     #endif
   }
 
+  /// The crater rim the Engineer turns to: a fixed point far out along `Spots.rimDir` (the storm wall moves between sets, the rim doesn't).
   private func rimPoint(from eye: SIMD3<Float>) -> SIMD3<Float> {
-    if rimCache == nil {
-      if let n = scene.rootNode.childNode(withName: "storm-wall", recursively: true) { rimCache = n.simdWorldPosition }
-    }
-    return rimCache ?? SIMD3(-290, 0, -345)
+    SIMD3(Spots.rim.x, eye.y + 6, Spots.rim.y)
   }
 
   // ---------------------------------------------------------------- the one bubble
