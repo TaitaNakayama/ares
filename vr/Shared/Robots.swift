@@ -539,12 +539,14 @@ final class Robot {
     } else {
       tagSwitchSince = nil
     }
-    let tagFade: CGFloat = overlapAt(tagSlot) > 0 ? 0.4 : 1
+    let tagFade: CGFloat = overlapAt(tagSlot) > 0 ? 0.7 : 1
     tagY += (tagSlot - tagY) * 0.12
     // The node bobs with the job motion; the tag holds its height (it only moves sideways with the robot).
     nametag.node.simdPosition = SIMD3(0, tagY * tagScale - off.y, 0)
     let pulseTag: Float = speaking ? 1 + 0.07 * sin(Float(now - speakingSince) * 7) : 1
-    let ts = tagScale * pulseTag
+    // Angular cap (about 3.2 degrees tall): a robot close to the judge must not carry a giant label.
+    let capScale = max(0.35, simd_distance(user, node.simdPosition) * tan(Float(3.2) * .pi / 180) / 0.17)
+    let ts = min(tagScale, capScale) * pulseTag
     nametag.node.simdScale = SIMD3(repeating: ts)
     nametag.node.opacity += (tagFade * labelMask - nametag.node.opacity) * 0.3
     nametag.node.isHidden = nametag.node.opacity < 0.01

@@ -25,7 +25,7 @@ await new Promise((r) => setTimeout(r, 1500));
 await post("/api/show/autoplay", { choice: CHOICE });
 const t0 = Date.now();
 
-type Sample = { t: number; act: string; mode: string; yawErr: number | null; pitchErr: number | null; flips: number; poseAge: number; subtitle: string; card: boolean; speaking: string | null; chosen: boolean; title: string | null; seenTitle: string; bubbleMaxStep: number; bubbleJumps: number; tagSwitches: Record<string, number> };
+type Sample = { t: number; act: string; mode: string; yawErr: number | null; pitchErr: number | null; flips: number; poseAge: number; subtitle: string; card: boolean; speaking: string | null; chosen: boolean; title: string | null; seenTitle: string; bubbleMaxStep: number; bubbleJumps: number; tagSwitches: Record<string, number>; longFrames: number };
 const samples: Sample[] = [];
 let lastStatsAt = "";
 while ((Date.now() - t0) / 1000 < SECS) {
@@ -53,6 +53,7 @@ while ((Date.now() - t0) / 1000 < SECS) {
     bubbleMaxStep: d.bubbleMaxStep ?? 0,
     bubbleJumps: d.bubbleJumps ?? 0,
     tagSwitches: d.tagSwitches ?? {},
+    longFrames: d.longFrames ?? 0,
   });
   if (log.act === "explore" && (Date.now() - t0) / 1000 > 60 && samples.filter((s) => s.act === "explore").length > 30) break;
 }
@@ -61,9 +62,9 @@ head?.kill();
 const live = samples.filter((s) => s.mode === "live");
 const errs = live.map((s) => Math.abs(s.yawErr ?? 0)).sort((a, b) => a - b);
 const pct = (xs: number[], p: number) => (xs.length ? xs[Math.min(xs.length - 1, Math.floor(p * xs.length))]! : NaN);
-// The card must leave within 3 s of the choice.
+// The card shows the choice for 3.5 s and must be gone by 4.5 s.
 const chosenAt = samples.find((s) => s.chosen)?.t;
-const cardLate = chosenAt === undefined ? [] : samples.filter((s) => s.t > chosenAt + 3 && s.card);
+const cardLate = chosenAt === undefined ? [] : samples.filter((s) => s.t > chosenAt + 4.5 && s.card);
 // A subtitle must match the line being spoken (or be gone within ~2 s of the server's line ending).
 const stale = samples.filter((s, i) => s.subtitle && s.speaking && s.subtitle !== s.speaking && samples[i - 1]?.speaking === s.speaking);
 // Judged on what the spectator itself saw at that moment (its own title), not the server's newer state.
@@ -79,7 +80,7 @@ const checks: Record<string, boolean> = {
   "no LIVE drop-outs (mode flips 0)": samples.every((s) => s.flips === 0),
   "pose never older than 300 ms": samples.every((s) => s.poseAge < 300),
   "camera follows the head (p95 yaw error ≤ 6°)": pct(errs, 0.95) <= 6,
-  "decision card gone ≤ 3 s after the choice": chosenAt !== undefined && cardLate.length === 0,
+  "decision card gone ≤ 4.5 s after the choice": chosenAt !== undefined && cardLate.length === 0,
   "subtitle always the current line": stale.length === 0,
   "no subtitle under a window/end card": underTitle.length === 0,
   "bubbles never hop within a line (0 frames > 8 cm)": jumps === 0,
@@ -93,6 +94,7 @@ if (cardLate.length) console.log(`  card still up at ${cardLate.map((s) => s.t.t
 if (stale.length) console.log(`  stale subtitles: ${stale.slice(0, 3).map((s) => `"${s.subtitle}" while "${s.speaking}"`).join(" | ")}`);
 const nonLive = samples.filter((s) => s.mode !== "live");
 if (nonLive.length) console.log(`  not LIVE at ${nonLive.slice(0, 8).map((s) => `${s.t.toFixed(1)}s(${s.mode})`).join(" ")}`);
+console.log(`  long frames while a bubble was up (> 33 ms): ${samples.reduce((n, s) => n + s.longFrames, 0)}`);
 console.log(`  bubble hops ${jumps}, largest bubble step ${Math.max(0, ...samples.map((s) => s.bubbleMaxStep)).toFixed(3)} m; nametag height changes ${tagMoves} (${[...tagTimes].map(([id, ts]) => `${id} ${ts.length}`).join(", ")})${flicker.length ? `; flicker ${flicker.join(" ")}` : ""}`);
 console.log("pose relay:", JSON.stringify(await get("/api/debug/pose")));
 for (const [k, v] of Object.entries(checks)) console.log(`  ${v ? "PASS" : "FAIL"}  ${k}`);

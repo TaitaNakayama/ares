@@ -144,6 +144,8 @@ final class Crew {
   private var current: Line?
   private var queue: [Line] = []
   let bubble = SpeechBubble()
+  /// False on the Mac spectator: its subtitle carries the line (with name and colour), so a 3D bubble would say it twice.
+  var showsBubble = true
   private var bubbleShownKey = ""
   /// Where this line's bubble sits, relative to its speaker: chosen once when the line starts (and again only if the speaker
   /// moves), so it never slides with the judge's head or hops between candidate spots while the robot works.
@@ -151,14 +153,16 @@ final class Crew {
   // than 8 cm (a visible hop), and nametag height changes, since the last report.
   private var diagBubbleMaxStep: Float = 0
   private var diagBubbleJumps = 0
+  private var diagLongFrames = 0
   private var lastBubbleCentre: SIMD3<Float>?
   private var lastBubbleSeq = -1
-  func takeDiagnostics() -> (bubbleMaxStep: Double, bubbleJumps: Int, tagSwitches: [String: Int]) {
+  func takeDiagnostics() -> (bubbleMaxStep: Double, bubbleJumps: Int, tagSwitches: [String: Int], longFrames: Int) {
     var tags: [String: Int] = [:]
     for (id, b) in bots { let n = b.takeTagSwitches(); if n > 0 { tags[id] = n } }
-    let r = (Double(diagBubbleMaxStep), diagBubbleJumps, tags)
+    let r = (Double(diagBubbleMaxStep), diagBubbleJumps, tags, diagLongFrames)
     diagBubbleMaxStep = 0
     diagBubbleJumps = 0
+    diagLongFrames = 0
     return r
   }
   private var placedSeq = -1
@@ -565,6 +569,7 @@ final class Crew {
   // ---------------------------------------------------------------- the one bubble
 
   private func updateBubble(now: TimeInterval, dt: Float, eye: SIMD3<Float>, fwd: SIMD3<Float>, part: String) {
+    guard showsBubble else { bubble.node.isHidden = true; return }
     guard let c = current, let bot = bots[c.speaker], bot.isVisible else {
       bubble.node.opacity = max(0, bubble.node.opacity - CGFloat(dt * 6))
       if bubble.node.opacity < 0.01 { bubble.node.isHidden = true }
@@ -663,11 +668,15 @@ final class Crew {
     }
     // The same line moving to a new spot (the card came up, the speaker moved off, a re-placement) glides there over about a
     // quarter of a second; only a new line appears in place.
-    if let last = lastBubbleCentre, lastBubbleSeq == c.seq {
+    // A move of metres (the scene switched sets under the line) is not a glide: it reappears there.
+    if let last = lastBubbleCentre, lastBubbleSeq == c.seq, simd_distance(last, centre) < 2 {
       centre = last + (centre - last) * (1 - exp(-dt / 0.25))
       let step = simd_distance(last, centre)
-      diagBubbleMaxStep = max(diagBubbleMaxStep, step)
-      if step > 0.08 { diagBubbleJumps += 1 }
+      // A long frame (a hitch) makes an honest glide take a bigger step: counted apart, not as a hop.
+      if dt > 1.0 / 30 { diagLongFrames += 1 } else {
+        diagBubbleMaxStep = max(diagBubbleMaxStep, step)
+        if step > 0.08 { diagBubbleJumps += 1 }
+      }
     }
     lastBubbleCentre = centre
     lastBubbleSeq = c.seq

@@ -31,6 +31,8 @@ final class ShowDirector {
   private var shownSub = ""
   /// The cue pill on the headset (the spectator draws its own in the overlay).
   var showsCuePill = true
+  /// The Mac spectator draws window and end titles as flat overlays (whole and centred whatever the head does); it hides these.
+  var showsTitleCards = true
   private let cuePill = SpritePanel(width: 0.74, height: 0.1, pixelsPerMeter: 700)
   private var cuePillNodes: [SCNNode] = []
   private var cueShown = ""
@@ -277,10 +279,10 @@ final class ShowDirector {
     }
     if windowLevel < windowTarget { windowLevel = min(windowTarget, windowLevel + dt / 0.8) } else if windowLevel > windowTarget { windowLevel = max(windowTarget, windowLevel - dt / 0.3) }
     windowText.node.opacity = CGFloat(windowLevel)
-    windowText.node.isHidden = windowLevel <= 0.001
+    windowText.node.isHidden = windowLevel <= 0.001 || !showsTitleCards
     if endLevel < endTarget { endLevel = min(endTarget, endLevel + dt / 1.2) } else if endLevel > endTarget { endLevel = max(endTarget, endLevel - dt / 0.3) }
     endCard.node.opacity = CGFloat(endLevel)
-    endCard.node.isHidden = endLevel <= 0.001
+    endCard.node.isHidden = endLevel <= 0.001 || !showsTitleCards
     Room.alarm?.update(now: now)
     // The cue pill (headset): "LOOK AT AN OPTION · TAP TO CHOOSE" and friends, in the cue's colour.
     let want = showsCuePill ? Self.cuePillText(cue) : nil

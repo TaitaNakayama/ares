@@ -64,7 +64,7 @@ const OPTION_KIND = {
 };
 type OptionKind = keyof typeof OPTION_KIND;
 /** How long the card stays up after the choice (showing what was chosen) before it leaves the view. */
-const DECISION_LINGER_MS = 2500;
+const DECISION_LINGER_MS = 3500;
 
 const kindOf = (o: { id: string; leverId?: string; actions: { type: string }[] }): OptionKind | undefined =>
   o.leverId === "drill_off" || o.id === "lever-drill_off" ? "drill" : o.leverId === "lab_pause" || o.id === "lever-lab_pause" ? "lab" : o.actions.some((a) => a.type === "approve_requisition") ? "buy" : undefined;

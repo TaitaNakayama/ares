@@ -67,6 +67,8 @@ final class BaseScene {
   private let debug = TextPanel(width: 1.6, height: 0.6, pixelsPerMeter: 600)
   /// Head-locked arrow toward a speaking robot that is outside the view. The spectator camera is wider than the head pose, so it turns this off.
   var showsSpeakerArrow = true
+  /// False on the Mac spectator: its 2D card shows the options, so the 3D cards would show through it twice.
+  var showsDecisionCards = true
   private let arrow = OffscreenArrow()
   private var arrowRole = ""
   private var captionSeq = -1
@@ -317,6 +319,7 @@ final class BaseScene {
     Sound.shared.setStorm(tau: tauNow)
     crew.apply(st, now: now)
     decisionCards.apply(st.decision, crew: st.crew, now: now)
+    if !showsDecisionCards { decisionCards.root.isHidden = true }
     refreshCards(st)
   }
 

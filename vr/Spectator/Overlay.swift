@@ -12,13 +12,15 @@ final class OverlayView: NSView {
   let cue = CueHintView()
   let badges = BadgeView()
   let thinking = ThinkingView()
+  let titleCard = TitleCardView()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    for v in [badges, card, showCard, cue, subtitles, thinking, dot] as [NSView] { addSubview(v) }
+    for v in [badges, card, showCard, cue, subtitles, thinking, titleCard, dot] as [NSView] { addSubview(v) }
     card.alphaValue = 0
     showCard.alphaValue = 0
+    titleCard.alphaValue = 0
     dot.isHidden = true
   }
 
@@ -34,13 +36,17 @@ final class OverlayView: NSView {
     thinking.frame = NSRect(x: 0, y: badges.frame.maxY + 6, width: b.width, height: max(34, b.height * 0.05))
     let cardH = b.height * 0.44
     card.frame = NSRect(x: b.width * 0.06, y: b.height - cardH - b.height * 0.03, width: b.width * 0.88, height: cardH)
-    showCard.frame = NSRect(x: b.width * 0.06, y: b.height - cardH * 1.08 - b.height * 0.03, width: b.width * 0.88, height: cardH * 1.08)
+    // The show's card sits low and compact, so the judge's view above it (and the gaze on the 3D world) stays visible.
+    let showH = b.height * 0.31
+    showCard.frame = NSRect(x: b.width * 0.08, y: b.height - showH - b.height * 0.025, width: b.width * 0.84, height: showH)
     cue.frame = NSRect(x: 0, y: thinking.frame.maxY + 4, width: b.width, height: max(30, b.height * 0.045))
-    // Subtitles sit low; while a decision is up they move above it.
-    let subH = b.height * 0.25
+    // Subtitles sit low; while a decision card is up they go to the top, under the cue, so nothing stacks on the card.
+    let subH = b.height * 0.15
     let upCard: NSView? = showCard.isUp ? showCard : (card.isUp ? card : nil)
-    let subY = upCard.map { $0.frame.minY - subH - 8 } ?? (b.height - subH - b.height * 0.03)
-    subtitles.frame = NSRect(x: b.width * 0.05, y: subY, width: b.width * 0.9, height: subH)
+    let subY = upCard != nil ? cue.frame.maxY + 8 : (b.height - subH - b.height * 0.025)
+    subtitles.frame = NSRect(x: b.width * 0.08, y: subY, width: b.width * 0.84, height: subH)
+    subtitles.topAligned = upCard != nil
+    titleCard.frame = NSRect(x: b.width * 0.05, y: b.height * 0.28, width: b.width * 0.9, height: b.height * 0.36)
   }
 
   /// `p` in this view's coordinates, or nil when the judge looks outside the picture.
@@ -128,11 +134,13 @@ final class SubtitleQueue {
 
 final class SubtitleView: NSView {
   var items: [Subtitle] = [] { didSet { needsDisplay = true } }
+  /// Stack from the top of the frame (while a decision card holds the bottom) instead of the bottom.
+  var topAligned = false { didSet { if topAligned != oldValue { needsDisplay = true } } }
   override var isFlipped: Bool { true }
 
   override func draw(_ dirtyRect: NSRect) {
     guard !items.isEmpty else { return }
-    let textSize = max(22, bounds.height * 0.17)
+    let textSize = max(22, bounds.height * 0.24)
     let nameSize = textSize * 0.62
     var blocks: [(Subtitle, NSAttributedString, NSAttributedString, CGFloat)] = []
     let width = bounds.width - 56
@@ -146,8 +154,9 @@ final class SubtitleView: NSView {
       let bodyH = min(ceil(body.boundingRect(with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin]).height), textSize * 1.25 * 2)
       blocks.append((s, name, body, bodyH))
     }
-    // Newest at the bottom, stacked upward.
-    var y = bounds.height
+    // Newest at the bottom, stacked upward (or, top-aligned, from the top edge down).
+    let total = blocks.reduce(CGFloat(0)) { $0 + nameSize * 1.35 + $1.3 + 26 + 10 } - 10
+    var y = topAligned ? total : bounds.height
     for (s, name, body, bodyH) in blocks.reversed() {
       let h = nameSize * 1.35 + bodyH + 26
       y -= h
@@ -231,7 +240,7 @@ final class CueHintView: NSView {
     if !tail.isEmpty { text.append(NSAttributedString(string: tail, attributes: [.font: NSFont.systemFont(ofSize: size * 0.8, weight: .bold), .foregroundColor: NSColor(white: 0.75, alpha: 1), .kern: 1.5])) }
     let ts = text.size()
     let box = NSRect(x: (bounds.width - ts.width) / 2 - 16, y: 0, width: ts.width + 32, height: bounds.height)
-    NSColor(white: 0.02, alpha: 0.5).setFill()
+    NSColor(white: 0.02, alpha: 0.88).setFill()
     NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
     text.draw(at: NSPoint(x: box.minX + 16, y: (bounds.height - ts.height) / 2))
   }
@@ -426,9 +435,9 @@ final class ShowDecisionView: NSView {
       box.stroke()
       o.tint.withAlphaComponent(dim ? 0.3 : 1).setFill()
       NSBezierPath(roundedRect: NSRect(x: r.minX + 14, y: r.minY, width: r.width - 28, height: 8), xRadius: 4, yRadius: 4).fill()
-      let iconSize = min(ch * 0.40, cw * 0.55)
+      let iconSize = min(ch * 0.30, cw * 0.4)
       DecisionCards.drawIcon(cg, kind: o.icon, center: CGPoint(x: r.midX, y: r.minY + 24 + iconSize / 2), size: iconSize, color: o.tint.withAlphaComponent(dim ? 0.35 : 1))
-      let labelSize = max(15, min(ch * 0.115, cw * 0.11))
+      let labelSize = max(15, min(ch * 0.14, cw * 0.1))
       let para = NSMutableParagraphStyle()
       para.alignment = .center
       para.lineBreakMode = .byWordWrapping
@@ -442,8 +451,15 @@ final class ShowDecisionView: NSView {
         cp.alignment = .center
         cp.lineBreakMode = .byWordWrapping
         let cTop = labelTop + labelSize * 2.35
-        NSAttributedString(string: o.cost, attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.66, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.45 : 1), .paragraphStyle: cp])
-          .draw(with: NSRect(x: r.minX + 14, y: cTop, width: r.width - 28, height: max(10, r.maxY - labelSize * 1.0 - cTop)), options: [.usesLineFragmentOrigin])
+        let cRect = NSRect(x: r.minX + 14, y: cTop, width: r.width - 28, height: max(10, r.maxY - labelSize * 0.9 - cTop))
+        // Shrink until the whole cost fits (it was cut mid-phrase: "Fewer batteries, and they").
+        var fs = labelSize * 0.66
+        var cost = NSAttributedString(string: o.cost, attributes: [.font: NSFont.systemFont(ofSize: fs, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.45 : 1), .paragraphStyle: cp])
+        while fs > 11, cost.boundingRect(with: NSSize(width: cRect.width, height: 1000), options: [.usesLineFragmentOrigin]).height > cRect.height {
+          fs -= 1
+          cost = NSAttributedString(string: o.cost, attributes: [.font: NSFont.systemFont(ofSize: fs, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.45 : 1), .paragraphStyle: cp])
+        }
+        cost.draw(with: cRect, options: [.usesLineFragmentOrigin])
       } else if !sp.isEmpty {
         NSAttributedString(string: "\(sp) WILL SAY", attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.5, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.4 : 1), .kern: 1])
           .draw(at: NSPoint(x: r.minX + 16, y: r.maxY - labelSize * 0.9))
@@ -453,6 +469,58 @@ final class ShowDecisionView: NSView {
         t.draw(at: NSPoint(x: r.maxX - t.size().width - 16, y: r.maxY - labelSize * 0.9))
       }
     }
+  }
+}
+
+// MARK: - Window and end titles (flat, centred)
+
+/// "25 MINUTES LATER", "SCAM BLOCKED · $1.4M SAVED" and the end card, drawn flat over the mirror so they are always whole and
+/// centred for the table, whatever the judge's head does (the headset shows them on the window glass).
+final class TitleCardView: NSView {
+  private var text = ""
+  private var style = ""
+  override var isFlipped: Bool { true }
+
+  func set(text t: String, style st: String) {
+    guard t != text || st != style else { return }
+    let wasUp = !text.isEmpty
+    text = t
+    style = st
+    needsDisplay = true
+    let up = !t.isEmpty
+    if up != wasUp {
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = up ? 0.5 : 0.3
+        animator().alphaValue = up ? 1 : 0
+      }
+    }
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard !text.isEmpty else { return }
+    let b = bounds
+    NSColor(white: 0.02, alpha: 0.72).setFill()
+    NSBezierPath(roundedRect: b, xRadius: 26, yRadius: 26).fill()
+    let para = NSMutableParagraphStyle()
+    para.alignment = .center
+    para.lineBreakMode = .byWordWrapping
+    // "SCAM BLOCKED · $1.4M SAVED" reads as two lines: the verdict in white, the amount in green.
+    let parts = text.components(separatedBy: " · ")
+    let out = NSMutableAttributedString()
+    var size = style == "end" ? b.height * 0.17 : b.height * 0.22
+    func build() {
+      out.setAttributedString(NSAttributedString())
+      for (i, p) in parts.enumerated() {
+        if i > 0 { out.append(NSAttributedString(string: "\n")) }
+        let green = i > 0 && p.contains("$")
+        out.append(NSAttributedString(string: p, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .heavy), .foregroundColor: green ? SpectatorPalette.green : NSColor(white: 0.97, alpha: 1), .paragraphStyle: para, .kern: style == "end" ? 0.5 : 2]))
+      }
+    }
+    build()
+    let inner = b.insetBy(dx: 40, dy: 24)
+    while size > 18, out.boundingRect(with: NSSize(width: inner.width, height: 2000), options: [.usesLineFragmentOrigin]).height > inner.height { size -= 2; build() }
+    let h = out.boundingRect(with: NSSize(width: inner.width, height: 2000), options: [.usesLineFragmentOrigin]).height
+    out.draw(with: NSRect(x: inner.minX, y: inner.midY - h / 2, width: inner.width, height: h + 4), options: [.usesLineFragmentOrigin])
   }
 }
 

@@ -128,6 +128,11 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     cam.simdPosition = SIMD3(0, 1.6, 0)
     world.scene.rootNode.addChildNode(cam)
     world.show.showsCuePill = false // the overlay draws its own cue pill
+    // A clean mirror: the 3D world, with the words in one place (the overlay). The subtitle says each line, the 2D card shows
+    // the options, and window/end titles are drawn flat and centred; their 3D twins would show through it twice.
+    world.crew.showsBubble = false
+    world.showsDecisionCards = false
+    world.show.showsTitleCards = false
     world.attachFade(to: cam)
     var all: [Any] = []
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
@@ -215,7 +220,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     let sample = pose.latest()
     camLock.lock()
     camMode = mode
-    if let f = sample.fovX { camFovX = min(120, max(70, f + 10)) }
+    // The headset's own field of view (no wider): at 110 degrees on a flat screen, labels near the edges stretch and tilt.
+    if let f = sample.fovX { camFovX = min(100, max(70, f)) }
     let shownQ = renderedQ
     let fovX = camFovX
     let fps = self.fps
@@ -266,6 +272,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     overlay.cue.cue = st?.scene?.cue
     // A window or end card stands alone: no subtitle under it.
     let titleStyle = st?.scene?.title?.style ?? ""
+    overlay.titleCard.set(text: (titleStyle == "window" || titleStyle == "end") ? (st?.scene?.title?.text ?? "") : "", style: titleStyle)
     let wantClear = (titleStyle == "end" || titleStyle == "window") && !(st?.scene?.title?.text ?? "").isEmpty
     if wantClear {
       if !overlay.subtitles.items.isEmpty { overlay.subtitles.items = [] }
@@ -291,7 +298,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     #endif
 
     // Gaze dot: the judge's actual (unsmoothed) direction, projected into the smoothed camera.
-    if mode == .live {
+    if mode == .live, titleStyle != "black" {
       let fwd = sample.q.act(SIMD3<Float>(0, 0, -1))
       overlay.placeDot(project(direction: fwd, cameraQ: shownQ, fovX: fovX))
     } else {
@@ -448,7 +455,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     }
     let cd = world.crew.takeDiagnostics()
     let diag: [String: Any] = ["cam": yawPitch(camQ), "pose": yawPitch(pose.latest().q), "modeFlips": modeFlips, "maxPoseAgeMs": Int(maxPoseAge * 1000), "headsetConnected": pose.isConnected,
-                               "title": link.snapshot().0?.scene?.title?.style ?? "", "bubbleMaxStep": cd.bubbleMaxStep, "bubbleJumps": cd.bubbleJumps, "tagSwitches": cd.tagSwitches]
+                               "title": link.snapshot().0?.scene?.title?.style ?? "", "bubbleMaxStep": cd.bubbleMaxStep, "bubbleJumps": cd.bubbleJumps, "tagSwitches": cd.tagSwitches, "longFrames": cd.longFrames]
     modeFlips = 0
     maxPoseAge = 0
     let px = (scnView.layer?.contentsScale ?? 1) * view.bounds.width
