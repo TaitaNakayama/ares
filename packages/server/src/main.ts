@@ -767,7 +767,7 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/show/autoplay" && req.method === "POST") {
       const b = await readJson(req);
       const choice = (["drill", "lab", "buy"] as const).find((c) => c === b.choice) ?? "drill";
-      await reset();
+      await reset(typeof b.seed === "string" && b.seed ? b.seed : undefined);
       session.show.start({ autoplay: choice });
       return send(res, 200, { ok: true, message: `autoplay: the whole show hands-free, choosing ${choice}` });
     }
