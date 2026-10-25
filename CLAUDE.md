@@ -53,4 +53,4 @@ scripts/record-demo.sh            # director-camera MP4 of a full autoplay run (
 - iOS app bundles must not contain a top-level `Resources/` folder (codesign fails); resources are copied flat.
 - Eye textures: `flipV = false` (top_v 1, bottom_v 0), as in Google's Unity plugin.
 - The phone must be unlocked for `devicectl process launch`; Auto-Lock Never during the event.
-- Venue Wi-Fi is slow (about 0.5 MB/s) and may isolate clients. The phone hotspot is the primary network (verified); offline replay is the last resort.
+- Hotspots are not allowed at judging. The USB cable is the primary link (the phone reaches the Mac over the cable's 169.254.x link, no Wi-Fi needed; device-tested). Venue Wi-Fi is slow (about 0.5 MB/s) and may isolate clients; offline replay is the last resort.

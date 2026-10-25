@@ -124,6 +124,6 @@ Art direction: [ART.md](ART.md); third-party assets and NASA imagery: [CREDITS.m
 
 ## Networking
 
-- Primary: the iPhone Personal Hotspot with the Mac joined. The app reaches the Mac at 172.20.10.x (verified).
-- Also: venue Wi-Fi if it doesn't isolate clients. The app tries each address baked into `ares.json`.
+- Primary: the USB cable (hotspots are not allowed at judging). The phone reaches the Mac over the cable's own link (iPhone USB, 169.254.x), with no Wi-Fi or hotspot. The app races every address baked into `ares.json` and keeps the first that answers; 4 s of silence counts as lost; the server relays the pose from whichever headset socket is streaming.
+- Also: venue Wi-Fi if it doesn't isolate clients; the hotspot where allowed (172.20.10.x, verified).
 - Last resort: offline replay.

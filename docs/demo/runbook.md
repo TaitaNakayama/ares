@@ -1,11 +1,14 @@
 # Demo-day runbook (Sun 2026-10-25)
 
-Everything runs on the MacBook; the phone is the headset. Do it in this order, 20 minutes before judging. The show is about 3 minutes: [script.md](script.md).
+Everything runs on the MacBook; the phone is the headset. Do it in this order, 20 minutes before judging. The show is about 5 minutes: [script.md](script.md).
 
-## 1. Network
-- Turn on the iPhone's Personal Hotspot; join the Mac to it (venue Wi-Fi is slow and may isolate clients). The headset app tries 172.20.10.2-14 after its baked addresses.
-- If the headset can't find the Mac within a minute: run `scripts/build-ios.sh` once while the Mac is on the hotspot (it bakes the current IPs), phone unlocked.
-- The cloud layer needs the hotspot's internet. Without it the agents use the local model (slow, 10-15 s), then rules; the show still completes.
+## 1. Network (hotspots are not allowed at judging)
+- **Primary: the USB cable.** Phone to Mac with a long cable (2 m or more). The phone reaches the Mac over the cable's own link (iPhone USB, a 169.254.x address) with no Wi-Fi or hotspot at all; the headset app tries every baked address at once and keeps the first that answers, and a cut link comes back in under a second (device-tested: 14/14 forced drops, 0.42 s). Keep the cable plugged in for the whole session.
+- Mac on venue Wi-Fi for the cloud model. Without internet the agents use the local model (slow, 10-15 s), then rules; the show still completes.
+- Backup: venue Wi-Fi for the phone too, only if the venue lets devices reach each other (many don't).
+- Last resort: the offline replay (the recorded run, no live agents).
+- If the headset can't find the Mac within a minute: run `scripts/build-ios.sh` once with the cable in and the phone unlocked (it bakes the current addresses).
+- Check: `curl -s localhost:8787/api/debug/pose` shows `openHeadsetSockets: 1` and a small `msSinceRelay` while the app is open.
 
 ## 2. Start
 ```bash
