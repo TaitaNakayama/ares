@@ -15,3 +15,4 @@ vr/AresVR/Resources/ares.json
 vr/Vendor/Vendor/
 vr/Assets/*
 !vr/Assets/README.md
+docs/evidence/rounds/*/frames/

@@ -482,6 +482,7 @@ export class Show {
 
   private endCard(): void {
     if (this.act === "explore") return;
+    this.speaking = null; // the end card stands alone
     this.set({ act: "resolved", title: { text: "An AI crew that keeps a Mars base alive. And knows when to ask you.", style: "end" } });
     this.at(8000, () => {
       this.set({ act: "explore", title: null });

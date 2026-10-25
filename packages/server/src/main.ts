@@ -315,7 +315,8 @@ function showFields(s: Session, live: Record<string, unknown>): Record<string, u
   const f = s.show.vrFields() as { moneyExtra: Record<string, unknown>; scene: Record<string, unknown> } & Record<string, unknown>;
   const { moneyExtra, ...rest } = f;
   // While the show runs, the legacy card is off (the show's `decision` is the card) and the scene is the show's.
-  return { ...rest, money: { ...(live.money as object), ...moneyExtra }, ...(s.show.active ? { waiting: [] } : { scene: { ...(live.scene as object), ...f.scene, mode: "title" } }) };
+  // The center screen still reads `waiting` ("decision needed") while the card is up; the headset hides the legacy card when `decision` is set.
+  return { ...rest, money: { ...(live.money as object), ...moneyExtra }, ...(s.show.active ? { waiting: f.decision ? live.waiting : [] } : { scene: { ...(live.scene as object), ...f.scene, mode: "title" } }) };
 }
 
 function fullState() {

@@ -275,6 +275,8 @@ final class Crew {
       (state, speaking) = Crew.legacy(st)
       if !primed { primed = true; lastSeq = speaking?.seq ?? -1; speaking = nil } // an old tape's last line is not news
     }
+    // A window or end card stands alone: the last bubble steps aside.
+    if let style = st.scene?.title?.style, style == "end" || style == "window" { current = nil; queue.removeAll() }
     ingest(speaking, now: now)
   }
 

@@ -1,0 +1,23 @@
+   5.0s  outside      ENGINEER -> judge    [llm]  Welcome, Commander. The crew has the base handled.
+  11.7s  outside      SCIENCE  -> judge    [llm]  Arm grinding ancient river-delta rock. Want a closer look?
+  18.8s  outside      SUPPLY   -> judge    [llm]  Two crates are missing. I won't pay for those.
+  26.0s  outside      ENGINEER -> rim      [llm]  Crew, dust storm rising over the crater rim.
+  32.7s  outside      ENGINEER -> judge    [llm]  Commander, head inside the base right now.
+  43.7s  inside       LIFE     -> judge    [llm]  Welcome back inside, Commander. The air is fresh.
+  50.4s  inside       RULES    -> judge    [llm]  Quiet day, Commander. Nothing suspicious in the books.
+  57.1s  crisis       LIFE     -> engineer [llm]  Storm's cutting solar power. Oxygen makers need it.
+  63.8s  crisis       ENGINEER -> life     [llm]  We can't power air, drill, and lab together.
+  70.5s  crisis       SUPPLY   -> rules    [llm]  I found batteries for sale on Earth.
+  76.8s  crisis       SUPPLY   -> rules    [llm]  This quote is roughly triple this supplier's normal price.
+  83.9s  crisis       SUPPLY   -> rules    [llm]  Same quote, but payment goes to a new bank account.
+  91.4s  crisis       RULES    -> supply   [llm]  That's a scam. I've blocked the payment.
+  97.7s  crisis       RULES    -> judge    [llm]  Asked Earth to verify bank change. Reply takes 25 minutes.
+ 105.7s  crisis       RULES    -> judge    [llm]  Power won't outlast Earth's reply. Commander, what goes offline?
+ 112.8s  decision     LIFE     -> judge    [llm]  Stopping the ice drill pauses our water supply.
+ 119.5s  decision     SCIENCE  -> judge    [llm]  Pausing the lab could spoil our samples.
+ 125.8s  decision     SUPPLY   -> judge    [llm]  Our trusted supplier has fewer batteries, arriving later.
+ 132.6s  consequence  ENGINEER -> judge    [llm]  Drill powered down. Oxygen makers are stable.
+ 138.9s  consequence  LIFE     -> judge    [llm]  Air is safe. Stored water lasts nine days.
+ 147.9s  later        RULES    -> judge    [llm]  Earth confirmed that bank account was a scam.
+ 154.6s  later        RULES    -> judge    [llm]  Scam supplier blocked. The base is safe, Commander.
+ 170.8s  explore      ENGINEER -> judge    [llm]  Commander, want to see where we really are?

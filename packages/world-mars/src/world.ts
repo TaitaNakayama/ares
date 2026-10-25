@@ -748,6 +748,7 @@ export class MarsWorld implements World {
   startStorm(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
     this.beat = 2;
     const t = engine.now;
+    this.stormBeganAt = t;
     this.stormFrom = { t, tau0: this.tauAt(t), tau1: 4.6, durMs: rampMs };
     this.tau = 4.6;
     engine.setLevers([this.drillLeverAt(4.6), this.labLeverAt(4.6)]);
@@ -761,6 +762,9 @@ export class MarsWorld implements World {
     const reason = `Dust storm at tau 4.6: solar ${Math.round(st.solarKWhPerSol)} kWh per sol against ${Math.round(st.loadKWhPerSol)} used. The oxygen makers need storage now.`;
     return [{ at: t, event: { type: "need", by: "engineer", sku: "BAT-10", qty: 12, orderBy: t + orderWithinMs, reason, short: "Storm. We need batteries now.", context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
   }
+
+  /** When the storm began (the story beat counts from here, even after the storm thins). */
+  private stormBeganAt?: Time;
 
   /** The storm thins (tau back to 0.6). */
   endStorm(engine: Engine, rampMs = 30 * MIN): ScheduledWorldEvent[] {
@@ -914,7 +918,7 @@ export class MarsWorld implements World {
    */
   storyBeat(engine: Engine): number {
     if (this.beat < 2 || !this.stormFrom) return this.beat;
-    const since = this.stormFrom.t;
+    const since = this.stormBeganAt ?? this.stormFrom.t;
     const req = [...engine.requisitions.values()].find((r) => r.sku === "BAT-10" && r.createdAt >= since);
     if (!req) return 2;
     const quoteIds = new Set([...engine.quotes.values()].filter((q) => q.requisitionId === req.id).map((q) => q.id));
