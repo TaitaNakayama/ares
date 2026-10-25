@@ -20,10 +20,10 @@ export function TracePanel({ trace, state, onPick }: { trace: Trace; state: AppS
         </table>
         <div className="row-gap">
           <span className="dim">Posted by</span>
-          {trace.actor ? <RoleChip role={trace.actor.role} name={trace.actor.displayName} /> : <b>{e.actorId}</b>}
+          {trace.actor ? <RoleChip role={trace.actor.role} actorId={trace.actor.id} name={trace.actor.displayName} /> : <b>{e.actorId}</b>}
           <span className="dim">Approvers</span>
           {trace.approvers.length === 0 && <span>none required</span>}
-          {trace.approvers.map((a, i) => (a ? <RoleChip key={i} role={a.role} name={a.displayName} /> : <span key={i}>{e.approvers[i]}</span>))}
+          {trace.approvers.map((a, i) => (a ? <RoleChip key={i} role={a.role} actorId={a.id} name={a.displayName} /> : <span key={i}>{e.approvers[i]}</span>))}
         </div>
       </Card>
 
@@ -75,7 +75,7 @@ function ProposalView({ p }: { p: Proposal }) {
   return (
     <>
       <dl className="kv">
-        <dt>Agent</dt><dd><RoleChip role={p.role} showRole /></dd>
+        <dt>Agent</dt><dd><RoleChip role={p.role} actorId={p.actorId} showRole /></dd>
         <dt>Action</dt><dd><code>{p.action.type}</code></dd>
         <dt>Rationale</dt><dd>{p.rationale ?? "-"}</dd>
         <dt>Parameters</dt><dd><code className="wrap">{JSON.stringify(p.action.params)}</code></dd>

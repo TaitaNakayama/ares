@@ -28,6 +28,21 @@ Agent names: the five agents now show one-word names everywhere a user sees them
 - **LLM reader live** (OpenAI key in `.env`, gpt-6.1-sol, cached). Pasted messy invoices are read by the model. Charges for things we don't stock are left out deterministically and named, so the bank and quantity controls still run.
 - **Public repo:** https://github.com/TaitaNakayama/ares. Checked before pushing: no secrets or headset token in history, no Claude attribution, largest file 28 MB.
 
+## Mars crew redesign (in progress, started Sat ~16:15; brief: [mars-crew-redesign.md](mars-crew-redesign.md), spec: [docs/demo/script.md](docs/demo/script.md))
+The one idea: on Mars nobody can call Earth for help; an AI crew keeps the base alive and only brings the commander the decisions that matter.
+
+**Done (server, committed and pushed)**
+- **The crew:** Engineer, Life, Science (world agents with their own tools: the drill, rationing, life-support priority, the lab; the world checks every use; they can also request purchases), Supply (one face for three separate engine actors: Receiving, Bills, Payments; segregation of duties unchanged), Rules (controller). Honest labels kept on every proposal and world action.
+- **Text rules** for every spoken line (`packages/agents/src/lines.ts`): 10 words, no semicolons, one number, numbers from the facts; one retry asking for shorter, then the scripted target line (labelled rules). All rules-brain lines rewritten to the same rules.
+- **The show** (`packages/server/src/show.ts`): the four acts on a timeline plus engine-event triggers; one line queue (one bubble, ≥1 s gaps, holds of 2.5 s + 0.4 s/word, a held beat before Rules' question); lines asked live from each agent with the target line as fallback; the three-option card (proposed by Rules within the rules, standard options fill gaps) with tradeoff lines prefetched and spoken when the gaze rests; consequences from the base's state (the Engineer powers the drill down, Science pauses the lab, or Supply orders the trusted batteries and the Engineer rations); real time from Earth's request so the 25-minute round trip can't finish mid-decision, then the "25 MINUTES LATER" time-lapse; Earth's answer, "$1.4M saved", the end card, the Act 4 offer; typed events in Act 4 come back as a card from Life, Science or Rules. Endpoints: `POST /api/show/start`, `POST /api/show/autoplay {choice: drill|lab|buy, seed}`, `GET /api/show/log`.
+- **Believable numbers:** freight assumption $400/kg (SIMULATED), a 10 kWh module ~$38k, the storm needs 12, the scam quote is 3x to a new account (~$1.4M saved), the trusted supplier has 6; limits Rules $125k / commander $600k / Earth $25M; Sol 214; Earth's answer = the real light-time round trip (25 min).
+- **Console:** Start show / Autoplay show / Enter base, the act/cue/line pill, crew names (Supply · Receiving/Bills/Payments), "said aloud" lines with their llm/rules badge, presets routed to Life/Science/Rules.
+- **Checks:** 100 tests pass; rules scorecard on 200 seeds with the new prices: recall unchanged (91.7%), 0 payments to fraud accounts, 0 integrity failures. `scripts/show-check.ts` (automated check over live runs): first run 23/23 lines by the model, every line within the rules, all 9 promised outcomes hold, inside at 44 s, card at 111 s, explore at 177 s.
+
+**Done (headset, merged):** the five crew robots (silhouettes, colours, icon nametags), one bubble at a time beside the speaker (clamped in the room, the roof clipping fixed), the speaker glows and turns to whoever it addresses, the others look at it, idle jobs, Rules' alarmed look and approach, cues on Science and the Engineer, the contract decoding and senders (Mac-verified; phone untested: it was locked).
+
+**In progress:** the show staging on the headset (title, Act 1 layout, the door, inside, the crisis visuals, the three-option card with gaze, the consequences, the window titles, the end card, the reality check from inside, spectator subtitles in colour and full-screen 60 fps). Then: iteration rounds with a fresh-eyes reviewer acting as a first-time judge, 10+ checked runs, the video, the docs.
+
 ## Sunday: see [docs/demo/runbook.md](demo/runbook.md) for start-up, the run, and fallbacks.
 
 ## Sat afternoon add-on (names, real stereo, reality check, free roam, fallback causes)

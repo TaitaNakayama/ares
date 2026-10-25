@@ -209,3 +209,10 @@ legend { padding: 0 8px; color: var(--accent); font-weight: 700; font-size: 0.9r
 .agents-fact { font-size: 0.9rem; font-weight: 600; }
 .agents-fact.warn { color: var(--warn); }
 .preset-row { margin-top: 12px; }
+
+.said-aloud { display: inline-flex; color: var(--accent); }
+.show-pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; font-size: 0.85rem; background: var(--panel2); max-width: 46ch; min-width: 0; }
+.show-pill .act { font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.show-pill .cue { color: var(--muted); }
+.show-pill .say { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.choice { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }

@@ -426,12 +426,14 @@ export function reportFallback(ev: Extract<WorldEvent, { type: "report" }>, ctx:
 /** Rules brain for reports in rules-only mode (no model at all). */
 export class ReportRules implements Brain {
   readonly role: AgentRole;
+  readonly actorId?: string;
   readonly kind = "rules" as const;
-  constructor(role: AgentRole = "requester") {
+  constructor(role: AgentRole = "requester", actorId?: string) {
     this.role = role;
+    this.actorId = actorId;
   }
   react(input: AgentInput, ctx: BrainContext): Intent[] {
-    if (input.kind !== "world" || input.event.type !== "report" || input.event.to !== this.role) return [];
+    if (input.kind !== "world" || input.event.type !== "report" || (input.event.to !== this.role && input.event.to !== this.actorId)) return [];
     return reportFallback(input.event, ctx);
   }
 }

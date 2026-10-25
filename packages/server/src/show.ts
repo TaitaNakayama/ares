@@ -81,7 +81,7 @@ export class Show {
   private closeupOpen = false;
   private realityOn = false;
   private thinkingActors = new Set<string>();
-  private decision: { id: string; options: { id: string; label: string; icon: string; speaker: CrewId; kind: OptionKind; proposedBy: string | null }[]; gazed: string | null; chosen: string | null } | null = null;
+  private decision: { id: string; kind: "battery" | "report"; options: { id: string; label: string; icon: string; speaker: CrewId; kind?: OptionKind; tradeoffIntent: string; tradeoffTarget: string; proposedBy: string | null }[]; gazed: string | null; chosen: string | null } | null = null;
   private tradeoffs = new Map<string, Promise<Spoken>>();
   private tradeoffAt = new Map<string, number>();
   private crisisAt = 0;
@@ -282,6 +282,10 @@ export class Show {
       }
       case "escalation_delivered": {
         const esc = d.escalation as Escalation;
+        if (esc.to === "local_authority" && esc.subject.kind === "report" && (this.act === "explore" || this.act === "resolved")) {
+          this.reportDecision(esc);
+          break;
+        }
         if (esc.to !== "local_authority" || esc.subject.kind !== "requisition" || esc.subject.id !== this.batteryReq || this.decision) break;
         this.buildDecision(esc);
         this.line({
@@ -347,15 +351,39 @@ export class Show {
     const options = order.filter((k) => picked.has(k)).map((k) => {
       const o = picked.get(k)!;
       const label = o.proposedBy && wordCount(o.label) <= 4 ? o.label : OPTION_KIND[k].label;
-      return { id: o.id, label, icon: OPTION_KIND[k].icon, speaker: OPTION_KIND[k].speaker, kind: k, proposedBy: o.proposedBy ? "Rules" : null };
+      return { id: o.id, label, icon: OPTION_KIND[k].icon, speaker: OPTION_KIND[k].speaker, kind: k, tradeoffIntent: OPTION_KIND[k].tradeoffIntent, tradeoffTarget: OPTION_KIND[k].tradeoff, proposedBy: o.proposedBy ? "Rules" : null };
     });
-    this.decision = { id: esc.id, options, gazed: null, chosen: null };
-    // Ask each tradeoff's speaker for its line now, so it's ready the moment the judge looks at the option.
-    for (const o of options) {
-      const k = OPTION_KIND[o.kind];
-      this.tradeoffs.set(o.id, this.words({ speaker: k.speaker, actor: ACTOR[k.speaker], to: "judge", intent: k.tradeoffIntent, facts: this.powerFacts(), target: k.tradeoff }));
-    }
+    this.decision = { id: esc.id, kind: "battery", options, gazed: null, chosen: null };
+    this.prefetchTradeoffs();
     this.host.notify();
+  }
+
+  /** Ask each tradeoff's speaker for its line now, so it's ready the moment the judge looks at the option. */
+  private prefetchTradeoffs(facts = this.powerFacts()): void {
+    for (const o of this.decision?.options ?? []) this.tradeoffs.set(o.id, this.words({ speaker: o.speaker, actor: ACTOR[o.speaker], to: "judge", intent: o.tradeoffIntent, facts, target: o.tradeoffTarget }));
+  }
+
+  /** Act 4: a typed event (the console's presets or free text) reached the commander as a report: the crew member who filed it brings the card. */
+  private reportDecision(esc: Escalation): void {
+    const rep = this.orch.engine.reports.get(esc.subject.id);
+    if (!rep || this.decision && !this.decision.chosen) return;
+    const speaker = crewOf(rep.by) ?? "rules";
+    const facts = `${rep.summary} Recommendation: ${rep.recommendation}`;
+    this.decision = {
+      id: esc.id, kind: "report", gazed: null, chosen: null,
+      options: [
+        { id: "approve", label: "Approve the plan", icon: "check", speaker, tradeoffIntent: `Your recommendation, in brief: ${rep.recommendation}`, tradeoffTarget: "That's my plan, Commander.", proposedBy: CREW[speaker].name },
+        { id: "dismiss", label: "Not right now", icon: "pause", speaker, tradeoffIntent: "If we wait, you'll keep watching it closely.", tradeoffTarget: "We'll keep a close eye on it.", proposedBy: null },
+      ],
+    };
+    this.tradeoffs.clear();
+    this.tradeoffAt.clear();
+    this.prefetchTradeoffs(facts);
+    this.crewSet(speaker, { lookAt: "judge", approach: true });
+    this.line({
+      speaker, actor: ACTOR[speaker], to: "judge", intent: `Tell the commander what just happened, in brief: ${rep.summary}`, facts, target: "Commander, something needs your call.",
+      onStart: () => this.at(800, () => this.set({ act: "decision", cue: "card" })),
+    });
   }
 
   /** The judge's gaze rests on an option: its speaker leans in and says the tradeoff. */
@@ -370,8 +398,7 @@ export class Show {
       const last = this.tradeoffAt.get(o.id) ?? 0;
       if (Date.now() - last > 6000) {
         this.tradeoffAt.set(o.id, Date.now());
-        const k = OPTION_KIND[o.kind];
-        this.enqueue({ spec: { speaker: k.speaker, actor: ACTOR[k.speaker], to: "judge", intent: k.tradeoffIntent, target: k.tradeoff, gapMs: 1000 }, words: this.tradeoffs.get(o.id) ?? Promise.resolve({ text: k.tradeoff, via: "rules", ms: 0 }) }, true);
+        this.enqueue({ spec: { speaker: o.speaker, actor: ACTOR[o.speaker], to: "judge", intent: o.tradeoffIntent, target: o.tradeoffTarget, gapMs: 1000 }, words: this.tradeoffs.get(o.id) ?? Promise.resolve({ text: o.tradeoffTarget, via: "rules", ms: 0 }) }, true);
       }
     }
     this.host.notify();
@@ -382,9 +409,16 @@ export class Show {
     if (!this.decision || this.decision.id !== escalationId || this.decision.chosen) return;
     const o = this.decision.options.find((x) => x.id === optionId);
     this.decision.chosen = optionId;
-    this.queue = this.queue.filter((x) => !Object.values(OPTION_KIND).some((k) => k.tradeoff === x.spec.target));
+    const targets = new Set(this.decision.options.map((x) => x.tradeoffTarget));
+    this.queue = this.queue.filter((x) => !targets.has(x.spec.target));
     for (const c of Object.keys(this.crew) as CrewId[]) this.crew[c].approach = false;
     this.set({ act: "consequence", cue: null });
+    if (this.decision.kind === "report") {
+      const sp = o?.speaker ?? "rules";
+      this.line({ speaker: sp, actor: ACTOR[sp], to: "judge", intent: optionId === "approve" ? "The commander approved your plan. Say you're on it." : "The commander chose to wait. Say you'll keep watching.", target: optionId === "approve" ? "On it, Commander." : "Understood. We'll keep watching." });
+      this.afterLines(800, () => { this.decision = null; this.set({ act: "explore", cue: null }); });
+      return;
+    }
     const kind = o?.kind ?? "buy";
     // The world action (drill, lab) or the order (batteries) triggers the reactions; if it never comes, go on after 12 s.
     this.at(12_000, () => { if (this.act === "consequence" && !this.laterShown) this.afterLines(1500, () => this.later()); });
@@ -610,7 +644,7 @@ export class Show {
         reality: this.act === "explore" ? { offer: true, on: this.realityOn, caption: "This is real Mars. The base isn't built yet.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
       },
       world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust },
-      decision: this.decision && (this.act === "decision" || this.act === "consequence") ? { id: this.decision.id, options: this.decision.options.map(({ kind: _k, ...o }) => o), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
+      decision: this.decision && (this.act === "decision" || this.act === "consequence") ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy }) => ({ id, label, icon, speaker, proposedBy })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
       moneyExtra: { savedBig: this.savedBig, incoming: this.incoming },
     };
   }
