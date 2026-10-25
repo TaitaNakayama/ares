@@ -3,7 +3,11 @@ import simd
 
 /// Where the judge stands outside, in WORLD coordinates (x right, -z toward the delta; the habitat is at the
 /// origin, its window and pressure door face -z). Everything is inside the terrain wedge (bearing within
-/// +-82 degrees of -z) and 16-18 m apart, so a leg takes about 12 s at walking pace.
+/// +-82 degrees of -z).
+///
+/// Act 1 layout, seen from the single start spot facing the base (the judge looks toward +z, so +x is on their LEFT):
+/// the base with its pressure door dead ahead; the cargo lander and its crates to the left; the rock Science grinds ahead
+/// and slightly right; the ice drill, the solar field and the dish to the right.
 enum Spots {
   struct Spot {
     let pos: SIMD2<Float>
@@ -18,21 +22,25 @@ enum Spots {
     return atan2(-d.x, -d.y)
   }
 
-  static let start = Spot(pos: [2, -57], look: [26, -55])
-  static let pad = Spot(pos: [15, -43], look: [26, -55])
-  static let science = Spot(pos: [1, -34], look: [-2.6, -36.2])
-  static let solar = Spot(pos: [-11, -22], look: [-22, -35])
-  /// The parked rover (world x, z) and where the judge stands to look at it (reality check).
-  static let roverPos = SIMD2<Float>(-0.8, -22)
-  static let rover = Spot(pos: [3.6, -16.5], look: roverPos)
-  static let door = Spot(pos: [0, -11], look: [0, -5.5]) // 2 m further back than round 2, so the habitat and door read in context
-  /// Where the glide ends before the fade (about 1 m from the door).
-  static let doorStep = Spot(pos: [0, -6.7], look: [0, -5.5])
+  /// The single judge start spot: 13.5 m in front of the base, facing it.
+  static let start = Spot(pos: [0, -13.5], look: [0, -5.5])
+  // Free-roam stations (Act 4 markers only; the default flow has none).
+  static let pad = Spot(pos: [5, -14.5], look: [10, -9])
+  static let science = Spot(pos: [-1.5, -14.5], look: [-4.5, -9])
+  static let solar = Spot(pos: [-7, -14.5], look: [-17, -14])
+  /// The parked rover (world x, z) and where the judge stands to look at it.
+  static let roverPos = SIMD2<Float>(7.5, -4.5)
+  static let rover = Spot(pos: [4, -13], look: roverPos)
+  static let door = Spot(pos: [0, -9], look: [0, -5.5])
+  /// Where the Act 1 walk ends (just inside the door plane: the judge glides through the open door while the screen fades).
+  static let doorStep = Spot(pos: [0, -5.0], look: [0, -4.5])
+  /// The walk to the door takes this long, at a steady speed with a gentle ease at both ends.
+  static let doorWalkSeconds: Double = 4.0
 
-  /// The lit footpath to the door: from the pad's direction, curving in, ending just short of the doorstep (world x, z).
-  static let doorPath: [SIMD2<Float>] = [[14, -15], [10, -13.2], [7, -11.3], [4.4, -9.2], [2.2, -7.6], [0.4, -6.7]]
-  /// Lamp posts along it: two on the pad-side run and a pair on each side of the final approach (these four are in the door view).
-  static let doorLights: [SIMD2<Float>] = [[10.4, -14.3], [6.4, -11.9], [3.0, -8.6], [-3.0, -8.6], [2.4, -6.9], [-2.4, -6.9]]
+  /// The lit footpath to the door: straight in from the start spot.
+  static let doorPath: [SIMD2<Float>] = [[0.1, -14], [0.1, -12], [0, -10], [0, -8], [0, -6.9]]
+  /// Lamp posts either side of it.
+  static let doorLights: [SIMD2<Float>] = [[2.3, -12.2], [-2.3, -12.2], [2.4, -9.0], [-2.4, -8.2], [2.4, -6.8], [-2.4, -6.8]]
 
   static func spot(_ station: String?) -> Spot? {
     switch station {
@@ -46,22 +54,31 @@ enum Spots {
   }
 
   // Set pieces (world x, z).
-  static let lander = SIMD2<Float>(27, -55)
-  static let crates = SIMD2<Float>(22, -50)
-  static let cargoKeeper = SIMD2<Float>(18.8, -47)
-  static let outcrop = SIMD2<Float>(-3.9, -34.8)
-  static let scientist = SIMD2<Float>(-1.3, -37.6)
-  static let engineer = SIMD2<Float>(-14.5, -26.5)
-  static let fieldCenter = SIMD2<Float>(-22, -35)
+  static let lander = SIMD2<Float>(14.5, -8.5)
+  static let crates = SIMD2<Float>(7.4, -10.4)
+  /// Supply scans the crates from here (outside).
+  static let cargoKeeper = SIMD2<Float>(4.4, -11.8)
+  /// The rock Science grinds (outcrop) and where Science hovers beside it (scientist).
+  static let outcrop = SIMD2<Float>(-4.6, -8.8)
+  static let scientist = SIMD2<Float>(-2.4, -11.0)
+  /// Engineer floats up here, beside the judge (a little to the right).
+  static let engineer = SIMD2<Float>(-2.2, -13.4)
+  static let fieldCenter = SIMD2<Float>(-19.5, -15.5)
   static let habRadius: Float = 4.3
-  static let moduleCenter = SIMD2<Float>(11, -1.5)
+  static let moduleCenter = SIMD2<Float>(9.5, 2.5)
   static let doorFaceZ: Float = -5.5
-  static let drill = SIMD2<Float>(-10, -60)
+  static let drill = SIMD2<Float>(-6.8, -10.8)
+  static let dish = SIMD2<Float>(-9.5, -5.5)
+  /// The crater rim as a world direction from the base (unit x, z): ahead of the judge, beyond the base and a little to the
+  /// right. `crew.engineer.lookAt == "rim"` points here and the dust wall rises over it.
+  static let rimDir = SIMD2<Float>(-0.32, 0.947)
+  /// A point far out along `rimDir`: what the Engineer looks at.
+  static let rim = rimDir * 400
 }
 
 /// The judge's walk: a straight glide between spots at about 1.4 m/s with a 0.5 s ease-in and ease-out
 /// (no acceleration jumps), the facing turning smoothly alongside. A new target while walking continues
-/// from the current position at the current speed.
+/// from the current position at the current speed. With `duration` the walk takes exactly that long.
 struct Journey {
   private(set) var pos: SIMD2<Float>
   private(set) var yaw: Float
@@ -85,7 +102,8 @@ struct Journey {
   }
 
   /// Walk to `spot` (or `pos` facing `yaw`). `snap` jumps there at once.
-  mutating func go(to spot: Spots.Spot, now: TimeInterval, speed v: Float = 1.4, snap: Bool = false) {
+  mutating func go(to spot: Spots.Spot, now: TimeInterval, speed v0: Float = 1.4, duration: Double? = nil, snap: Bool = false) {
+    var v = v0
     if snap {
       pos = spot.pos; from = spot.pos; to = spot.pos; yaw = spot.yaw; fromYaw = yaw; toYaw = yaw; moving = false
       return
@@ -95,6 +113,8 @@ struct Journey {
     from = pos; fromYaw = yaw
     to = spot.pos; toYaw = spot.yaw
     len = simd_distance(from, to)
+    // A fixed duration: one cruise speed with a 0.5 s ease at both ends (distance = v * (T - 0.5)).
+    if let d = duration, len > 0.05 { rampIn = 0.5; v = len / Float(max(0.8, d) - 0.5) }
     speed = v
     total = len / v + (rampIn + rampOut) / 2
     t0 = now

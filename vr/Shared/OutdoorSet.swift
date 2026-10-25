@@ -23,7 +23,13 @@ final class OutdoorSet {
   private(set) var rockChunks: [(spot: SIMD2<Float>, node: SCNNode)] = []
   let doorSign = SpritePanel(width: 2.9, height: 0.62, pixelsPerMeter: 330)
   private let doorMat = SCNMaterial()
+  private let doorMatR = SCNMaterial()
   private let doorGlow = SCNNode()
+  /// The two sliding leaves of the pressure door, the warm doorway behind them, and the open state.
+  private let leafL = SCNNode(), leafR = SCNNode(), doorway = SCNNode()
+  private(set) var doorOpen = false
+  private var doorOpenedAt: TimeInterval = 0
+  private static let leafTravel: Float = 0.82
   private let scanLine = SCNNode()
   private let scanCone = SCNNode()
   private weak var outside: Outside?
@@ -445,12 +451,12 @@ final class OutdoorSet {
 
   private func buildPad() {
     let l = Spots.lander
-    let g = Drape.patch(center: l, half: 9.5, yaw: 0, cell: 0.6, lift: 0.07, height: hOpt)
+    let g = Drape.patch(center: l, half: 7.6, yaw: 0, cell: 0.5, lift: 0.07, height: hOpt)
     always.addChildNode(decal(g, decalMat(Self.padTexture()), order: 30))
-    let s = Drape.patch(center: l, half: 12.5, yaw: 0.6, cell: 0.9, lift: 0.1, height: hOpt)
+    let s = Drape.patch(center: l, half: 10.0, yaw: 0.6, cell: 0.8, lift: 0.1, height: hOpt)
     always.addChildNode(decal(s, decalMat(Self.scorchTexture()), order: 32))
     // Dust ring: blown out around the pad, over the pad edge and the regolith.
-    let ring = Drape.patch(center: l, half: 14, yaw: 0.3, cell: 1.0, lift: 0.12, height: hOpt)
+    let ring = Drape.patch(center: l, half: 11.5, yaw: 0.3, cell: 0.9, lift: 0.12, height: hOpt)
     always.addChildNode(decal(ring, decalMat(Self.dustRingTexture()), order: 33))
     buildLander(at: l)
     // Pad lamp posts (emissive tops: they carry the pad through the storm).
@@ -459,7 +465,7 @@ final class OutdoorSet {
     let posts = SCNNode()
     for i in 0..<4 {
       let a = Float(i) / 4 * 2 * .pi + 0.4
-      let p = l + SIMD2(cos(a), sin(a)) * 9.2
+      let p = l + SIMD2(cos(a), sin(a)) * 7.4
       let pole = SCNNode(geometry: SCNCylinder(radius: 0.06, height: 3.0))
       pole.geometry?.materials = [post]
       place(pole, p, lift: 1.5)
@@ -538,7 +544,7 @@ final class OutdoorSet {
     }
     if let gen = outside?.loadProp("machine_generator") {
       gen.simdScale = SIMD3(repeating: 2.4)
-      place(gen, c + SIMD2(4.6, -1.8), yaw: 2.6)
+      place(gen, c + SIMD2(1.2, -3.6), yaw: 2.6)
       group.addChildNode(gen)
     }
     always.addChildNode(Dressing.bake(group))
@@ -629,7 +635,7 @@ final class OutdoorSet {
 
   private func buildFlags() {
     let orange = PlatformColor(red: 1.0, green: 0.42, blue: 0.12, alpha: 1)
-    let pts: [SIMD2<Float>] = [[8, -48], [12, -39], [6, -41], [-6, -31], [-4, -25], [-3, -15], [3, -14], [-6, -12], [5, -22], [-17, -28], [-9, -34], [18, -40], [24, -43], [30, -48], [33, -62], [20, -62]]
+    let pts: [SIMD2<Float>] = [[3.6, -15.5], [-3.6, -15.2], [10.5, -13.5], [-8, -13.5], [11, -4.5], [-12, -8], [5.5, -7.5], [-16, -10]]
     let group = SCNNode()
     for p in pts { group.addChildNode(flag(at: p, color: orange, height: 1.05)) }
     outdoorOnly.addChildNode(Dressing.bake(group))
@@ -663,7 +669,7 @@ final class OutdoorSet {
   }
 
   private func buildTracks() {
-    let path: [SIMD2<Float>] = [Spots.start.pos, Spots.pad.pos, Spots.science.pos, Spots.solar.pos, Spots.door.pos, Spots.doorStep.pos]
+    let path: [SIMD2<Float>] = [Spots.crates + SIMD2(0, -3.2), SIMD2(3.4, -15.5), Spots.start.pos + SIMD2(0, -1), Spots.door.pos, Spots.doorStep.pos]
     // Two sets of prints a little apart so the crew's trail is not one ruler-straight line.
     for (k, off) in [Float(0.35), -0.4].enumerated() {
       let pts = path.enumerated().map { i, p -> SIMD2<Float> in
@@ -674,7 +680,7 @@ final class OutdoorSet {
       outdoorOnly.addChildNode(decal(g, decalMat(Self.footTexture(), wrap: true), order: 33))
     }
     // Rover tyre tracks from the pad area to the parked rover.
-    let rover: [SIMD2<Float>] = [[36, -76], [28, -60], [14, -45], [6, -33], [0.5, -25], [-0.8, -22.8]]
+    let rover: [SIMD2<Float>] = [[34, -34], [24, -26], [17, -19], [12, -12], [9.5, -7.5], Spots.roverPos + SIMD2(0.6, -1.4)]
     let g = Drape.ribbon(points: rover, width: 1.35, vPerMeter: 1 / 1.0, lift: 0.05, height: hOpt)
     outdoorOnly.addChildNode(decal(g, decalMat(Self.tyreTexture(), wrap: true), order: 34))
   }
@@ -682,22 +688,24 @@ final class OutdoorSet {
   // ---------------------------------------------------------------- rocks
 
   private func buildRocks() {
-    let spots: [SIMD2<Float>] = [Spots.pad.pos, Spots.science.pos, Spots.solar.pos, Spots.door.pos]
+    // Three chunks round the start spot: left (the lander side), middle, right (the field side).
+    let spots: [SIMD2<Float>] = [SIMD2(11, -12), SIMD2(0, -17), SIMD2(-12, -13)]
     let avoid: (SIMD2<Float>) -> Bool = { p in
       if simd_length(p) < 5.8 { return true }                                        // the habitat
       if simd_distance(p, Spots.moduleCenter) < 4.4 { return true }                   // the second module and tunnel
       if abs(p.y - Spots.moduleCenter.y) < 1.4 && p.x > 3 && p.x < 9 { return true }
-      if simd_distance(p, Spots.lander) < 10.5 { return true }                        // the pad
+      if simd_distance(p, Spots.lander) < 8.6 { return true }                        // the pad
       if simd_distance(p, Spots.crates) < 4.5 { return true }
-      if simd_distance(p, Spots.outcrop) < 2.6 || simd_distance(p, Spots.scientist) < 1.6 { return true }
-      if simd_distance(p, Spots.fieldCenter) < 0 { return true }
-      for s in [Spots.start.pos, Spots.pad.pos, Spots.science.pos, Spots.solar.pos, Spots.door.pos] where simd_distance(p, s) < 1.1 { return true }
-      for s in Spots.doorPath + Spots.doorLights where simd_distance(p, s) < 2.2 { return true }                  // the lit footpath
-      if abs(p.x) < 3.2 && p.y > -11.5 && p.y < -5 { return true }                                // the door apron
+      if simd_distance(p, Spots.outcrop) < 2.8 || simd_distance(p, Spots.scientist) < 1.6 { return true }
+      if simd_distance(p, Spots.drill) < 3.4 || simd_distance(p, Spots.dish) < 2.6 || simd_distance(p, Spots.roverPos) < 3.4 { return true }
+      if abs(p.x - Spots.fieldCenter.x) < 12 && abs(p.y - Spots.fieldCenter.y) < 7.5 { return true } // under the panels
+      if simd_distance(p, Spots.start.pos) < 1.6 { return true }
+      for s in Spots.doorPath + Spots.doorLights where simd_distance(p, s) < 1.8 { return true }                  // the lit footpath
+      if abs(p.x) < 3.2 && p.y > -14 && p.y < -5 { return true }                                  // the door apron
       return false
     }
     for (i, s) in spots.enumerated() {
-      let node = RockField.chunk(center: s, count: 140, radius: 15, seed: UInt64(100 + i), height: hOpt, avoid: avoid)
+      let node = RockField.chunk(center: s, count: 120, radius: 15, seed: UInt64(100 + i), height: hOpt, avoid: avoid)
       outdoorOnly.addChildNode(node)
       rockChunks.append((s, node))
     }
@@ -798,19 +806,44 @@ final class OutdoorSet {
     // Pressure door: a vestibule box on the front with the door in its face, lit, with a doorstep.
     let vest = SCNNode(geometry: SCNBox(width: 3.0, height: 3.0, length: 1.5, chamferRadius: 0.08))
     vest.geometry?.materials = [imageMat(Self.shellTexture(), repeatX: 1.2, repeatY: 1)]
-    vest.position = SCNVector3(0, gy + 1.5, -4.4)
+    vest.position = SCNVector3(0, gy + 1.5, Spots.doorFaceZ + 0.78)
     habitat.addChildNode(vest)
     doorMat.lightingModel = .constant
     doorMat.diffuse.contents = Self.doorTexture()
     doorMat.diffuse.mipFilter = .linear
     doorMat.emission.contents = PlatformColor.black
-    let doorPlane = SCNPlane(width: 1.7, height: 2.55)
-    doorPlane.materials = [doorMat]
-    let door = SCNNode(geometry: doorPlane)
-    door.position = SCNVector3(0, gy + 1.38, Spots.doorFaceZ + 0.02)
-    door.simdEulerAngles.y = .pi
-    door.name = "pressure-door"
-    habitat.addChildNode(door)
+    // Two leaves (each half of the door texture) that slide apart; the warm doorway is behind them.
+    doorMatR.lightingModel = .constant
+    doorMatR.diffuse.contents = doorMat.diffuse.contents
+    doorMatR.diffuse.mipFilter = .linear
+    doorMatR.emission.contents = PlatformColor.black
+    doorMat.diffuse.wrapS = .clamp
+    doorMatR.diffuse.wrapS = .clamp
+    doorMat.diffuse.contentsTransform = SCNMatrix4MakeScale(0.5, 1, 1)
+    doorMatR.diffuse.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(0.5, 1, 1), SCNMatrix4MakeTranslation(0.5, 0, 0))
+    let doorY = gy + 1.38
+    let doorwayPlane = SCNPlane(width: 1.7, height: 2.55)
+    let dwm = SCNMaterial()
+    dwm.lightingModel = .constant
+    dwm.diffuse.contents = Bitmap.image(size: CGSize(width: 64, height: 128), scale: 1, opaque: true) { ctx in
+      let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [PlatformColor(red: 1.0, green: 0.86, blue: 0.62, alpha: 1).cgColor, PlatformColor(red: 0.95, green: 0.6, blue: 0.3, alpha: 1).cgColor] as CFArray, locations: [0, 1])!
+      ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: 128), options: [])
+    }
+    doorwayPlane.materials = [dwm]
+    doorway.geometry = doorwayPlane
+    doorway.position = SCNVector3(0, doorY, Spots.doorFaceZ - 0.01)
+    doorway.simdEulerAngles.y = .pi
+    doorway.name = "doorway"
+    habitat.addChildNode(doorway)
+    for (leaf, mt, x) in [(leafL, doorMat, Float(0.425)), (leafR, doorMatR, Float(-0.425))] {
+      let pl = SCNPlane(width: 0.85, height: 2.55)
+      pl.materials = [mt]
+      leaf.geometry = pl
+      leaf.position = SCNVector3(x, doorY, Spots.doorFaceZ - 0.03)
+      leaf.simdEulerAngles.y = .pi
+      leaf.name = "pressure-door"
+      habitat.addChildNode(leaf)
+    }
     let step = SCNNode(geometry: SCNBox(width: 3.2, height: 0.22, length: 1.1, chamferRadius: 0.03))
     step.geometry?.materials = [mat(PlatformColor(red: 0.28, green: 0.28, blue: 0.30, alpha: 1))]
     step.position = SCNVector3(0, gy + 0.11, Spots.doorFaceZ - 0.35)
@@ -823,7 +856,7 @@ final class OutdoorSet {
     }
     buildDoorLight()
     // Hover highlight: an amber additive halo around the door.
-    let halo = SCNPlane(width: 2.5, height: 3.3)
+    let halo = SCNPlane(width: 3.6, height: 4.4)
     let hm = SCNMaterial()
     hm.lightingModel = .constant
     hm.blendMode = .add
@@ -851,10 +884,11 @@ final class OutdoorSet {
     let moduleN = SCNNode(geometry: module)
     moduleN.simdPosition = SIMD3(m2.x, (outside?.groundY(m2.x, m2.y) ?? 0.4) + 1.2, m2.y)
     group.addChildNode(moduleN)
-    let tunnel = SCNCylinder(radius: 0.95, height: CGFloat(m2.x - r + 0.6))
+    let tx0 = (r * r - m2.y * m2.y).squareRoot() - 0.6 // where the tunnel leaves the drum at the module's z
+    let tunnel = SCNCylinder(radius: 0.95, height: CGFloat(m2.x - tx0))
     tunnel.materials = [imageMat(Self.shellTexture(), repeatX: 1, repeatY: 1), roofMat, roofMat]
     let tn = SCNNode(geometry: tunnel)
-    tn.simdPosition = SIMD3((m2.x + r) / 2 - 0.3, (outside?.groundY(7, m2.y) ?? 0.4) + 0.9, m2.y)
+    tn.simdPosition = SIMD3((m2.x + tx0) / 2, (outside?.groundY(7, m2.y) ?? 0.4) + 0.9, m2.y)
     tn.eulerAngles.z = .pi / 2
     group.addChildNode(tn)
     for (dx, dz) in [(Float(-1.6), Float(-2.55)), (1.6, -2.55)] {
@@ -876,7 +910,7 @@ final class OutdoorSet {
       ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 4, dy: 4), cornerWidth: 32, cornerHeight: 32, transform: nil))
       ctx.strokePath()
       _ = Draw.text("ENTER THE BASE", at: CGPoint(x: 0, y: 26), size: 100, weight: .heavy, color: accent, width: size.width, align: .center)
-      _ = Draw.text("Look at the door and press the button", at: CGPoint(x: 0, y: 144), size: 46, weight: .bold, color: Palette.text, width: size.width, align: .center)
+      _ = Draw.text("Look at the door and tap", at: CGPoint(x: 0, y: 144), size: 50, weight: .bold, color: Palette.text, width: size.width, align: .center)
     }
   }
 
@@ -898,18 +932,18 @@ final class OutdoorSet {
     blob(c + SIMD2(0.35, 0.1), 1.6, 1.6, 0.2); blob(c + SIMD2(2.25, 0.6), 1.5, 1.5, -0.25); blob(c + SIMD2(-0.05, 2.0), 1.5, 1.5, 0.5)
     blob(c + SIMD2(3.4, 1.9), 1.2, 1.2, 0.9)
     for off in [SIMD2<Float>(-2.4, -0.6), SIMD2(-2.9, 0.9), SIMD2(-1.9, 2.2)] { blob(c + off, 1.0, 1.0) }
-    blob(c + SIMD2(4.6, -1.8), 1.8, 1.4, 2.6)
+    blob(c + SIMD2(1.2, -3.6), 1.8, 1.4, 2.6)
     let l = Spots.lander
-    for i in 0..<4 { let a = Float(i) / 4 * 2 * .pi + 0.4; blob(l + SIMD2(cos(a), sin(a)) * 9.2, 0.7, 0.7) }
+    for i in 0..<4 { let a = Float(i) / 4 * 2 * .pi + 0.4; blob(l + SIMD2(cos(a), sin(a)) * 7.4, 0.7, 0.7) }
     blob(l, 3.6, 3.6)
     let o = Spots.outcrop
     blob(o, 1.5, 1.3, 0.4); blob(o + SIMD2(-1.3, -0.5), 1.1, 1.0, 2.0); blob(o + SIMD2(1.2, -1.2), 1.3, 1.1, 3.6); blob(o + SIMD2(0.6, 1.6), 0.9, 0.8, 5.0)
     blob(Spots.scientist, 0.7, 0.7)
     blob(Spots.fieldCenter, 12.5, 7.0) // the solar field as a whole
-    blob(world(az: 318, dist: 10), 3.4, 3.0, 0.4); blob(world(az: 289, dist: 21), 4.6, 4.0, 0.8); blob(Spots.drill, 2.4, 1.8)
-    blob(world(az: 303, dist: 22), 2.6, 1.8, 1.0)
+    blob(SIMD2(11.5, -17.5), 3.4, 3.0, 0.4); blob(SIMD2(-15, -5.5), 4.6, 4.0, 0.8); blob(Spots.drill, 2.4, 1.8)
+    blob(Spots.roverPos, 2.6, 1.8, 1.0)
     blob(Spots.moduleCenter, 4.2, 4.2)
-    blob(SIMD2(3.6, -8.4), 3.0, 2.2, 0.2)
+    blob(SIMD2(-5.5, -6.2), 3.0, 2.2, 0.2)
     if let g = Blob.geometry(items, height: hOpt) {
       let n = SCNNode(geometry: g)
       n.renderingOrder = 37
@@ -918,8 +952,8 @@ final class OutdoorSet {
     }
     // Long shadows (world position of the base, height, half width).
     let big: [(SIMD2<Float>, Float, Float)] = [
-      (Spots.lander, 10.6, 2.6), (.zero, 5.2, Spots.habRadius), (Spots.moduleCenter, 3.2, 3.0), (world(az: 303, dist: 22), 2.4, 1.3),
-      (SIMD2(-9.5, -6.5), 5.5, 1.6), (Spots.drill, 9.0, 1.0),
+      (Spots.lander, 10.6, 2.6), (.zero, 5.2, Spots.habRadius), (Spots.moduleCenter, 3.2, 3.0), (Spots.roverPos, 2.4, 1.3),
+      (Spots.dish, 5.5, 1.6), (Spots.drill, 9.0, 1.0),
     ]
     for (base, hgt, half) in big {
       let n = SCNNode()
@@ -963,8 +997,32 @@ final class OutdoorSet {
   func setDoor(armed: Bool, hovered: Bool) {
     let want: CGFloat = armed ? 1 : 0
     if doorSign.node.opacity != want { doorSign.node.opacity += (want - doorSign.node.opacity) * 0.15 }
-    doorGlow.opacity = hovered ? 0.5 : (armed ? 0.10 + 0.06 * CGFloat(sin(CACurrentMediaTime() * 3)) : 0)
-    doorMat.emission.contents = hovered ? PlatformColor(red: 0.35, green: 0.2, blue: 0.05, alpha: 1) : PlatformColor.black
+    doorGlow.opacity = hovered ? 0.85 : (armed ? 0.30 + 0.20 * CGFloat(sin(CACurrentMediaTime() * 3.2)) : 0)
+    let em = hovered ? PlatformColor(red: 0.35, green: 0.2, blue: 0.05, alpha: 1) : PlatformColor.black
+    doorMat.emission.contents = em
+    doorMatR.emission.contents = em
+  }
+
+  /// The door slides open (about 1.1 s). `at` is the clock the caller uses for `updateDoor`.
+  func openDoor(now: TimeInterval) {
+    guard !doorOpen else { return }
+    doorOpen = true
+    doorOpenedAt = now
+  }
+
+  /// Back to closed at once (a reset, or the next run).
+  func closeDoor() {
+    doorOpen = false
+    leafL.simdPosition.x = 0.425
+    leafR.simdPosition.x = -0.425
+  }
+
+  func updateDoor(now: TimeInterval) {
+    guard doorOpen else { return }
+    let t = Float(min(1, max(0, (now - doorOpenedAt) / 1.1)))
+    let e = t * t * (3 - 2 * t)
+    leafL.simdPosition.x = 0.425 + Self.leafTravel * e
+    leafR.simdPosition.x = -0.425 - Self.leafTravel * e
   }
 
   /// Rock chunks are only drawn near the judge.

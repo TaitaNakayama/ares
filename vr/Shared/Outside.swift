@@ -19,7 +19,10 @@ final class Outside {
   private let drillHead = SCNNode()
   private let beacon = SCNNode()
   private var lamps: [SCNNode] = []
-  private let drillSign = SpritePanel(width: 22, height: 4.8, pixelsPerMeter: 51)
+  /// The drill's ONLINE/OFFLINE status sign, seen through the window (hidden outdoors, where the pill above the tower names it).
+  private let drillSign = SpritePanel(width: 7, height: 1.53, pixelsPerMeter: 160)
+  private var panelsNode: SCNNode?
+  private(set) var panelLevel: Float = 1
   /// Outdoors the lattice tower beside the solar field needs a name, or it reads as a second rocket: a small pill above it.
   private let drillLabel = SpritePanel(width: 7, height: 1.2, pixelsPerMeter: 140)
   private let dust = SCNParticleSystem()
@@ -164,9 +167,6 @@ final class Outside {
   private func buildProps() {
     let atBearing: [(String, Float, Float, Float, Float)] = [
       // name, azimuth, distance (m), scale, yaw (deg, terrain frame)
-      ("rover", 303, 22, 8, 60),
-      ("rock_largeA", 318, 10, 3, 0),
-      ("rock_largeB", 289, 21, 4, 45),
     ]
     for (name, az, dist, scale, yaw) in atBearing {
       guard let n = loadProp(name) else { continue }
@@ -178,8 +178,11 @@ final class Outside {
     let atWorld: [(String, SIMD2<Float>, Float, Float)] = [
       ("hangar_roundA", [60, -92], 5, 20),
       ("hangar_roundB", [91, -85], 5, -30),
-      ("satelliteDish_large", [-9.5, -6.5], 7, 120),
-      ("rocks_smallA", [3.6, -8.4], 6, 10),
+      ("rover", Spots.roverPos, 8, 60),
+      ("rock_largeA", [11.5, -17.5], 3, 0),
+      ("rock_largeB", [-15, -5.5], 4, 45),
+      ("satelliteDish_large", Spots.dish, 7, 120),
+      ("rocks_smallA", [-5.5, -6.2], 6, 10),
       ("supports_high", [46, -50], 4, 0),
     ]
     for (name, w, scale, yaw) in atWorld {
@@ -278,6 +281,7 @@ final class Outside {
     }
     let flat = field.flattenedClone()
     flat.name = "panels"
+    panelsNode = flat
     scene?.rootNode.addChildNode(flat)
   }
 
@@ -375,7 +379,7 @@ final class Outside {
     // Status sign beside the tower (toward the middle of the window: the controller robot hovers in front of the tower itself),
     // in world space, turned toward the commander's seat (yaw only).
     let rigWorld = rig.worldPosition
-    let signPos = SCNVector3(rigWorld.x - 21, rigWorld.y + 5, rigWorld.z)
+    let signPos = SCNVector3(rigWorld.x + 4.2, rigWorld.y + 4.0, rigWorld.z - 1.5)
     drillSign.node.position = signPos
     scene?.rootNode.addChildNode(drillSign.node)
     drillSign.node.look(at: SCNVector3(0, signPos.y, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
@@ -546,11 +550,39 @@ final class Outside {
     scene?.rootNode.addChildNode(stormBand)
   }
 
+  /// Inside, the storm comes up in the window (north-west); outside it rises over the crater rim, ahead of the judge and beyond the base.
+  private var stormAimedOutdoor: Bool?
+  private func aimStorm(height: Float? = nil, bandHeight: Float? = nil) {
+    let dir: SIMD3<Float> = outdoor ? SIMD3(Spots.rimDir.x, 0, Spots.rimDir.y) : SIMD3(-290, 0, -345) / 450.4
+    if stormAimedOutdoor != outdoor {
+      stormAimedOutdoor = outdoor
+      stormWall.simdPosition = dir * 450
+      stormWall.simdLook(at: .zero, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
+      stormBand.simdPosition = dir * 270
+      stormBand.simdLook(at: .zero, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
+    }
+    if let h = height { stormWall.simdPosition = SIMD3(dir.x * 450, h / 2 - 12, dir.z * 450) }
+    if let h = bandHeight { stormBand.simdPosition = SIMD3(dir.x * 270, h / 2 - 6, dir.z * 270) }
+  }
+
+  /// The solar field's brightness: 1 = clean panels in the sun, 0 = dark and dust-coated (the storm took the light).
+  func setPanels(level: Float) {
+    let l = max(0, min(1, level))
+    guard abs(l - panelLevel) > 0.004 else { return }
+    panelLevel = l
+    let dark = SIMD3<Float>(0.16, 0.11, 0.09)
+    let c = Self.mix(dark, SIMD3(1, 1, 1), t: l)
+    for m in panelsNode?.geometry?.materials ?? [] {
+      m.multiply.contents = PlatformColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
+      m.specular.intensity = CGFloat(l)
+    }
+  }
+
   /// Rises from a low brown haze bank to a wall a few hundred metres high, darkening toward #5A3A2A as tau climbs.
   private func applyStormWall(t: Float) {
     let hgt = 30 + 330 * pow(t, 1.5) + 40 * t
     stormWall.simdScale = SIMD3(1500, hgt * 1.0, 1)
-    stormWall.simdPosition = SIMD3(-290, hgt / 2 - 12, -345)
+    aimStorm(height: hgt)
     let c = Self.mix(SIMD3(0.84, 0.64, 0.46), SIMD3(0.353, 0.227, 0.165), t: min(1, t * 1.4))
     stormWall.geometry?.firstMaterial?.multiply.contents = PlatformColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
     stormWall.geometry?.firstMaterial?.transparency = CGFloat(0.03 + 0.97 * min(1, t * 1.3))
@@ -559,7 +591,7 @@ final class Outside {
     stormBand.isHidden = vis < 0.01 || !outdoor
     let bh = 14 + 110 * pow(t, 1.1)
     stormBand.simdScale = SIMD3(1100, bh, 1)
-    stormBand.simdPosition = SIMD3(-174, bh / 2 - 6, -207)
+    aimStorm(bandHeight: bh)
     stormBand.geometry?.firstMaterial?.transparency = CGFloat(vis)
   }
 

@@ -12,6 +12,9 @@ final class OutdoorDirector {
   private(set) var part: Part = .inside
   private(set) var station: String?
   private(set) var science: VRState.Science?
+  /// The show contract: the act and the one glowing thing to look at (`door` | `science` | `card` | `engineer`); nil on older servers.
+  private(set) var act: String?
+  private(set) var cue: String?
   /// "free" (the judge picks stations), "auto" (the director's fixed order) or nil (older server).
   private(set) var roamMode: String?
   let markers: StationMarkers
@@ -36,6 +39,7 @@ final class OutdoorDirector {
   var externalHead: (pos: SIMD3<Float>, yaw: Float)?
   /// Entering: glide to the door, fade out, switch.
   private enum Enter { case none, approach(start: TimeInterval, dur: Double), fadeOut(start: TimeInterval), black(until: TimeInterval) }
+  private var doorOpenedForEnter = false
   private var enter: Enter = .none
   private var latchedInsideUntil: TimeInterval = 0
   private(set) var eye = SIMD3<Float>(0, 1.6, 0)
@@ -82,9 +86,11 @@ final class OutdoorDirector {
   /// The glide is in progress (or the door sequence is running).
   var isWalking: Bool { journey.moving }
   var isEntering: Bool { if case .none = enter { return false }; return true }
-  /// The door can be pressed: the story is at the door and the judge is within reach of it.
+  /// The door can be pressed: the show is cueing it (or, on an older server, the story is at the door and the judge is near).
   var doorArmed: Bool {
-    guard isOutside, station == "door", !isEntering else { return false }
+    guard isOutside, !isEntering else { return false }
+    if cue == "door" { return true }
+    guard act == nil, station == "door" else { return false }
     return simd_distance(SIMD2(eye.x, eye.z), Spots.door.pos) < 3.5
   }
 
@@ -109,6 +115,8 @@ final class OutdoorDirector {
 
   func apply(_ st: VRState, now: TimeInterval) {
     science = st.scene?.science
+    act = st.scene?.act
+    cue = st.scene?.cue
     roamMode = st.scene?.mode
     closeUp.configure(science)
     scientist.setName(science?.scientist)
@@ -153,6 +161,7 @@ final class OutdoorDirector {
     part = p
     enter = .none
     if p == .outside {
+      set.closeDoor()
       let s = Spots.spot(station) ?? Spots.start
       journey = Journey(at: s)
       journey.go(to: s, now: now, snap: true)
@@ -171,9 +180,11 @@ final class OutdoorDirector {
     if local { latchedInsideUntil = now + 6 }
     closeUp.close()
     let d = simd_distance(SIMD2(eye.x, eye.z), Spots.doorStep.pos)
-    if d < 14 {
-      journey.go(to: Spots.doorStep, now: now, speed: 1.4)
-      enter = .approach(start: now, dur: Double(d / 1.4 + 0.25))
+    doorOpenedForEnter = false
+    if d < 16 {
+      // A steady walk of Spots.doorWalkSeconds (gentle ease at both ends); the door opens on the way.
+      journey.go(to: Spots.doorStep, now: now, duration: Spots.doorWalkSeconds)
+      enter = .approach(start: now, dur: Spots.doorWalkSeconds)
     } else {
       fadeTarget = 1
       enter = .fadeOut(start: now)
@@ -189,7 +200,13 @@ final class OutdoorDirector {
     bootIfNoState(now: now)
     switch enter {
     case .approach(let start, let dur):
-      if now - start >= dur { fadeTarget = 1; enter = .fadeOut(start: now) }
+      let t = now - start
+      if !doorOpenedForEnter && t >= dur - 1.8 {
+        doorOpenedForEnter = true
+        set.openDoor(now: now)
+        Sound.shared.doorHiss()
+      }
+      if t >= dur - 0.6 { fadeTarget = 1; enter = .fadeOut(start: now) }
     case .fadeOut(let start):
       if fade >= 0.999 && now - start >= 0.45 { enter = .black(until: now + 0.15) }
     case .black(let until):
@@ -198,6 +215,7 @@ final class OutdoorDirector {
         fade = 1
         fadeTarget = 0
         enter = .none
+        Sound.shared.doorSeal() // the door seals behind the judge
       }
     case .none: break
     }
@@ -223,6 +241,7 @@ final class OutdoorDirector {
     }
     if !markersVisible { markers.hideAll() }
     if part == .outside {
+      set.updateDoor(now: now)
       set.updateRocks(eye: eye)
       set.setDoor(armed: doorArmed, hovered: doorHovered && doorArmed)
       outside.followJudge(eye)
@@ -292,7 +311,7 @@ final class OutdoorDirector {
 
   /// Station pills are up: outside, the judge picks stations (not the fixed order), not at the storm door, nothing else open.
   var markersVisible: Bool {
-    isOutside && roamMode != "auto" && station != "door" && !isEntering && !closeUp.isOpen && !RealityCheck.shared.isActive && !isWalking
+    isOutside && act == nil && roamMode != "auto" && station != "door" && !isEntering && !closeUp.isOpen && !RealityCheck.shared.isActive && !isWalking
   }
 
   /// The pill the reticle is on was pressed: start walking at once (the server's `scene.station` then agrees).

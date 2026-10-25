@@ -3,8 +3,9 @@ import AVFoundation
 /// Audio for the control room. Everything ambient and every chime is synthesized in code:
 /// - an interior hum (low tone plus dull noise, slow 0.1 Hz wobble),
 /// - wind that follows dust opacity (tau) with slow gusts, muffled while the listener is inside,
-/// - a two-note chime per agent line (pitch set per role, pentatonic), a tick when an agent starts thinking,
-///   and a deeper two-tone when the commander decides.
+/// - a two-note chime per agent line (pitch set per crew member, pentatonic), a tick when an agent starts thinking,
+///   and a deeper two-tone when the commander decides,
+/// - the low pulsing power alarm (only while `world.alarm`), the pressure door's hiss and its seal.
 /// The short Kenney CC0 wavs still back `play` (hover / select / alert / saved).
 /// One AVAudioEngine: a single source node for ambience plus a small pool of player nodes for cues.
 final class Sound {
@@ -23,6 +24,9 @@ final class Sound {
   private var chimes: [String: AVAudioPCMBuffer] = [:]
   private var tick: AVAudioPCMBuffer?
   private var decide: AVAudioPCMBuffer?
+  private var hiss: AVAudioPCMBuffer?
+  private var seal: AVAudioPCMBuffer?
+  private var lastDoorAt = 0.0
   private var lastChimeAt = 0.0, lastTickAt = 0.0, lastDecideAt = 0.0
 
   private init() {
@@ -63,13 +67,19 @@ final class Sound {
     }
     // Pentatonic degrees from C5 (Hz); each role plays two of them.
     let scale: [Float] = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.7]
-    let pairs: [String: (Int, Int)] = ["requester": (0, 2), "receiver": (1, 3), "controller": (2, 4), "ap": (3, 5), "treasury": (4, 6)]
+    let pairs: [String: (Int, Int)] = [
+      "requester": (0, 2), "receiver": (1, 3), "controller": (2, 4), "ap": (3, 5), "treasury": (4, 6),
+      // The crew: each member has its own two-note voice.
+      "engineer": (0, 2), "life": (3, 5), "science": (2, 4), "supply": (1, 3), "rules": (4, 6),
+    ]
     for (role, ab) in pairs {
       chimes[role] = Self.render(rate: rate, peak: 0.2, notes: [(scale[ab.0], 0, 0.17), (scale[ab.1], 0.09, 0.2)], length: 0.3, decay: 11, harmonic: 0.15)
     }
     chimes["default"] = Self.render(rate: rate, peak: 0.2, notes: [(scale[0], 0, 0.17), (scale[3], 0.09, 0.2)], length: 0.3, decay: 11, harmonic: 0.15)
     tick = Self.render(rate: rate, peak: 0.08, notes: [(1250, 0, 0.1)], length: 0.07, decay: 55, harmonic: 0)
     decide = Self.render(rate: rate, peak: 0.28, notes: [(196, 0, 0.45), (130.8, 0.17, 0.5)], length: 0.75, decay: 4.5, harmonic: 0.25)
+    hiss = Self.renderHiss(rate: rate)
+    seal = Self.renderSeal(rate: rate)
     e.mainMixerNode.outputVolume = muted ? 0 : 1
     e.prepare()
     do { try e.start() } catch { return }
@@ -110,6 +120,54 @@ final class Sound {
     var m: Float = 0
     for i in 0..<n { m = max(m, abs(d[i])) }
     if m > 0 { let k = peak / m; for i in 0..<n { d[i] *= k } }
+    return buf
+  }
+
+  /// The pressure door's hiss: a 1.3 s burst of high-passed noise with a quick swell and a long fade.
+  private static func renderHiss(rate: Double) -> AVAudioPCMBuffer? {
+    let length = 1.4
+    guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+          let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(rate * length)) else { return nil }
+    let n = Int(rate * length)
+    buf.frameLength = AVAudioFrameCount(n)
+    let d = buf.floatChannelData![0]
+    var seed: UInt32 = 0x9E3779B9
+    var lp: Float = 0, lp2: Float = 0
+    for i in 0..<n {
+      seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5
+      let w = Float(Int32(bitPattern: seed)) / 2147483648
+      lp += 0.35 * (w - lp)       // soften the very top
+      lp2 += 0.04 * (lp - lp2)    // and take the low end out: high-passed hiss
+      let t = Float(Double(i) / rate)
+      let env = min(1, t / 0.07) * expf(-2.6 * t)
+      d[i] = (lp - lp2) * env
+    }
+    var m: Float = 0
+    for i in 0..<n { m = max(m, abs(d[i])) }
+    if m > 0 { let k = 0.26 / m; for i in 0..<n { d[i] *= k } }
+    return buf
+  }
+
+  /// The door sealing: a low thump with a short metallic click on top.
+  private static func renderSeal(rate: Double) -> AVAudioPCMBuffer? {
+    let length = 0.9
+    guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+          let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(rate * length)) else { return nil }
+    let n = Int(rate * length)
+    buf.frameLength = AVAudioFrameCount(n)
+    let d = buf.floatChannelData![0]
+    var seed: UInt32 = 0x2545F491
+    for i in 0..<n {
+      let t = Float(Double(i) / rate)
+      seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5
+      let w = Float(Int32(bitPattern: seed)) / 2147483648
+      let thump = sinf(2 * Float.pi * (62 - 22 * min(1, t * 4)) * t) * expf(-7 * t)
+      let click = w * expf(-90 * t) * 0.5 + sinf(2 * Float.pi * 880 * t) * expf(-45 * (t - 0.11).magnitude) * (t > 0.1 ? 0.18 : 0)
+      d[i] = min(1, t / 0.004) * (thump + click)
+    }
+    var m: Float = 0
+    for i in 0..<n { m = max(m, abs(d[i])) }
+    if m > 0 { let k = 0.42 / m; for i in 0..<n { d[i] *= k } }
     return buf
   }
 
@@ -154,6 +212,24 @@ final class Sound {
     cue(decide)
   }
 
+  /// The pressure door opens with a hiss.
+  func doorHiss() {
+    let t = CFAbsoluteTimeGetCurrent()
+    guard t - lastDoorAt > 0.5 else { return }
+    lastDoorAt = t
+    cue(hiss)
+  }
+
+  /// The door seals behind the judge: thump and click, with the room's hum coming up.
+  func doorSeal() { cue(seal) }
+
+  /// The power alarm: low and pulsing, only while it is on (`world.alarm`).
+  func setAlarm(_ on: Bool) {
+    guard !muted else { return }
+    startEngine()
+    ambience.alarm = on ? 1 : 0
+  }
+
   /// Wind follows dust opacity (0.6 calm, 4.6 storm).
   func setStorm(tau: Double) {
     guard !muted else { return }
@@ -170,6 +246,8 @@ private final class Ambience {
   var sampleRate: Float = 44100
   var storm: Float = 0
   var outside: Float = 0
+  var alarm: Float = 0
+  private var alarmEnv: Float = 0, alarmPhase: Float = 0, alarmLFO: Float = 0
   // audio-thread state
   private var seed: UInt32 = 0x1234ABCD
   private var phase: Float = 0, wobble: Float = 0
@@ -216,7 +294,16 @@ private final class Ambience {
       let high = n - low - q * band
       band += f * high
       let level = (0.025 + 0.2 * k) * (0.5 + 0.9 * gust) * (0.3 + 0.7 * mix)
-      out[i] = hum * (1 - mix) + band * level * 1.6
+      // Alarm: a low two-tone (about 170 and 215 Hz) gated at 1.1 Hz, soft edges, under everything else.
+      alarmEnv += (alarm - alarmEnv) * smooth * 2
+      var al: Float = 0
+      if alarmEnv > 0.001 {
+        alarmLFO += twoPi * 1.1 / sr; if alarmLFO > twoPi { alarmLFO -= twoPi }
+        let gate = max(0, min(1, sinf(alarmLFO) * 2.2 + 0.5))
+        alarmPhase += twoPi * (sinf(alarmLFO) > 0 ? 215 : 170) / sr; if alarmPhase > twoPi { alarmPhase -= twoPi }
+        al = (sinf(alarmPhase) + 0.35 * sinf(2 * alarmPhase)) * 0.085 * gate * alarmEnv
+      }
+      out[i] = hum * (1 - mix) + band * level * 1.6 + al
     }
     if bufs.count > 1 { for b in 1..<bufs.count { if let d = bufs[b].mData { memcpy(d, out, frames * 4) } } }
   }

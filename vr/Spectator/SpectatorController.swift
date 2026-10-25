@@ -42,6 +42,18 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var closeUpShown = false
   private var realityShown = false
   private var mousePitch: Float = 0
+  /// Captures (debug builds only): ARES_LOOK="yaw,pitch" (degrees, relative to the walk's own facing) and ARES_POS="x,z,yawRad"
+  /// (a fixed head position and scene yaw outside) aim the camera without a headset.
+  private let debugLook: (Float, Float)? = {
+    guard let v = ProcessInfo.processInfo.environment["ARES_LOOK"] else { return nil }
+    let p = v.split(separator: ",").compactMap { Float($0) }
+    return p.count == 2 ? (p[0], p[1]) : nil
+  }()
+  private let debugPos: (SIMD3<Float>, Float)? = {
+    guard let v = ProcessInfo.processInfo.environment["ARES_POS"] else { return nil }
+    let p = v.split(separator: ",").compactMap { Float($0) }
+    return p.count == 3 ? (SIMD3(p[0], 1.6, p[1]), p[2]) : nil
+  }()
   #endif
 
   static let server = "ws://127.0.0.1:8787/?client=spectator"
@@ -89,6 +101,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     world.scene.rootNode.enumerateHierarchy { n, _ in all.append(n) }
     scnView.prepare(all, completionHandler: nil)
 
+    #if DEBUG
+    if let l = debugLook { mouseYaw = l.0; mousePitch = l.1 }
+    #endif
     link = Link(candidates: [Self.server])
     link.onMessage = { [weak self] type, m in DispatchQueue.main.async { self?.handle(type, m) } }
     // Pose frames skip the main queue: the render thread reads them directly.
@@ -174,6 +189,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     // Live, the head position and yaw come from the headset's stream; otherwise from this scene's own walk.
     let headQ: simd_quatf = mode == .live ? sample.q : shownQ
     if mode == .live, let p = sample.p { world.director.externalHead = (p, sample.yaw ?? 0) } else { world.director.externalHead = nil }
+    #if DEBUG
+    if let d = debugPos, mode != .live { world.director.externalHead = d }
+    #endif
     world.update(time: now - start, headView: simd_float4x4(headQ).inverse, fps: fps, link: link)
     if mode == .live { world.setCloseUpMirror(sample.closeUp) }
     // Reality check: the headset's `rc` flag (mono mirror); the sphere and caption follow the spectator camera's own position.

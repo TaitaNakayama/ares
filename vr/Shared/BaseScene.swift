@@ -41,6 +41,8 @@ final class BaseScene {
 
   /// Part 1 (outside): the outdoor set, the walk, the scientist, the door. See Stations.swift.
   private(set) var director: OutdoorDirector!
+  /// The show: title / window / end cards, the crisis in the world, the decision card's gaze. See Show.swift.
+  private(set) var show: ShowDirector!
   /// False while a debug spike owns `viewOffset` (GroundSpike).
   var drivesView = true
   /// "scientist" or "door" while the reticle is on it (outside).
@@ -117,10 +119,11 @@ final class BaseScene {
     debug.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
     scene.rootNode.addChildNode(debug.node)
     director = OutdoorDirector(scene: scene, outside: outside, indoorNodes: indoor + [debug.node, cardRoot], indoorRobots: robots)
+    show = ShowDirector(scene: scene, outside: outside)
   }
 
   /// A full-view black quad on this camera node for the fade to black (the headset passes `head`, the Mac its camera).
-  func attachFade(to camera: SCNNode) { director.attachFade(to: camera) }
+  func attachFade(to camera: SCNNode) { director.attachFade(to: camera); show.attach(to: camera) }
 
   /// The robots the judge can see and gaze at: the two at their outdoor stations, or the five indoors.
   private var liveRobots: [Robot] { director.isOutside ? Array(director.outdoorRobots.values) : Array(robots.values) }
@@ -170,6 +173,7 @@ final class BaseScene {
       applyState(st)
     }
     director.update(now: time)
+    show.update(now: time)
     if drivesView { viewOffset = director.viewOffset }
     lastHeadView = headView
     let worldFromHead = (headView * viewOffset).inverse
@@ -266,9 +270,11 @@ final class BaseScene {
       lastSaved = saved
     }
     director.apply(st, now: now)
-    outside.apply(tau: st.tau ?? 0.6, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
+    show.apply(st, now: now)
+    let tauNow = ShowDirector.effectiveTau(st)
+    outside.apply(tau: tauNow, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.show(Consequence.active(in: st))
-    Sound.shared.setStorm(tau: st.tau ?? 0.6)
+    Sound.shared.setStorm(tau: tauNow)
     var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
       guard let seq = r.seq else { continue }
