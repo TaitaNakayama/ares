@@ -429,12 +429,12 @@ async function directorNext(): Promise<string> {
 /** The commander decides (headset, console, or the show's autoplay): the engine checks it, then the show plays the consequence. */
 async function decideAsCommander(escalationId: string, optionId: string, by: string): Promise<void> {
   const s = session;
+  // The show switches to the consequence first: the crew member may act on the decision before submit returns.
+  s.show.onDecided(escalationId, optionId);
   const r = await s.orch.submitHuman("local_authority", { type: "decide", params: { escalationId, optionId }, source: by === "console" ? "console" : "human" });
   if (r.executed && s.world.beat >= 2 && !s.show.active) s.timelapse();
-  if (r.executed) {
-    announceChoice(escalationId, optionId, by, r.decision.verdict);
-    s.show.onDecided(escalationId, optionId);
-  }
+  if (r.executed) announceChoice(escalationId, optionId, by, r.decision.verdict);
+  else s.show.onDecisionRefused(escalationId);
 }
 
 /** The judge enters the base (door tap from the headset, the console, or the director's timer). */

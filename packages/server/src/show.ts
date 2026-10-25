@@ -171,7 +171,7 @@ export class Show {
     this.set({ act: "title", title: this.openingTitle(), cue: null });
     // Act 1: outside.
     this.at(3000, () => this.set({ act: "outside", title: null }));
-    this.at(5000, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars, and say the crew has the base handled.", target: "Welcome, Commander. The crew has the base." }));
+    this.at(5000, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars, and say the crew has the base handled.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
     this.at(9500, () =>
       this.line({
         speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm. Ask if they want a closer look.", target: "Grinding into ancient delta rock. Want a closer look?",
@@ -203,8 +203,9 @@ export class Show {
       this.world.enter();
       for (const c of ["engineer", "science", "supply"] as CrewId[]) this.crewSet(c, { place: "inside", task: c === "engineer" ? "panel" : c === "science" ? "bench" : "crates", lookAt: null });
       this.set({ act: "inside" });
-      this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", target: "Welcome back, Commander. Air's fresh." }));
-      this.at(3000, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "From the main console: it's a quiet day, nothing suspicious.", target: "Quiet day. Nothing suspicious." }));
+      // Before the storm hits, the crew talks about a calm base (the power drop is the next beat, not this one).
+      this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", facts: "Oxygen 99%. Air quality good.", target: "Welcome back, Commander. Air's fresh." }));
+      this.at(3000, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "From the main console: it's a quiet day, nothing suspicious in the books.", facts: "No open flags. No pending payments.", target: "Quiet day. Nothing suspicious." }));
       this.at(11_000, () => this.crisis());
     });
     return "entering the base";
@@ -391,6 +392,13 @@ export class Show {
   }
 
   private reacted = new Set<string>();
+  /** The engine refused the choice (e.g. it changed under the judge): back to the card. */
+  onDecisionRefused(escalationId: string): void {
+    if (!this.decision || this.decision.id !== escalationId) return;
+    this.decision.chosen = null;
+    this.set({ act: "decision", cue: "card" });
+  }
+
   private onWorldAction(a: Extract<OrchestratorMessage, { type: "world_action" }>): void {
     this.host.notify();
     if (!a.ok || this.act !== "consequence") return;

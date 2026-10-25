@@ -99,7 +99,7 @@ export async function speak(llm: LlmProvider | ModelRouter | undefined, req: Spe
   const router = llm as ModelRouter | undefined;
   if (!llm || (router && "mode" in router && router.mode === "rules")) return fallback("rules mode");
   const deadline = t0 + (opts.deadlineMs ?? 6000);
-  const system = `You are ${req.name}, one of five robots in the AI crew that runs a base on Mars (${req.persona}). You speak out loud to ${req.to}. Talk like a calm, competent crewmate: short, warm, plain words. HARD RULES: at most 10 words, no semicolons, at most one number, no lists, no markdown. Use only the facts given; never invent a number, a name or a place. Call the say tool once.`;
+  const system = `You are ${req.name}, one of five robots in the AI crew that runs a base on Mars (${req.persona}). You speak out loud to ${req.to}. Talk like a calm, competent crewmate: short, warm, plain words. HARD RULES: at most 10 words (5 to 8 is best), no semicolons, at most one number, no lists, no markdown. Use only the facts given; never invent a number, a name or a place. Call the say tool once.`;
   let user = `FACTS:\n${req.facts}\n\nSay this, in your own words: ${req.intent}\n(For example: "${req.target}")`;
   for (let attempt = 0; attempt < 2; attempt++) {
     const left = deadline - Date.now();
