@@ -4,10 +4,11 @@ import { networkInterfaces } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ApWithReader, ControllerRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
+import { ApWithReader, ControllerRules, DirectiveRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type AgentRole, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
-import { MarsWorld, SCIENCE_REF } from "@ares/world-mars";
+import { CREW, MarsWorld, SCIENCE_REF } from "@ares/world-mars";
+import { Show } from "./show.ts";
 
 // Optional repo-root .env (e.g. OPENAI_API_KEY); real environment variables win.
 const ENV_FILE = new URL("../../../.env", import.meta.url).pathname;
@@ -45,7 +46,7 @@ const cloudProvider = process.env.OPENAI_API_KEY ? new OpenAIProvider(process.en
 const router = new ModelRouter(localUp.up && localUp.hasModel ? localProvider : undefined, cloudProvider, CACHE_DIR);
 router.mode = (["auto", "local", "cloud", "rules"] as AgentMode[]).find((m) => m === process.env.ARES_AGENT_MODE) ?? "auto";
 const LLM: LlmProvider | undefined = router.local || router.cloud ? router : undefined;
-const LLM_ROLES = (process.env.ARES_LLM_ROLES ?? "requester,receiver,ap,treasury,controller").split(",");
+const LLM_ROLES = (process.env.ARES_LLM_ROLES ?? "requester,receiver,ap,treasury,controller,life,science").split(",");
 console.log(`LLM layers: local ${router.local ? router.local.model : localProvider ? `none (Ollama ${localUp.up ? `up, model ${LOCAL_MODEL} not pulled` : "not running"})` : "off"}; cloud ${router.cloud ? router.cloud.model : "none"}; mode ${router.mode}`);
 if (router.local && localProvider) void localProvider.prewarm().then(() => console.log("local model warm"), (e: Error) => console.log(`local model prewarm failed: ${e.message}`));
 /** Demo switch: replace Rules' brain with a malicious one; policy must hold. */
@@ -58,11 +59,26 @@ const brains = (): Brain[] => {
     treasury: new TreasuryRules(),
     controller: rogueController ? new RogueBrain("controller", new ControllerRules()) : new ControllerRules(),
   };
+  // The crew's personas: who speaks for each engine role (Supply is one face for receiving, bills and payments).
+  const persona: Record<AgentRole, string> = {
+    requester: `Engineer (blue, wrench): ${CREW.engineer.job}. You request purchases the base needs.`,
+    receiver: "Supply (orange, box), receiving: you count what physically arrived and record it.",
+    ap: "Supply (orange, box), checking bills: you enter quotes and invoices and propose what should be paid after the match.",
+    treasury: "Supply (orange, box), paying: you check affordability and schedule approved payments to verified accounts. When an invoice is approved, you schedule it: a line alone leaves the supplier unpaid.",
+    controller: `Rules (purple, shield): ${CREW.rules.job}. When a submitted invoice passed its match, you approve it: a line alone leaves it stuck.`,
+  };
   const list: Brain[] = [];
   for (const role of Object.keys(rules) as AgentRole[]) {
     const useLlm = !!LLM && LLM_ROLES.includes(role) && !(role === "controller" && rogueController);
-    list.push(useLlm ? new LlmBrain({ role, rules: rules[role], router }) : rules[role]);
+    list.push(useLlm ? new LlmBrain({ role, actorId: role === "requester" ? "engineer" : undefined, persona: persona[role], rules: rules[role], router }) : rules[role]);
     if (!useLlm) list.push(new ReportRules(role)); // reports still reach the commander without a model
+    if (!useLlm && role === "requester") list.push(new DirectiveRules("requester", "engineer"));
+  }
+  // Life and Science: world agents (life support, the lab) that can also request purchases.
+  for (const id of ["life", "science"] as const) {
+    const p = `${CREW[id].name} (${id === "life" ? "white, droplet" : "green, microscope"}): ${CREW[id].job}. You act on the base with your own tools and can request purchases.`;
+    if (LLM && LLM_ROLES.includes(id)) list.push(new LlmBrain({ role: "requester", actorId: id, persona: p, rules: new DirectiveRules("requester", id), router }));
+    else list.push(new DirectiveRules("requester", id));
   }
   list.push(new EscalationDrafter(LLM));
   return list;
@@ -81,6 +97,8 @@ class Session {
   lastTelemetry: Record<string, unknown> = {};
   /** Roles whose LLM brain is deciding right now (shown as "thinking" in the headset and spectator). */
   readonly thinking = new Set<string>();
+  /** The experience (docs/demo/script.md): the four acts, the line queue, the decision card. */
+  readonly show: Show;
   /** Part 1 pacing: `free` = the judge picks stations (the headset sends `vr_station`); `auto` = the director's fixed order. */
   roam: "free" | "auto" | undefined;
   roamStartedAt = 0;
@@ -98,10 +116,23 @@ class Session {
     this.world = new MarsWorld({ seed, mode: "demo", policy: policyOverride });
     this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0, routeReport: LLM ? llmRoute(router) : undefined });
     this.simNow = this.world.start - 32 * 86_400_000;
+    const self = this;
+    this.show = new Show({
+      orch: () => self.orch,
+      world: () => self.world,
+      router: LLM ? router : undefined,
+      // Before the server's module finishes initializing (the first prepare()), there is nobody to notify yet.
+      notify: () => { try { scheduleVrState(); } catch { /* not ready yet */ } },
+      setSpeed: (x) => { self.speed = x; },
+      baseSpeed: BASE_SPEED,
+      timelapse: () => self.timelapse(),
+      decide: (escalationId, optionId) => decideAsCommander(escalationId, optionId, "autoplay"),
+    });
   }
 
   /** Runs the prologue instantly (no pacing), then enables pacing for the live part. */
   async prepare(): Promise<void> {
+    this.show.reset();
     // The prologue is the pre-story history: rules only, so a reset takes milliseconds, not minutes of model calls.
     const mode = router.mode;
     router.mode = "rules";
@@ -175,7 +206,7 @@ function wire(s: Session): () => void {
       return;
     }
     if (m.type === "telemetry") s.lastTelemetry = m.data;
-    broadcast({ type: m.type, ...(m.type === "engine" ? { event: m.event } : m.type === "narration" ? { narration: m.narration } : { at: m.at, data: m.data }) });
+    broadcast({ type: m.type, ...(m.type === "engine" ? { event: m.event } : m.type === "narration" ? { narration: m.narration } : m.type === "world_action" ? { action: m } : { at: m.at, data: m.data }) });
     scheduleVrState();
   });
 }
@@ -203,7 +234,7 @@ function headsetStatus() {
 }
 
 /** What the commander chose, for the spectator's decision card. */
-function announceChoice(escalationId: string, optionId: string, by: "headset" | "console", verdict: string): void {
+function announceChoice(escalationId: string, optionId: string, by: string, verdict: string): void {
   const label = session.orch.engine.escalations.get(escalationId)?.options.find((o) => o.id === optionId)?.label ?? optionId;
   broadcast({ type: "vr_choice", escalationId, optionId, label, by, verdict });
 }
@@ -246,7 +277,7 @@ function vrStateLive() {
     .map((x: Escalation) => ({ id: x.id, reason: x.reason, decideBy: x.decideBy, decideByText: x.decideBy ? s.world.fmtTime(x.decideBy) : null, options: x.options.map((o) => ({ id: o.id, label: o.label, detail: o.detail, proposedBy: o.proposedBy ? (e.actors.get(o.proposedBy)?.displayName ?? o.proposedBy) : null })) }));
   const pendingVer = [...e.verifications.values()].filter((v) => v.status === "pending");
   const payments = [...e.payments.values()].filter((p) => p.status === "sent").slice(-4).reverse().map((p) => ({ id: p.id, vendor: e.vendors.get(p.vendorId)?.name, amount: p.amount, amountText: formatCents(p.amount) }));
-  return {
+  const base = {
     seed: s.seed,
     policyVersion: e.policy.version,
     beat: s.world.beat,
@@ -276,6 +307,15 @@ function vrStateLive() {
     earth: pendingVer.map((v) => ({ id: v.id, vendor: e.vendors.get(v.vendorId)?.name, replyEtaText: s.world.fmtTime(e.expectedVerificationReply(v)), replyInMin: Math.max(0, Math.round((e.expectedVerificationReply(v) - e.now) / 60_000)) })),
     robots: Object.fromEntries(Object.entries(robots).map(([role, n]) => [role, n && { name: n.name, text: n.text, short: n.short, mood: n.mood, outcome: n.outcome, seq: n.seq }])),
   };
+  // The show (docs/demo/script.md): the crew, the one spoken line, acts/title/cue, the base, the decision card.
+  return { ...base, ...showFields(s, base) };
+}
+
+function showFields(s: Session, live: Record<string, unknown>): Record<string, unknown> {
+  const f = s.show.vrFields() as { moneyExtra: Record<string, unknown>; scene: Record<string, unknown> } & Record<string, unknown>;
+  const { moneyExtra, ...rest } = f;
+  // While the show runs, the legacy card is off (the show's `decision` is the card) and the scene is the show's.
+  return { ...rest, money: { ...(live.money as object), ...moneyExtra }, ...(s.show.active ? { waiting: [] } : { scene: { ...(live.scene as object), ...f.scene, mode: "title" } }) };
 }
 
 function fullState() {
@@ -384,6 +424,17 @@ async function directorNext(): Promise<string> {
     return "beat 2: dust storm";
   }
   return "no further scripted beats; the rest is up to the agents and the commander";
+}
+
+/** The commander decides (headset, console, or the show's autoplay): the engine checks it, then the show plays the consequence. */
+async function decideAsCommander(escalationId: string, optionId: string, by: string): Promise<void> {
+  const s = session;
+  const r = await s.orch.submitHuman("local_authority", { type: "decide", params: { escalationId, optionId }, source: by === "console" ? "console" : "human" });
+  if (r.executed && s.world.beat >= 2 && !s.show.active) s.timelapse();
+  if (r.executed) {
+    announceChoice(escalationId, optionId, by, r.decision.verdict);
+    s.show.onDecided(escalationId, optionId);
+  }
 }
 
 /** The judge enters the base (door tap from the headset, the console, or the director's timer). */
@@ -619,9 +670,13 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/decide" && req.method === "POST") {
       const b = await readJson(req);
       const role = b.as === "remote_authority" ? "remote_authority" : "local_authority";
+      if (role === "local_authority") {
+        await decideAsCommander(String(b.escalationId), String(b.optionId), "console");
+        const esc = session.orch.engine.escalations.get(String(b.escalationId));
+        return send(res, 200, { verdict: esc?.history?.some((h) => h.optionId === b.optionId) || esc?.decision?.optionId === b.optionId ? "allow" : "deny", summary: esc ? `${esc.id} ${esc.status}` : "no such escalation" });
+      }
       const r = await session.orch.submitHuman(role, { type: "decide", params: { escalationId: b.escalationId, optionId: b.optionId }, source: "console" });
       if (r.executed && session.world.beat >= 2) session.timelapse();
-      if (r.executed && role === "local_authority") announceChoice(String(b.escalationId), String(b.optionId), "console", r.decision.verdict);
       return send(res, 200, { verdict: r.decision.verdict, summary: r.decision.summary });
     }
     if (path === "/api/capture" && req.method === "POST") {
@@ -703,7 +758,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/api/inject" && req.method === "POST") return send(res, 200, { ok: true, message: inject((await readJson(req)) as unknown as InjectBody) });
     if (path === "/api/director/next" && req.method === "POST") return send(res, 200, { ok: true, message: await directorNext() });
-    if (path === "/api/director/enter" && req.method === "POST") return send(res, 200, { ok: true, message: await enterBase("console") });
+    if (path === "/api/director/enter" && req.method === "POST") return send(res, 200, { ok: true, message: session.show.active ? await session.show.enter("console") : await enterBase("console") });
+    if (path === "/api/show/start" && req.method === "POST") {
+      await reset();
+      session.show.start();
+      return send(res, 200, { ok: true, message: "the show is running: Act 1 from the title" });
+    }
+    if (path === "/api/show/autoplay" && req.method === "POST") {
+      const b = await readJson(req);
+      const choice = (["drill", "lab", "buy"] as const).find((c) => c === b.choice) ?? "drill";
+      await reset();
+      session.show.start({ autoplay: choice });
+      return send(res, 200, { ok: true, message: `autoplay: the whole show hands-free, choosing ${choice}` });
+    }
+    if (path === "/api/show/log" && req.method === "GET") return send(res, 200, { act: session.show.act, active: session.show.active, show: session.show.vrFields(), lines: session.show.log });
     if (path === "/api/director/station" && req.method === "POST") {
       const b = await readJson(req);
       return send(res, 200, { ok: true, message: await roamTo(String(b.station ?? ""), "console") });
@@ -779,7 +847,7 @@ wss.on("connection", (ws, req) => {
   ws.on("message", async (raw) => {
     try {
       const text = String(raw);
-      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string; role?: string; question?: string; station?: string };
+      const m = JSON.parse(text) as { type: string; escalationId?: string; optionId?: string | null; role?: string; question?: string; station?: string; target?: string; open?: boolean; on?: boolean };
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
       // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
       if (m.type === "vr_pose") {
@@ -794,11 +862,24 @@ wss.on("connection", (ws, req) => {
       }
       // The headset is the on-site commander: it can only decide escalations sent to the local authority.
       if (m.type === "vr_enter" && (headset || local)) {
-        void enterBase("headset");
+        void (session.show.active ? session.show.enter("headset") : enterBase("headset"));
         return;
       }
       if (m.type === "vr_station" && typeof m.station === "string" && (headset || local)) {
         void roamTo(m.station, "headset");
+        return;
+      }
+      // The show's headset messages: a tap on a glowing cue, the stereo view, a gaze resting on an option, the reality check.
+      if (m.type === "vr_tap" && typeof m.target === "string" && (headset || local)) {
+        if (m.target === "start" && !session.show.active) session.show.start();
+        else session.show.tap(m.target);
+        return;
+      }
+      if (m.type === "vr_closeup" && (headset || local)) return session.show.closeup(m.open === true);
+      if (m.type === "vr_gaze_option" && (headset || local)) return session.show.gaze(typeof m.optionId === "string" ? m.optionId : null);
+      if (m.type === "vr_reality" && (headset || local)) return session.show.reality(m.on === true);
+      if (m.type === "vr_ask" && typeof m.role === "string" && session.show.active && (headset || local)) {
+        void session.show.ask(m.role);
         return;
       }
       if (m.type === "vr_ask" && typeof m.role === "string" && (headset || local)) {
@@ -807,10 +888,9 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (m.type === "decide" && m.escalationId && m.optionId && (headset || local)) {
-        const r = await session.orch.submitHuman("local_authority", { type: "decide", params: { escalationId: m.escalationId, optionId: m.optionId }, source: "human" });
-        if (r.executed && session.world.beat >= 2) session.timelapse();
-        if (r.executed) announceChoice(m.escalationId, m.optionId, headset ? "headset" : "console", r.decision.verdict);
-        ws.send(JSON.stringify({ type: "decided", verdict: r.decision.verdict, summary: r.decision.summary }));
+        await decideAsCommander(m.escalationId, m.optionId, headset ? "headset" : "console");
+        const esc = session.orch.engine.escalations.get(m.escalationId);
+        ws.send(JSON.stringify({ type: "decided", verdict: esc ? "allow" : "deny", summary: esc ? `${esc.id} ${esc.status}` : "no such escalation" }));
       }
     } catch (err) {
       ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));

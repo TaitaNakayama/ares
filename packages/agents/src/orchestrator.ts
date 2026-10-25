@@ -1,4 +1,4 @@
-import { Engine, type AgentRole, type EngineEvent, type ProposalInput, type SubmitResult, type Time } from "@ares/engine";
+import { Engine, type Actor, type AgentRole, type EngineEvent, type ProposalInput, type SubmitResult, type Time } from "@ares/engine";
 import type { AgentInput, Brain, BrainContext, Intent } from "./brains.ts";
 import { statusLine } from "./llm-agent.ts";
 import { keywordRoute } from "./routing.ts";
@@ -17,12 +17,18 @@ export interface Narration {
   outcome: "said" | "allow" | "deny" | "hold" | "escalate";
   proposalId?: string;
   decisionId?: string;
+  /** Spoken aloud in the headset (one bubble at a time); otherwise a console log line. */
+  voice?: boolean;
+  /** What produced the words: the model, or the rules' line. */
+  via?: "llm" | "rules";
 }
 
 export type OrchestratorMessage =
   | { type: "narration"; narration: Narration }
   | { type: "telemetry"; at: Time; data: Record<string, unknown> }
   | { type: "engine"; event: EngineEvent }
+  /** A world agent used a domain tool (power, life support, the lab); the world checked it. */
+  | { type: "world_action"; actorId: string; tool: string; args: Record<string, unknown>; ok: boolean; detail: string; via: "llm" | "rules"; at: Time }
   /** An LLM brain is deciding (on) or done (off): the headset and spectator show the robot thinking. */
   | { type: "thinking"; actorId: string; role: string; on: boolean; at: Time };
 
@@ -180,11 +186,14 @@ export class Orchestrator {
   }
 
   /** The commander asks an agent what's going on; it answers live from the current state. */
-  async ask(role: AgentRole, question?: string): Promise<string> {
-    const brain = this.brains.find((b) => b.role === role && b.kind === "llm") ?? this.brains.find((b) => b.role === role);
-    const self = [...this.engine.actors.values()].find((a) => a.role === role);
-    if (!brain || !self) throw new Error(`no agent for ${role}`);
-    const ctx: BrainContext = { engine: this.engine, self, fmtTime: this.fmtTime, itemName: (sku) => this.engine.items.get(sku)?.name ?? sku };
+  async ask(who: string, question?: string, opts: { narrate?: boolean } = {}): Promise<string> {
+    const self = this.engine.actors.get(who) ?? [...this.engine.actors.values()].find((a) => a.role === who);
+    if (!self) throw new Error(`no agent for ${who}`);
+    const role = self.role as AgentRole;
+    const mine = (b: Brain) => (b.actorId ? b.actorId === self.id : b.role === role);
+    const brain = this.brains.find((b) => mine(b) && b.kind === "llm") ?? this.brains.find(mine);
+    if (!brain) throw new Error(`no agent for ${who}`);
+    const ctx = this.contextFor(self);
     const llm = brain as { answer?: (c: BrainContext, q?: string) => Promise<{ text: string; via: string }> };
     let text: string;
     if (llm.answer) {
@@ -197,7 +206,7 @@ export class Orchestrator {
     } else {
       text = statusLine(role, ctx);
     }
-    this.narrate(self.id, text, "attentive");
+    if (opts.narrate !== false) this.narrate(self.id, text, "attentive");
     return text;
   }
 
@@ -237,11 +246,40 @@ export class Orchestrator {
     }
   }
 
+  /** The actor a brain speaks for: its bound actor, else the first actor of its role. */
+  private selfOf(brain: Brain): Actor | undefined {
+    if (brain.actorId) return this.engine.actors.get(brain.actorId);
+    return [...this.engine.actors.values()].find((a) => a.role === brain.role);
+  }
+
+  /** Who an addressed world event is for (an actor id, or a role meaning its first actor). */
+  private addressee(to: string | undefined): string | undefined {
+    if (!to) return undefined;
+    if (this.engine.actors.has(to)) return to;
+    return [...this.engine.actors.values()].find((a) => a.role === to)?.id;
+  }
+
+  contextFor(self: Actor): BrainContext {
+    const w = this.world as World & { baseState?: (t: Time) => Record<string, unknown> };
+    return {
+      engine: this.engine,
+      self,
+      fmtTime: this.fmtTime,
+      itemName: (sku) => this.engine.items.get(sku)?.name ?? sku,
+      worldTools: this.world.worldTools?.(self.id),
+      worldState: w.baseState?.(this.engine.now),
+    };
+  }
+
   private async toBrains(input: AgentInput): Promise<void> {
+    // Events addressed to one crew member (a need raised by it, a directive or report for it) reach only that actor's brains.
+    const ev = input.kind === "world" ? input.event : undefined;
+    const target = ev && (ev.type === "need" ? this.addressee(ev.by) : ev.type === "directive" || ev.type === "report" ? this.addressee(ev.to) : undefined);
     for (const brain of this.brains) {
-      const self = [...this.engine.actors.values()].find((a) => a.role === brain.role);
+      const self = this.selfOf(brain);
       if (!self) continue;
-      const ctx: BrainContext = { engine: this.engine, self, fmtTime: this.fmtTime, itemName: (sku) => this.engine.items.get(sku)?.name ?? sku };
+      if (target && self.id !== target && (self.role === this.engine.actors.get(target)?.role || ev?.type === "directive")) continue;
+      const ctx = this.contextFor(self);
       let intents: Intent[];
       const thinks = brain.kind === "llm" && !!(brain as { pointOf?: (i: AgentInput) => string | undefined }).pointOf?.(input);
       if (thinks) this.emit({ type: "thinking", actorId: self.id, role: self.role, on: true, at: this.engine.now });
@@ -257,7 +295,28 @@ export class Orchestrator {
     }
   }
 
+  /** A world agent's domain tool: the world checks it and changes the base. */
+  private async worldAct(actorId: string, it: Intent): Promise<void> {
+    const { tool, args } = it.params as { tool: string; args: Record<string, unknown> };
+    const res = this.world.act?.(actorId, tool, args ?? {}, this.engine) ?? { ok: false, detail: "this world has no tools", events: [] };
+    this.scheduleAll(res.events);
+    const via = it.via === "llm" ? "llm" : "rules";
+    this.emit({ type: "world_action", actorId, tool, args: args ?? {}, ok: res.ok, detail: res.detail, via, at: this.engine.now });
+    this.narrate(actorId, res.ok ? (it.say ?? res.detail) : `The base refused my ${tool.replace(/_/g, " ")}: ${res.detail}`, it.mood ?? "calm", undefined, it.short);
+    await this.pace();
+  }
+
+  /**
+   * A spoken line for the headset (the show decides who says what when; the words come from the agent's model or the rules' line).
+   * Recorded like any narration so the console and the audit see it, marked `voice`.
+   */
+  say(actorId: string, text: string, opts: { mood?: Mood; via?: "llm" | "rules" } = {}): Narration {
+    this.narrate(actorId, text, opts.mood ?? "calm", undefined, text, { voice: true, via: opts.via });
+    return this.narration.at(-1)!;
+  }
+
   private async act(actorId: string, brain: Brain, it: Intent): Promise<void> {
+    if (it.type === "__world") return this.worldAct(actorId, it);
     if (it.type === "__draft") {
       const { escalationId, message } = it.params as { escalationId: string; message: string };
       this.engine.setEscalationMessage(escalationId, message, actorId);
@@ -280,7 +339,11 @@ export class Orchestrator {
     await this.pace();
   }
 
-  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult, short?: string, speakerName?: string): void {
+  private narrate(actorId: string, text: string, mood: Mood, res?: SubmitResult, short?: string, speakerName?: string | { voice?: boolean; via?: "llm" | "rules" }, extra?: { voice?: boolean; via?: "llm" | "rules" }): void {
+    if (typeof speakerName === "object") {
+      extra = speakerName;
+      speakerName = undefined;
+    }
     const actor = this.engine.actors.get(actorId);
     const n: Narration = {
       seq: ++this.narrSeq,
@@ -294,6 +357,8 @@ export class Orchestrator {
       outcome: res ? res.decision.verdict : "said",
       proposalId: res?.proposal?.id,
       decisionId: res?.decision.id,
+      voice: extra?.voice,
+      via: extra?.via,
     };
     this.narration.push(n);
     this.emit({ type: "narration", narration: n });

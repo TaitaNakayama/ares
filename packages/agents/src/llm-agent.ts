@@ -3,6 +3,7 @@ import { z } from "zod";
 import { compact, type AgentInput, type Brain, type BrainContext, type Intent } from "./brains.ts";
 import type { ToolDef } from "./llm.ts";
 import { LOCAL_TIMEOUT_MS, type ModelRouter } from "./router.ts";
+import { checkSpoken } from "./lines.ts";
 import type { Mood, WorldEvent } from "./world.ts";
 
 /**
@@ -23,6 +24,7 @@ const DECISION_POINTS: Record<AgentRole, Record<string, DecisionTool[]>> = {
   requester: {
     "world:need": ["create_requisition", "report_issue", "say"],
     "world:report": ["create_requisition", "report_issue", "say"],
+    "world:directive": ["say"],
     "engine:escalation_decided": ["say"],
   },
   receiver: {
@@ -62,6 +64,10 @@ const PERSONAS: Record<AgentRole, string> = {
 
 export interface LlmBrainOptions {
   role: AgentRole;
+  /** The engine actor this brain speaks for, when its role has several (the crew's Engineer, Life and Science are all requesters). */
+  actorId?: string;
+  /** Persona override (the crew member's name and job). */
+  persona?: string;
   /** Same-role rules brain: fallback and the source of safe lines. */
   rules: Brain;
   router: ModelRouter;
@@ -87,7 +93,7 @@ export interface LlmOutcome {
 
 const sayTool: ToolDef = {
   name: "say",
-  description: "One short line to the crew, under 140 characters, in character. Use it with an action, or alone when no action is right.",
+  description: "One short spoken line: at most 10 words, no semicolons, at most one number, like a crewmate. Use it with an action, or alone when no action is right.",
   parameters: { type: "object", required: ["text"], properties: { text: { type: "string" } } },
 };
 
@@ -95,12 +101,12 @@ const sayTool: ToolDef = {
 function actionTool(name: keyof typeof ACTION_SCHEMAS): ToolDef {
   const p = z.toJSONSchema(ACTION_SCHEMAS[name]) as Record<string, unknown> & { properties?: Record<string, unknown> };
   delete p.$schema;
-  p.properties = { ...p.properties, say: { type: "string", description: "One short line to the crew about this action, under 140 characters, plain, in character." } };
+  p.properties = { ...p.properties, say: { type: "string", description: "One short spoken line about this action: at most 10 words, no semicolons, at most one number." } };
   return { name, description: ACTION_DESCRIPTIONS[name], parameters: p };
 }
 
 const SYSTEM_PREFIX =
-  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. When an action is warranted, call the action tool (its `say` field carries your line) rather than `say` alone. Prefer one action tool call plus one short `say` line (under 140 characters, plain, in character, no markdown; write money as dollars like $632,276.58, never raw cents).";
+  "You are one of five procurement agents on a crewed base far from Earth. You act only through the tools given; a deterministic policy engine checks every action and refuses what it must, so propose what you judge right and let it be checked. Use ids, items, vendors and amounts exactly as the state summary gives them; never invent any. Money is in integer cents, times are integer milliseconds. When an action is warranted, call the action tool (its `say` field carries your line) rather than `say` alone. Prefer one action tool call plus one short `say` line (at most 10 words, no semicolons, at most one number, spoken like a crewmate, no markdown; numbers belong on the screens, not in speech).";
 
 export class LlmBrain implements Brain {
   readonly role: AgentRole;
@@ -118,8 +124,13 @@ export class LlmBrain implements Brain {
   private pendingFloor?: Intent;
   private lastLlmIntents = new WeakSet<Intent>();
 
+  readonly actorId?: string;
+  private readonly persona?: string;
+
   constructor(opts: LlmBrainOptions) {
     this.role = opts.role;
+    this.actorId = opts.actorId;
+    this.persona = opts.persona;
     this.rules = opts.rules;
     this.router = opts.router;
     this.points = new Set(opts.points ?? Object.keys(DECISION_POINTS[opts.role]));
@@ -131,7 +142,8 @@ export class LlmBrain implements Brain {
   pointOf(input: AgentInput): string | undefined {
     const key = `${input.kind}:${input.event.type}`;
     if (!this.points.has(key) || !DECISION_POINTS[this.role][key]) return undefined;
-    if (input.kind === "world" && input.event.type === "report" && input.event.to !== this.role) return undefined;
+    if (input.kind === "world" && input.event.type === "report" && input.event.to !== this.role && input.event.to !== this.actorId && input.event.to !== this.selfId) return undefined;
+    if (input.kind === "world" && input.event.type === "directive" && input.event.to !== this.actorId && input.event.to !== this.selfId) return undefined;
     if (input.kind === "engine" && input.event.type === "escalation_decided") {
       const esc = input.event.data.escalation as { createdBy?: string } | undefined;
       return esc?.createdBy === this.selfId ? key : undefined;
@@ -166,6 +178,8 @@ export class LlmBrain implements Brain {
     if (Date.now() < this.breakerUntil) return fallback("breaker open");
 
     const tools = DECISION_POINTS[this.role][point]!.filter((t) => t === "say" || ctx.engine.policy.permissions[this.role]?.includes(t));
+    // The base itself (power, life support, the lab): this actor's world tools, at the points where acting on the base makes sense.
+    const worldTools = point === "world:directive" || point === "world:report" ? (ctx.worldTools ?? []) : [];
     const facts = describeEvent(input, ctx);
     const summary = stateSummary(this.role, ctx);
     const isReport = point === "world:report";
@@ -174,9 +188,9 @@ export class LlmBrain implements Brain {
       // Stable text first (persona, catalog, vendors), changing text last: the model server reuses the common prefix.
       res = await this.router.complete(
         {
-          system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`,
+          system: `${SYSTEM_PREFIX}\nYou are ${this.persona ?? PERSONAS[this.role]}`,
           user: `STATE:\n${summary}\n\nEVENT:\n${facts}`,
-          tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))),
+          tools: [...tools.map((t) => (t === "say" ? sayTool : actionTool(t))), ...worldTools],
           // An escalation with proposed options, or a report, needs room; a plain action with a line does not.
           maxOutputTokens: isReport ? 400 : tools.includes("escalate") || tools.includes("report_issue") ? 450 : 200,
         },
@@ -199,6 +213,14 @@ export class LlmBrain implements Brain {
       if (call.name === "say") {
         const t = (call.args as { text?: unknown } | undefined)?.text;
         if (typeof t === "string" && t.trim()) line = t.trim();
+        continue;
+      }
+      const wt = worldTools.find((w) => w.name === call.name);
+      if (wt) {
+        const args = (call.args ?? {}) as Record<string, unknown>;
+        const said = typeof args.say === "string" ? args.say.trim() : undefined;
+        if (!line && said) line = said;
+        actions.push({ type: "__world", params: { tool: wt.name, args }, rationale: `${res.layer} ${res.model} in ${(res.ms / 1000).toFixed(1)} s`, via: "llm" });
         continue;
       }
       if (!tools.includes(call.name as DecisionTool)) {
@@ -240,7 +262,7 @@ export class LlmBrain implements Brain {
     const verdict = line ? checkLine(line, factText) : "no line";
     const ruleLine = ruleIntents.find((i) => (actions[0] ? i.type === actions[0].type : i.say))?.say ?? ruleIntents.find((i) => i.say)?.say;
     const mood = ruleIntents.find((i) => i.mood)?.mood ?? moodFor(actions[0]?.type);
-    const spoken = verdict === "ok" ? line! : ruleLine ?? (actions[0] ? `Proposing: ${actions[0].type.replace(/_/g, " ")}.` : undefined);
+    const spoken = verdict === "ok" ? line! : ruleLine ?? (actions[0] && actions[0].type !== "__world" ? `Proposing: ${actions[0].type.replace(/_/g, " ")}.` : undefined);
     this.history.push({ at: Date.now(), point, layer: res.layer, ms: res.ms, usage: res.usage, raw: `${res.toolCalls.map((c) => c.name).join(",") || "-"} ${res.text.slice(0, 160)}`.trim(), result: "llm", reason: [verdict !== "ok" ? `line replaced: ${verdict}` : undefined, ...dropped].filter(Boolean).join("; ") || undefined });
     this.note(true);
 
@@ -288,7 +310,7 @@ export class LlmBrain implements Brain {
       const t0 = Date.now();
       try {
         const res = await this.router.complete(
-          { system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`, user: `STATE:\n${summary}\n\nEVENT:\n(warm-up: nothing has happened; reply with say only)`, tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))), maxOutputTokens: 20 },
+          { system: `${SYSTEM_PREFIX}\nYou are ${this.persona ?? PERSONAS[this.role]}`, user: `STATE:\n${summary}\n\nEVENT:\n(warm-up: nothing has happened; reply with say only)`, tools: tools.map((t) => (t === "say" ? sayTool : actionTool(t))), maxOutputTokens: 20 },
           { only: "local", localTimeoutMs: 60_000 },
         );
         this.history.push({ at: t0, point: `warmup ${point}`, layer: res.layer, ms: res.ms, usage: res.usage, result: "llm" });
@@ -310,8 +332,8 @@ export class LlmBrain implements Brain {
     try {
       const res = await this.router.complete(
         {
-          system: `${SYSTEM_PREFIX}\nYou are ${PERSONAS[this.role]}`,
-          user: `STATE:\n${summary}\n\nThe commander ${question ? `asks: "${question.slice(0, 300)}"` : "looks at you and asks what's going on"}. Answer in one line (under 140 characters) with the facts above: what you are doing or watching right now, and what you need from them, if anything.`,
+          system: `${SYSTEM_PREFIX}\nYou are ${this.persona ?? PERSONAS[this.role]}`,
+          user: `STATE:\n${summary}\n\nThe commander ${question ? `asks: "${question.slice(0, 300)}"` : "looks at you and asks what's going on"}. Answer in one spoken line (at most 10 words, at most one number, no semicolons) with the facts above: what you are doing or watching right now, and what you need from them, if anything.`,
           tools: [sayTool],
           maxOutputTokens: 120,
         },
@@ -358,8 +380,29 @@ export class LlmBrain implements Brain {
 
   private async ruleIntents(input: AgentInput, ctx: BrainContext): Promise<Intent[]> {
     if (input.kind === "world" && input.event.type === "report") return reportFallback(input.event, ctx);
+    if (input.kind === "world" && input.event.type === "directive") return directiveFallback(input.event);
     const out = await this.rules.react(input, ctx);
     return out.map((i) => ({ ...i, via: i.via ?? "rules" }));
+  }
+}
+
+/** Deterministic handling of a directive (the commander's decision asks this actor to act on the base): do exactly what was asked. */
+export function directiveFallback(ev: Extract<WorldEvent, { type: "directive" }>): Intent[] {
+  return [{ type: "__world", params: { tool: ev.expect.tool, args: ev.expect.args }, rationale: "commander's decision", via: "rules" }];
+}
+
+/** Rules brain for directives (a crew actor without a model). */
+export class DirectiveRules implements Brain {
+  readonly role: AgentRole;
+  readonly actorId: string;
+  readonly kind = "rules" as const;
+  constructor(role: AgentRole, actorId: string) {
+    this.role = role;
+    this.actorId = actorId;
+  }
+  react(input: AgentInput): Intent[] {
+    if (input.kind !== "world" || input.event.type !== "directive" || input.event.to !== this.actorId) return [];
+    return directiveFallback(input.event);
   }
 }
 
@@ -456,9 +499,9 @@ function unknownRefs(params: Record<string, unknown>, e: Engine): string[] {
 const ID_RE = /\b[A-Z]{1,5}-[A-Z0-9][A-Z0-9-]*\b/g;
 
 export function checkLine(line: string, facts: string): "ok" | string {
-  if (line.length > 160) return "too long";
-  if (/\n|```|\*\*|#{1,6}\s/.test(line)) return "markdown";
-  if (/\b(as an ai|language model|as an assistant|i cannot|i'm sorry)\b/i.test(line)) return "out of character";
+  // The spoken-line rules (at most 10 words, no semicolons, at most one number) apply to every agent line.
+  const spoken = checkSpoken(line, facts);
+  if (spoken !== "ok" && !/not in the facts/.test(spoken)) return spoken;
   const known = new Set(facts.match(ID_RE) ?? []);
   for (const id of line.match(ID_RE) ?? []) if (!known.has(id)) return `id ${id} not in the facts`;
   const have = numberTokens(facts);
@@ -520,6 +563,8 @@ function describeEvent(input: AgentInput, ctx: BrainContext): string {
       }
       case "report":
         return `Report from ${ev.from}: "${ev.text.slice(0, 1500)}"`;
+      case "directive":
+        return `${ev.text} Use your ${ev.expect.tool} tool.`;
       default:
         return `${ev.type}`;
     }
@@ -604,6 +649,8 @@ export function statusLine(role: AgentRole, ctx: BrainContext): string {
 export function stateSummary(role: AgentRole, ctx: BrainContext): string {
   const e = ctx.engine;
   const lines: string[] = [];
+  const w = ctx.worldState as { power?: { level?: string }; life?: { o2Pct?: number; waterDays?: number }; lab?: string; drill?: string; rationing?: boolean; tau?: number } | undefined;
+  if (w) lines.push(`Base: power ${w.power?.level ?? "?"}, dust opacity ${typeof w.tau === "number" ? w.tau.toFixed(1) : "?"}, oxygen ${w.life?.o2Pct ?? "?"}%, water reserve ${w.life?.waterDays ?? "?"} days, lab ${w.lab ?? "?"}, ice drill ${w.drill ?? "?"}${w.rationing ? ", non-essential loads cut" : ""}.`);
   lines.push(`Catalog: ${[...e.items.values()].map((i) => `${i.sku}=${i.name}`).join("; ")}.`);
   lines.push(`Vendors: ${[...e.vendors.values()].map((v) => `${v.id}=${v.name} (${v.status})`).join("; ")}.`);
   lines.push(`Your approval limit: ${e.limitFor(role)} cents (${formatCents(e.limitFor(role))}).`);

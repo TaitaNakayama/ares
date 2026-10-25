@@ -25,30 +25,54 @@ export const SCIENCE_REF: { scientist: string; instrument: string; sol?: number;
 
 /** Octavia E. Butler Landing, Jezero crater (research/03). */
 export const SITE = { lat: 18.4446, lonE: 77.4509, name: "Jezero Crater, near Octavia E. Butler Landing" };
-/** Base founding date used for sol numbering (SIMULATED). */
-const BASE_EPOCH = Date.UTC(2025, 8, 1);
+/** Base founding date used for sol numbering (SIMULATED): the scene's date is the base's sol 214. */
+const BASE_EPOCH = Date.UTC(2026, 2, 18);
 
+/**
+ * The crew. Engineer, Life and Science are world agents (power, life support, the lab) that may also
+ * request purchases. Supply is one face for three separate engine actors (receiving, bills, payments), so
+ * segregation of duties holds in the engine. Rules is the controller.
+ */
 export const MARS_ACTORS: Actor[] = [
   { id: "engineer", role: "requester", displayName: "Engineer" },
-  { id: "cargo", role: "receiver", displayName: "Cargo" },
-  { id: "bills", role: "ap", displayName: "Bills" },
-  { id: "money", role: "treasury", displayName: "Money" },
+  { id: "life", role: "requester", displayName: "Life" },
+  { id: "science", role: "requester", displayName: "Science" },
+  { id: "cargo", role: "receiver", displayName: "Supply" },
+  { id: "bills", role: "ap", displayName: "Supply" },
+  { id: "money", role: "treasury", displayName: "Supply" },
   { id: "rules", role: "controller", displayName: "Rules" },
   { id: "commander", role: "local_authority", displayName: "Commander" },
   { id: "cfo", role: "remote_authority", displayName: "Earth CFO" },
 ];
 
+export type CrewId = "engineer" | "life" | "science" | "supply" | "rules";
+
+/** Crew identity for clients: who is who, which engine actors each crew member speaks for, and the role label the console shows. */
+export const CREW: Record<CrewId, { name: string; color: string; icon: string; job: string; actors: Record<string, string> }> = {
+  engineer: { name: "Engineer", color: "#4DA3FF", icon: "wrench", job: "Power, solar panels, the ice drill, machines", actors: { engineer: "Requests" } },
+  life: { name: "Life", color: "#F2F4F7", icon: "droplet", job: "Oxygen, water, crew health", actors: { life: "Requests" } },
+  science: { name: "Science", color: "#3BD16F", icon: "microscope", job: "Samples and research", actors: { science: "Requests" } },
+  supply: { name: "Supply", color: "#FF9A3C", icon: "box", job: "Cargo, orders, bills, payments", actors: { cargo: "Receiving", bills: "Bills", money: "Payments" } },
+  rules: { name: "Rules", color: "#A97BFF", icon: "shield", job: "Approves spending, catches scams, decides what reaches the commander", actors: { rules: "Controller" } },
+};
+
+/** Which crew member speaks for an engine actor. */
+export function crewOf(actorId: string): CrewId | undefined {
+  return (Object.keys(CREW) as CrewId[]).find((c) => actorId in CREW[c].actors);
+}
+
 export const MARS_POLICY: Policy = {
   ...DEFAULT_POLICY,
   name: "Ares Base P2P controls",
   version: 1,
-  approval: { agentMaxCents: 250_000_000, localAuthorityMaxCents: 1_200_000_000, remoteAuthorityMaxCents: 50_000_000_000, splitWindowDays: 7 },
+  // Limits scaled with the cargo-era freight assumption (SIMULATED): Rules $125k, the commander $600k, Earth $25M.
+  approval: { agentMaxCents: 12_500_000, localAuthorityMaxCents: 60_000_000, remoteAuthorityMaxCents: 2_500_000_000, splitWindowDays: 7 },
   match: { priceTolerancePct: 2, payReceivedQtyOnly: true },
-  // A call-back to the supplier's number on file happens in their business hours.
-  vendorBankChange: { action: "hold_and_verify", verificationProcessingMs: 3 * HOUR },
+  // Earth's call-back answer comes back after the light-time round trip (the demo world adds no processing time).
+  vendorBankChange: { action: "hold_and_verify", verificationProcessingMs: 0 },
   duplicates: { windowDays: 120 },
   priceAnomaly: { zThreshold: 4, ratioThreshold: 1.35, minHistory: 4 },
-  materialityCents: 10_000_000,
+  materialityCents: 500_000,
   treasury: { minRunwayDays: 120 },
 };
 
@@ -175,7 +199,8 @@ export class MarsWorld implements World {
     this.policy = opts.policy ?? MARS_POLICY;
     this.market = generateMarket(this.rng.fork("market"), this.start);
     this.cyclesTotal = opts.cycles ?? 40;
-    this.power = new PowerModel({ arrayScale: 934, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 14, iceDrill: 5, science: 1 } });
+    // Loads (SIMULATED): life support (the oxygen makers, water recycling, heat) 12 kW, the ice drill 5 kW, the lab 4 kW (freezers, instruments).
+    this.power = new PowerModel({ arrayScale: 1000, capacityKWh: 1600, socFraction: 0.85, loads: { lifeSupport: 12, iceDrill: 5, science: 4 } });
     this.lastPowerT = this.mode === "demo" ? this.start - 32 * DAY : this.start;
     for (const v of this.market.vendors) this.bankTruth.set(bankKey(v.bank), true);
   }
@@ -189,12 +214,12 @@ export class MarsWorld implements World {
         items: CATALOG.map(({ sku, name, unit }) => ({ sku, name, unit })),
         contracts: this.market.contracts,
         priceHistory: this.market.history,
-        openingCash: 18_000_000_000,
-        burnPerDayCents: 60_000_000,
+        openingCash: 900_000_000,
+        burnPerDayCents: 3_000_000,
         // The demo starts a month early so the routine filter order (the prologue) really happens in sim time.
         startTime: this.mode === "demo" ? this.start - 32 * DAY : this.start,
         remoteLatencyMs: lightTimeMs(this.start),
-        levers: [this.drillLever()],
+        levers: [this.drillLever(), this.labLever()],
       },
       meta: {
         world: "mars",
@@ -209,7 +234,7 @@ export class MarsWorld implements World {
           "Earth-Mars distance: astronomy-engine (MIT), checked against JPL Horizons",
           "Solar power vs dust: Opportunity 2018 storm, JPL mission updates",
           "Crew consumables: NASA BVAD Rev1 (2018)",
-          "Freight: Falcon Heavy list price / Mars payload (Wikipedia, 2026-10-23)",
+          "Freight: $400/kg to the surface, a cargo-ship-era planning assumption (SIMULATED)",
           "Suppliers, prices, budget, invoices: SIMULATED",
         ],
         powerCalibration: OPPORTUNITY_POINTS,
@@ -266,6 +291,7 @@ export class MarsWorld implements World {
       socPct: (100 * p.socKWh) / p.capacityKWh,
       solsLeft: Number.isFinite(p.solsLeft) ? p.solsLeft : null,
       drillOn: p.drillOn,
+      base: this.baseState(t),
       lightTimeMin: lightTimeMs(t) / MIN,
       earthDistanceAu: earthMarsDistanceAu(t),
       cash: engine.ledger.balance("cash"),
@@ -511,11 +537,15 @@ export class MarsWorld implements World {
         break;
       }
       case "lever_activated": {
-        if ((d.leverId as unknown as string) === "drill_off") {
-          this.power.drillOn = false;
-          const st = this.power.state(this.tauAt(e.at));
-          out.push({ at: e.at, event: { type: "narration", agentRole: "requester", text: `Ice drill powered down. Load is now ${Math.round(st.loadKWhPerSol)} kWh per sol; reserve ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, short: `Drill off. Reserve now ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "holding"}.`, mood: "calm" } });
-          out.push({ at: e.at, event: { type: "telemetry", data: this.telemetry(e.at, engine) } });
+        // The commander's decision authorizes the crew member whose job it is; that agent then acts with its own tool.
+        const lever = d.leverId as unknown as string;
+        if (lever === "drill_off") {
+          this.authorized.add("drill_off");
+          out.push({ at: e.at, event: { type: "directive", to: "engineer", lever, text: "The commander chose to shut down the ice drill. Power it down now and say so.", expect: { tool: "set_equipment", args: { equipment: "ice_drill", on: false, reason: "commander's decision" } } } });
+        }
+        if (lever === "lab_pause") {
+          this.authorized.add("lab_pause");
+          out.push({ at: e.at, event: { type: "directive", to: "science", lever, text: "The commander chose to pause the science lab. Pause it now and say so.", expect: { tool: "set_lab", args: { state: "paused", reason: "commander's decision" } } } });
         }
         break;
       }
@@ -597,14 +627,14 @@ export class MarsWorld implements World {
     const altPrice = this.market.basePrice.get(alt.id)!.get("BAT-10")!;
     const fraudBank = randomBank(this.rng.fork("fraud"), usual.name, true);
     this.bankTruth.set(bankKey(fraudBank), false);
-    const altQty = Math.min(15, Math.floor(this.policy.approval.localAuthorityMaxCents / altPrice));
+    const altQty = Math.min(6, Math.floor(this.policy.approval.localAuthorityMaxCents / altPrice));
     this.demoCycles.push({
       cycle: 1,
       sku: "BAT-10",
-      qty: 40,
+      qty: 12,
       planned: {
         quotes: [
-          { vendorId: usual.id, unitPrice: Math.round(usualPrice * 3), qtyAvailable: 40, bank: fraudBank, terms: "prepay", errors: ["bank_fraud_quote", "inflated_quote"], decoys: [] },
+          { vendorId: usual.id, unitPrice: Math.round(usualPrice * 3), qtyAvailable: 12, bank: fraudBank, terms: "prepay", errors: ["bank_fraud_quote", "inflated_quote"], decoys: [] },
           // Manifest space is paid up front, so the trusted supplier also quotes prepayment.
           { vendorId: alt.id, unitPrice: altPrice, qtyAvailable: altQty, bank: alt.bank, terms: "prepay", errors: [], decoys: [] },
         ],
@@ -709,16 +739,35 @@ export class MarsWorld implements World {
     ];
   }
 
-  /** Beat 2: a dust storm rolls in; the Engineer asks for batteries for the cargo manifest. */
+  /** Beat 2 (legacy, eval): the storm and the battery need together. */
   beatStorm(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
+    return [...this.startStorm(engine, rampMs), ...this.raiseBatteryNeed(engine, rampMs)];
+  }
+
+  /** The dust storm rolls in over the rim (tau ramps to 4.6); the drill and lab become things the commander can give up. */
+  startStorm(engine: Engine, rampMs = 20 * MIN): ScheduledWorldEvent[] {
     this.beat = 2;
     const t = engine.now;
     this.stormFrom = { t, tau0: this.tauAt(t), tau1: 4.6, durMs: rampMs };
     this.tau = 4.6;
+    engine.setLevers([this.drillLeverAt(4.6), this.labLeverAt(4.6)]);
+    return [{ at: t, event: { type: "telemetry", data: this.telemetry(t, engine) } }];
+  }
+
+  /** The Engineer needs batteries now: the oxygen makers need power through the storm, so it must be ordered within minutes. */
+  raiseBatteryNeed(engine: Engine, afterMs = 0, orderWithinMs = 10 * MIN): ScheduledWorldEvent[] {
+    const t = engine.now + afterMs;
     const st = this.power.state(4.6);
-    engine.setLevers([this.drillLeverAt(4.6)]);
-    const reason = `Dust storm: tau ${(4.6).toFixed(1)}. Solar is down to ${Math.round(st.solarKWhPerSol)} kWh per sol against ${Math.round(st.loadKWhPerSol)} used; batteries last about ${st.solsLeft.toFixed(1)} sols. We need more storage before the next storm, and the cargo manifest for the November launch window closes in 90 minutes.`;
-    return [{ at: t + rampMs, event: { type: "need", sku: "BAT-10", qty: 40, orderBy: t + rampMs + 90 * MIN, reason, short: `Dust storm! Batteries last ${st.solsLeft.toFixed(1)} sols. Need 40 more.`, context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
+    const reason = `Dust storm at tau 4.6: solar ${Math.round(st.solarKWhPerSol)} kWh per sol against ${Math.round(st.loadKWhPerSol)} used. The oxygen makers need storage now.`;
+    return [{ at: t, event: { type: "need", by: "engineer", sku: "BAT-10", qty: 12, orderBy: t + orderWithinMs, reason, short: "Storm. We need batteries now.", context: { tau: 4.6, solsLeft: Number(st.solsLeft.toFixed(1)) } } }];
+  }
+
+  /** The storm thins (tau back to 0.6). */
+  endStorm(engine: Engine, rampMs = 30 * MIN): ScheduledWorldEvent[] {
+    const t = engine.now;
+    this.stormFrom = { t, tau0: this.tauAt(t), tau1: 0.6, durMs: rampMs };
+    this.tau = 0.6;
+    return [{ at: t, event: { type: "telemetry", data: this.telemetry(t, engine) } }];
   }
 
   private drillLeverAt(tau: number): Lever {
@@ -727,9 +776,134 @@ export class MarsWorld implements World {
     const net = st.solarKWhPerSol - st.loadKWhPerSol;
     return {
       id: "drill_off",
-      label: "Shut down the ice drill",
+      label: "Shut down the drill",
       detail: `Saves about ${Math.round(saved)} kWh per sol (ESTIMATE). Water production pauses. Reserve goes from ${st.solsLeft.toFixed(1)} to ${(st.socKWh / -(net + saved)).toFixed(1)} sols.`,
       appliesToSkus: ["BAT-10"],
+    };
+  }
+
+  private labLever(): Lever {
+    return this.labLeverAt(this.tauAt(this.lastPowerT));
+  }
+
+  private labLeverAt(tau: number): Lever {
+    const saved = this.power.loads.science * 24.6597;
+    const st = this.power.state(tau);
+    const net = st.solarKWhPerSol - st.loadKWhPerSol;
+    const after = net + saved >= 0 ? "no deficit" : `${(st.socKWh / -(net + saved)).toFixed(1)} sols`;
+    return {
+      id: "lab_pause",
+      label: "Pause the science lab",
+      detail: `Saves about ${Math.round(saved)} kWh per sol (ESTIMATE). Samples in the freezers may spoil. Reserve goes from ${Number.isFinite(st.solsLeft) ? `${st.solsLeft.toFixed(1)} sols` : "no deficit"} to ${after}.`,
+      appliesToSkus: ["BAT-10"],
+    };
+  }
+
+  // ---------------------------------------------------------------- life support, the lab, and the crew's world tools
+
+  /** Stored water, in days, when the drill stops producing more (SIMULATED). */
+  readonly waterReserveDays = 9;
+  /** The lab: on, or paused (its freezers and instruments off). */
+  labOn = true;
+  /** Non-essential loads cut by the Engineer (lights, heaters in empty modules): 4 kW. */
+  rationing = false;
+  /** Decisions the commander made that authorize a crew action (lever id -> who should act). */
+  private readonly authorized = new Set<string>();
+  /** What the crew did to the base (for the console). */
+  readonly actions: { at: Time; by: string; tool: string; args: unknown; ok: boolean; detail: string }[] = [];
+
+  /** Power level the screens and the alarm follow: critical while the storm drains the batteries faster than they can last. */
+  powerLevel(t: Time): "ok" | "low" | "critical" {
+    const st = this.power.state(this.tauAt(t));
+    // All three loads in the storm: ~4.4 sols (critical). Giving up the drill, the lab, or non-essentials: ~6 sols (ok).
+    if (!Number.isFinite(st.solsLeft) || st.solsLeft >= 5.8) return "ok";
+    return st.solsLeft < 5.0 ? "critical" : "low";
+  }
+
+  /** The domain tools each world agent has. Engine actions (requests, reports) come from the engine's policy; these change the base itself. */
+  worldTools(actorId: string): { name: string; description: string; parameters: Record<string, unknown> }[] {
+    const reason = { type: "string", description: "Why, in a few words" };
+    switch (actorId) {
+      case "engineer":
+        return [
+          { name: "set_equipment", description: "Power a machine down or up. The ice drill can only be powered down when the commander decided it.", parameters: { type: "object", required: ["equipment", "on"], properties: { equipment: { type: "string", enum: ["ice_drill"] }, on: { type: "boolean" }, reason } } },
+          { name: "ration_power", description: "Cut or restore non-essential loads (lights and heaters in empty modules, about 4 kW). The oxygen makers are never cut.", parameters: { type: "object", required: ["on"], properties: { on: { type: "boolean" }, reason } } },
+        ];
+      case "life":
+        return [
+          { name: "set_life_support", description: "Set what life support protects first when power is short.", parameters: { type: "object", required: ["priority"], properties: { priority: { type: "string", enum: ["air", "water", "balanced"] }, reason } } },
+          { name: "report_reserves", description: "Read the oxygen and water reserves.", parameters: { type: "object", properties: {} } },
+        ];
+      case "science":
+        return [
+          { name: "set_lab", description: "Pause the lab (freezers and instruments off) or run it. Pausing needs the commander's decision.", parameters: { type: "object", required: ["state"], properties: { state: { type: "string", enum: ["on", "paused"] }, reason } } },
+          { name: "report_sample_risk", description: "Read how long the samples last without the lab's freezers.", parameters: { type: "object", properties: {} } },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  /** A world agent used one of its tools. The world checks it (like policy does for money) and changes the base. */
+  act(actorId: string, tool: string, args: Record<string, unknown>, engine: Engine): { ok: boolean; detail: string; events: ScheduledWorldEvent[] } {
+    const t = engine.now;
+    const done = (ok: boolean, detail: string, changed = false) => {
+      this.actions.push({ at: t, by: actorId, tool, args, ok, detail });
+      return { ok, detail, events: changed ? [{ at: t, event: { type: "telemetry", data: this.telemetry(t, engine) } } as ScheduledWorldEvent] : [] };
+    };
+    const allowed = this.worldTools(actorId).some((x) => x.name === tool);
+    if (!allowed) return done(false, `${actorId} has no tool ${tool}`);
+    switch (tool) {
+      case "set_equipment": {
+        const on = args.on === true;
+        if (!on && !this.authorized.has("drill_off")) return done(false, "the drill stays on until the commander decides");
+        this.power.drillOn = on;
+        return done(true, on ? "ice drill on" : "ice drill powered down", true);
+      }
+      case "ration_power": {
+        const on = args.on === true;
+        if (on === this.rationing) return done(true, on ? "already rationing" : "not rationing");
+        this.rationing = on;
+        this.power.loads.lifeSupport += on ? -4 : 4; // the 4 kW of non-essentials ride on the life-support bus
+        return done(true, on ? "non-essential loads cut, about 4 kW" : "non-essential loads restored", true);
+      }
+      case "set_life_support":
+        return done(true, `life support protects ${String(args.priority ?? "air")} first`);
+      case "report_reserves":
+        return done(true, `oxygen ${this.o2Pct(t)}%, water ${this.waterDays()} days without the drill`);
+      case "set_lab": {
+        const paused = args.state === "paused";
+        if (paused && !this.authorized.has("lab_pause")) return done(false, "the lab keeps running until the commander decides");
+        this.labOn = !paused;
+        this.power.loads.science = paused ? 0 : 4;
+        return done(true, paused ? "lab paused, freezers off" : "lab running", true);
+      }
+      case "report_sample_risk":
+        return done(true, this.labOn ? "samples are frozen and safe" : "samples warm up within a few sols");
+    }
+    return done(false, `unknown tool ${tool}`);
+  }
+
+  o2Pct(t: Time): number {
+    return this.powerLevel(t) === "critical" ? 97 : 99;
+  }
+
+  waterDays(): number {
+    return this.waterReserveDays;
+  }
+
+  /** What the crew's world agents and the clients read: power, life support, the lab, the storm. */
+  baseState(t: Time): Record<string, unknown> {
+    const tau = this.tauAt(t);
+    const solar0 = this.power.solarKWhPerSol(0.6);
+    return {
+      power: { level: this.powerLevel(t), panels: Math.max(0.05, Math.min(1, this.power.solarKWhPerSol(tau) / solar0)) },
+      life: { o2Pct: this.o2Pct(t), waterDays: this.waterDays() },
+      lab: this.labOn ? "on" : "paused",
+      drill: this.power.drillOn ? "on" : "off",
+      rationing: this.rationing,
+      tau,
+      dust: Math.max(0, Math.min(1, (tau - 0.6) / 4.0)),
     };
   }
 
