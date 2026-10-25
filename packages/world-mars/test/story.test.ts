@@ -15,7 +15,8 @@ describe("story beat", () => {
     orch.scheduleAll(world.beatDelivery(e));
     await orch.runUntil(e.now + 2 * 3600e3);
     orch.scheduleAll(world.beatStorm(e));
-    await orch.runUntil(e.now + 2 * 3600e3);
+    // Earth's answer comes after the light-time round trip (~25 min), so stop before it: the commander decides first.
+    await orch.runUntil(e.now + 35 * 60e3);
     expect(world.storyBeat(e)).toBe(6);
     const esc = [...e.escalations.values()].find((x) => x.status === "awaiting_decision" && x.to === "local_authority")!;
     const buy = esc.options.find((o) => o.id.startsWith("buy-"))!;

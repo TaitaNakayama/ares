@@ -6,9 +6,11 @@ import UIKit
 #endif
 import simd
 
-/// One floating helper robot: an original silhouette per role, a dark screen face with two
-/// expressive eyes, a glow halo in the role colour, and a speech bubble that faces the user.
+/// One crew robot (engineer, life, science, supply, rules): an original silhouette per agent, a dark screen face with two
+/// expressive eyes, a rim glow in the agent colour and a nametag (icon + one word). It is a puppet: `Crew` decides where it
+/// floats, what it looks at, whether it speaks, and `update` makes it move like a creature (bob, job motion, glances).
 final class Robot {
+  /// Crew id: engineer | life | science | supply | rules.
   let role: String
   let name: String
   let color: PlatformColor
@@ -22,28 +24,17 @@ final class Robot {
   private let eyeMat = SCNMaterial()
   private let faceMat = SCNMaterial()
   private let haloMat = SCNMaterial()
-  private let home: SIMD3<Float>
-  private let homeYaw: Float
-  private var mood = "calm"
-  private var lastSeq = -1
-  private var spokeAt: TimeInterval = -100
-  private var text = ""
-  private var outcome = "said"
-  private var nextBlink: TimeInterval = 2
   private let phase: Float
   private let nametag: Nametag
-  private var thinking = false
   private var dots: [SCNNode] = []
   private let dotMat = SCNMaterial()
   private var halo: SCNNode!
-    private var shells: [SCNMaterial] = []
+  private var shells: [SCNMaterial] = []
   private var rimBase: Float = 0.55
-  private var nextGlance: TimeInterval = 3
-  private var glanceTo: Float = 0
-  private var glance: Float = 0
-  private var lean: Float = 0
-  private var eyeX: Float = 0.05
   private var shadowNode: SCNNode!
+  private var cueHalo: SCNNode?
+  private var arm: SCNNode?
+  private var bit: SCNNode?
   private static let shadowMat = Tex.decalMaterial(Tex.discShadow())
   /// Fresnel rim in the agent colour: one surface shader modifier on the shell, no extra geometry or lights.
   private static let rimShader = """
@@ -54,26 +45,62 @@ final class Robot {
   float f = pow(1.0 - saturate(dot(normalize(_surface.normal), normalize(_surface.view))), 2.6);
   _surface.emission.rgb += rimColor * (f * rimK);
   """
-  /// Reticle is on this robot (set by the scene): the nametag offers "tap to ask".
-  var hovered = false
-  /// Speech bubble: lives in the scene root (not under the robot) so the robot's yaw does not turn it.
-  let bubble = SpeechBubble()
-  private var bubbleVisible = false
-  private var bubbleTailLeft: Bool?
-  private var shownText = ""
-  private var tagY: Float = 0.62
-  private var bubbleOffset = SIMD3<Float>(0, 0.2, 0)
 
-  init(role: String, name: String, color: PlatformColor, at pos: SCNVector3, faceYaw: Float) {
-    self.role = role
+  // ---- puppet inputs (set by Crew every frame)
+  /// Reticle is on this robot: the nametag offers "tap to ask".
+  var hovered = false
+  /// What it is doing: plants | panel | crates | bench | console | rock | lander | judge | idle.
+  var task = "idle"
+  /// World point to look at; nil = face the work (`homeYaw`).
+  var lookPoint: SIMD3<Float>?
+  var homeYaw: Float = 0
+  /// Where it floats (the robot glides there).
+  var target: SIMD3<Float>
+  /// Glides at most this fast (m/s).
+  var maxSpeed: Float = 1.6
+  var speaking = false
+  var cueOn = false
+  var thinking = false
+  /// Nametag size multiplier (outdoors the judge is metres away).
+  var tagScale: Float = 1
+  /// Science only: the grinding arm is out.
+  var armOut = false
+  var mood = "calm"
+  /// 0...1, fades in and out when the robot changes place.
+  var alpha: Float = 1 { didSet { if alpha != oldValue { applyAlpha() } } }
+
+  // ---- state
+  private(set) var pos: SIMD3<Float>
+  private var yaw: Float
+  private var shownMood = ""
+  private var wasThinking = false
+  private var nextBlink: TimeInterval = 2
+  private var nextGlance: TimeInterval = 3
+  private var glanceTo: Float = 0
+  private var glance: Float = 0
+  private var lean: Float = 0
+  private var eyeX: Float = 0.05
+  private var tagY: Float = 0.62
+  private var lastNow: TimeInterval = 0
+  private var speakingSince: TimeInterval = 0
+  private var wasSpeaking = false
+  private var pitch: Float = 0
+  /// Legacy (unused by the crew): kept so old call sites compile.
+  let bubble = SpeechBubble()
+
+  init(role legacyRole: String, name: String, color: PlatformColor, at start: SCNVector3, faceYaw: Float) {
+    let id = CrewIDs.id(forRole: legacyRole)
+    role = id
     self.name = name
     self.color = color
     tone = Robot.muted(color)
-    home = SIMD3<Float>(pos)
+    pos = SIMD3<Float>(start)
+    target = pos
+    yaw = faceYaw
     homeYaw = faceYaw
-    phase = Float(abs(role.hashValue % 100)) / 100 * 6.28
-    nametag = Nametag(name: name, role: role, color: color)
-    node.position = pos
+    phase = Float(abs(id.hashValue % 100)) / 100 * 6.28
+    nametag = Nametag(name: name, role: id, color: color)
+    node.position = start
     node.simdEulerAngles.y = faceYaw
     node.addChildNode(body)
     buildBody()
@@ -97,7 +124,11 @@ final class Robot {
     shadowNode.position = SCNVector3(0, -0.40, 0)
     shadowNode.renderingOrder = 41
     node.addChildNode(shadowNode)
-    setMood("calm", force: true)
+    applyMood("calm", force: true)
+  }
+
+  convenience init(id: String, at start: SIMD3<Float>) {
+    self.init(role: id, name: CrewIDs.name(id), color: CrewIDs.color(id), at: SCNVector3(start), faceYaw: 0)
   }
 
   static func muted(_ c: PlatformColor) -> PlatformColor {
@@ -107,13 +138,15 @@ final class Robot {
     return PlatformColor(red: (r + (l - r) * k) * 1.0, green: (g + (l - g) * k) * 0.985, blue: (b + (l - b) * k) * 0.94, alpha: 1)
   }
 
+  // ---------------------------------------------------------------- build
+
   private func shell() -> SCNMaterial {
     let m = SCNMaterial()
     m.lightingModel = .blinn
     m.shaderModifiers = [.surface: Robot.rimShader]
     setRim(m, color: tone, k: rimBase)
     shells.append(m)
-    // Shell lightly tinted toward the role colour so each robot reads at a glance.
+    // Shell lightly tinted toward the agent colour so each robot reads at a glance.
     let (r, g, b, _) = tone.rgba()
     m.diffuse.contents = PlatformColor(red: 0.80 + 0.18 * r, green: 0.80 + 0.18 * g, blue: 0.80 + 0.18 * b, alpha: 1)
     m.specular.contents = PlatformColor(white: 0.35, alpha: 1)  // satin: broad, soft highlight
@@ -149,7 +182,7 @@ final class Robot {
     let s = shell()
     let a = accent()
     switch role {
-    case "requester": // Engineer: rounded cube with an antenna
+    case "engineer": // rounded cube with an antenna and a tool-ear
       let b = SCNNode(geometry: SCNBox(width: 0.36, height: 0.34, length: 0.32, chamferRadius: 0.09))
       b.geometry?.materials = [s]
       body.addChildNode(b)
@@ -165,7 +198,7 @@ final class Robot {
       ear.geometry?.materials = [a]
       ear.position = SCNVector3(-0.2, 0, 0)
       body.addChildNode(ear)
-    case "receiver": // Cargo: wide capsule with a cargo-bay belt
+    case "supply": // wide capsule with a cargo-bay belt and pods
       let b = SCNNode(geometry: SCNCapsule(capRadius: 0.16, height: 0.52))
       b.geometry?.materials = [s]
       b.eulerAngles.z = .pi / 2
@@ -180,24 +213,64 @@ final class Robot {
         pod.position = SCNVector3(x, 0, 0)
         body.addChildNode(pod)
       }
-    case "ap": // Bills: tall slim pill with a scanner visor
-      let b = SCNNode(geometry: SCNCapsule(capRadius: 0.13, height: 0.5))
+    case "life": // droplet: round body, pointed top, a leaf-green accent ring
+      let b = SCNNode(geometry: SCNSphere(radius: 0.19))
       b.geometry?.materials = [s]
+      b.position = SCNVector3(0, -0.04, 0)
       body.addChildNode(b)
-      let band = SCNNode(geometry: SCNTorus(ringRadius: 0.132, pipeRadius: 0.012))
+      let tip = SCNNode(geometry: SCNCone(topRadius: 0.0, bottomRadius: 0.135, height: 0.26))
+      tip.geometry?.materials = [s]
+      tip.position = SCNVector3(0, 0.2, 0)
+      body.addChildNode(tip)
+      let band = SCNNode(geometry: SCNTorus(ringRadius: 0.19, pipeRadius: 0.012))
       band.geometry?.materials = [a]
       band.position = SCNVector3(0, -0.12, 0)
       body.addChildNode(band)
-    case "treasury": // Money: a coin on edge with a rim
-      let b = SCNNode(geometry: SCNCylinder(radius: 0.21, height: 0.09))
+    case "science": // squat dome with a tilted eyepiece and a folding sampling arm
+      let b = SCNNode(geometry: SCNCylinder(radius: 0.2, height: 0.26))
       b.geometry?.materials = [s]
-      b.eulerAngles.x = .pi / 2
       body.addChildNode(b)
-      let rim = SCNNode(geometry: SCNTorus(ringRadius: 0.21, pipeRadius: 0.022))
-      rim.geometry?.materials = [a]
-      rim.eulerAngles.x = .pi / 2
-      body.addChildNode(rim)
-    default: // controller, Rules: hexagonal prism with a crown band
+      let dome = SCNNode(geometry: SCNSphere(radius: 0.2))
+      dome.geometry?.materials = [s]
+      dome.scale = SCNVector3(1, 0.5, 1)
+      dome.position = SCNVector3(0, 0.13, 0)
+      body.addChildNode(dome)
+      let tube = SCNNode(geometry: SCNCylinder(radius: 0.035, height: 0.22))
+      tube.geometry?.materials = [a]
+      tube.position = SCNVector3(-0.04, 0.3, 0.02)
+      tube.eulerAngles.z = 0.35
+      body.addChildNode(tube)
+      let lens = SCNNode(geometry: SCNCylinder(radius: 0.05, height: 0.03))
+      lens.geometry?.materials = [a]
+      lens.position = SCNVector3(-0.085, 0.41, 0.02)
+      lens.eulerAngles.z = 0.35
+      body.addChildNode(lens)
+      let band = SCNNode(geometry: SCNTorus(ringRadius: 0.203, pipeRadius: 0.014))
+      band.geometry?.materials = [a]
+      band.position = SCNVector3(0, -0.1, 0)
+      body.addChildNode(band)
+      // The arm: folded against the right flank; Crew swings it out when grinding.
+      let sh = SCNNode()
+      sh.position = SCNVector3(0.22, -0.02, 0.04)
+      let upper = SCNNode(geometry: SCNCylinder(radius: 0.022, height: 0.42))
+      upper.geometry?.materials = [metal()]
+      upper.position = SCNVector3(0, -0.21, 0)
+      sh.addChildNode(upper)
+      let joint = SCNNode(geometry: SCNSphere(radius: 0.04))
+      joint.geometry?.materials = [a]
+      sh.addChildNode(joint)
+      let head = SCNNode(geometry: SCNBox(width: 0.07, height: 0.05, length: 0.07, chamferRadius: 0.012))
+      head.geometry?.materials = [a]
+      head.position = SCNVector3(0, -0.43, 0)
+      sh.addChildNode(head)
+      let b2 = SCNNode(geometry: SCNCylinder(radius: 0.06, height: 0.014))
+      b2.geometry?.materials = [metal()]
+      b2.position = SCNVector3(0, -0.47, 0)
+      sh.addChildNode(b2)
+      body.addChildNode(sh)
+      arm = sh
+      bit = b2
+    default: // rules: hexagonal prism with a crown band
       let hex = SCNCylinder(radius: 0.2, height: 0.42)
       hex.radialSegmentCount = 6
       let b = SCNNode(geometry: hex)
@@ -211,7 +284,7 @@ final class Robot {
       body.addChildNode(c)
     }
     // Brushed-metal emitter collar under the shell, where the halo hangs from.
-    let low: Float = ["requester": -0.17, "receiver": -0.16, "ap": -0.26, "treasury": -0.21][role] ?? -0.21
+    let low: Float = ["engineer": -0.17, "supply": -0.16, "life": -0.25, "science": -0.13][role] ?? -0.21
     let collar = SCNNode(geometry: SCNCylinder(radius: 0.055, height: 0.035))
     collar.geometry?.materials = [metal()]
     collar.position = SCNVector3(0, low, 0)
@@ -231,13 +304,13 @@ final class Robot {
     face.geometry = plate
     let z: Float
     switch role {
-    case "receiver": z = 0.165
-    case "treasury": z = 0.05
-    case "ap": z = 0.135
-    case "requester": z = 0.165
+    case "supply": z = 0.165
+    case "life": z = 0.205
+    case "science": z = 0.205
+    case "engineer": z = 0.165
     default: z = 0.18
     }
-    face.position = SCNVector3(0, role == "ap" ? 0.08 : 0.02, z)
+    face.position = SCNVector3(0, role == "life" ? 0.0 : 0.02, z)
     body.addChildNode(face)
     // Glass: a faint diagonal specular streak over the plate (additive, no light needed).
     let glassMat = SCNMaterial()
@@ -252,14 +325,14 @@ final class Robot {
     face.addChildNode(streak)
     eyeMat.lightingModel = .constant
     eyeMat.diffuse.contents = PlatformColor.white
-    // One eye shape per robot: round, oval, slit, rounded square, visor.
+    // One eye shape per robot: round, tall oval, soft oval, rounded square, visor.
     let (ew, eh, er, ex): (CGFloat, CGFloat, CGFloat, Float)
     switch role {
-    case "requester": (ew, eh, er, ex) = (0.056, 0.056, 0.028, 0.05)     // round
-    case "receiver": (ew, eh, er, ex) = (0.040, 0.074, 0.020, 0.05)      // tall oval
-    case "ap": (ew, eh, er, ex) = (0.072, 0.022, 0.011, 0.055)           // slit
-    case "treasury": (ew, eh, er, ex) = (0.054, 0.054, 0.013, 0.05)      // rounded square
-    default: (ew, eh, er, ex) = (0.084, 0.034, 0.016, 0.0415)            // visor: two wide halves that meet
+    case "engineer": (ew, eh, er, ex) = (0.056, 0.056, 0.028, 0.05)
+    case "supply": (ew, eh, er, ex) = (0.040, 0.074, 0.020, 0.05)
+    case "life": (ew, eh, er, ex) = (0.064, 0.046, 0.023, 0.05)
+    case "science": (ew, eh, er, ex) = (0.054, 0.054, 0.013, 0.05)
+    default: (ew, eh, er, ex) = (0.084, 0.034, 0.016, 0.0415)
     }
     eyeX = ex
     for (e, x) in [(eyeL, -ex), (eyeR, ex)] {
@@ -283,33 +356,36 @@ final class Robot {
     }
   }
 
+  // ---------------------------------------------------------------- state
+
   private func setThinking(_ on: Bool) {
-    thinking = on
+    wasThinking = on
     eyeL.isHidden = on
     eyeR.isHidden = on
     for d in dots { d.isHidden = !on }
     if !on {
       halo.scale = SCNVector3(1, 1, 1)
-      setMood(mood, force: true)
+      applyMood(shownMood, force: true)
     }
   }
 
-  func setMood(_ m: String, force: Bool = false) {
-    guard force || m != mood else { return }
-    mood = m
+  /// calm | attentive | worried | suspicious (alarmed: red, eyes narrowed) | happy.
+  private func applyMood(_ m: String, force: Bool = false) {
+    guard force || m != shownMood else { return }
+    shownMood = m
     SCNTransaction.begin()
     SCNTransaction.animationDuration = 0.25
     var eyeColor = PlatformColor.white
     var sy: Float = 1, rotL: Float = 0, rotR: Float = 0, dy: Float = 0
     var faceGlow = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
-    var halo = tone.withAlphaComponent(0.55)
+    var haloC = tone.withAlphaComponent(0.55)
     var rimC = tone
     switch m {
     case "worried":
       eyeColor = PlatformColor(red: 1.0, green: 0.82, blue: 0.55, alpha: 1); sy = 0.85; rotL = -0.35; rotR = 0.35; dy = 0.006
     case "suspicious":
       eyeColor = PlatformColor(red: 1.0, green: 0.30, blue: 0.25, alpha: 1); sy = 0.32; rotL = 0.18; rotR = -0.18
-      faceGlow = PlatformColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); halo = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.8); rimC = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1)
+      faceGlow = PlatformColor(red: 0.22, green: 0.02, blue: 0.02, alpha: 1); haloC = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 0.8); rimC = PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1)
     case "attentive":
       eyeColor = PlatformColor(red: 0.75, green: 0.95, blue: 1.0, alpha: 1); sy = 1.18
     case "happy":
@@ -319,7 +395,7 @@ final class Robot {
     }
     eyeMat.diffuse.contents = eyeColor
     faceMat.diffuse.contents = faceGlow
-    haloMat.diffuse.contents = halo
+    haloMat.diffuse.contents = haloC
     for m in shells { setRim(m, color: rimC, k: rimBase) }
     eyeL.scale = SCNVector3(1, sy, 1)
     eyeR.scale = SCNVector3(1, sy, 1)
@@ -330,71 +406,29 @@ final class Robot {
     SCNTransaction.commit()
   }
 
-  /// Speaking window: the same 9 s the robot turns to the user for.
-  func isSpeaking(now: TimeInterval) -> Bool { now - spokeAt < 9 && !text.isEmpty }
-  /// Where the robot hovers, in scene coordinates.
+  private func applyAlpha() {
+    node.isHidden = alpha <= 0.01
+    node.opacity = CGFloat(min(1, alpha))
+  }
+
+  /// Where the robot hovers now (render position), for the gaze test and the bubble.
   var worldPosition: SIMD3<Float> { node.simdPosition }
+  /// Above the shell: the nametag.
+  var tagPosition: SIMD3<Float> { node.simdPosition + SIMD3(0, tagY * tagScale, 0) }
+  /// True while it can be seen and gazed at.
+  var isVisible: Bool { alpha > 0.5 && !node.isHidden }
 
-  func hear(text: String, mood: String, outcome: String, seq: Int, now: TimeInterval) {
-    guard seq != lastSeq else { return }
-    lastSeq = seq
-    self.text = text
-    self.outcome = outcome
-    spokeAt = now
-    setMood(outcome == "deny" ? "attentive" : mood)
-    haloMat.diffuse.contents = (mood == "suspicious" ? PlatformColor(red: 1, green: 0.2, blue: 0.15, alpha: 1) : tone).withAlphaComponent(0.9)
-    body.runAction(.sequence([.moveBy(x: 0, y: 0.06, z: 0, duration: 0.12), .moveBy(x: 0, y: -0.06, z: 0, duration: 0.2)]))
-  }
+  /// Teleport (only while invisible).
+  func snap(to p: SIMD3<Float>) { pos = p; target = p; node.simdPosition = p }
 
-  /// The bubble floats beside the robot, toward the middle of the room so it stays in view,
-  /// turned to face the viewer, with its tail pointing back at the robot.
-  private func updateBubble(now: TimeInterval, user: SIMD3<Float>, speaking: Bool) {
-    if speaking != bubbleVisible {
-      bubbleVisible = speaking
-      bubble.node.removeAllActions()
-      if speaking {
-        bubble.node.isHidden = false
-        bubble.node.runAction(.fadeIn(duration: 0.2))
-      } else {
-        bubble.node.runAction(.sequence([.fadeOut(duration: 0.4), .hide()]))
-      }
-    }
-    guard speaking else { return }
-    let p = node.simdPosition
-    var radial = SIMD3(p.x - user.x, 0, p.z - user.z)
-    radial = simd_length(radial) > 0.01 ? simd_normalize(radial) : SIMD3(0, 0, -1)
-    let right = SIMD3<Float>(-radial.z, 0, radial.x)
-    let bubbleToRight = p.x < 0 // robots on the left put the bubble to their right, and vice versa
-    let side: Float = bubbleToRight ? 1 : -1
-    let w = Float(SpeechBubble.w)
-    let base = p + right * side * (w / 2 + 0.28) - radial * 0.15
-    // Keep clear of the wall screens (as seen from the commander): try raising, lowering or pushing outward.
-    var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity
-    search: for dx in [Float(0), 0.35, 0.7] {
-      for dy in [Float(0.2), 0.5, 0.8, -0.55, -0.85] {
-        let off = right * side * dx + SIMD3(0, dy, 0)
-        let a = ScreenRects.overlap(center: base + off, w: w, h: Float(SpeechBubble.h), user: user)
-        if a < bestArea { bestArea = a; best = SIMD3(dx, dy, 0) }
-        if a == 0 { break search }
-      }
-    }
-    let target = right * side * best.x + SIMD3(0, best.y, 0)
-    bubbleOffset += (target - bubbleOffset) * 0.12
-    let c = base + bubbleOffset
-    bubble.node.simdPosition = c
-    let toUser = user - c
-    bubble.node.simdEulerAngles = SIMD3(0, atan2(toUser.x, toUser.z), 0)
-    let tailLeft = bubbleToRight
-    if bubbleTailLeft != tailLeft || shownText != text {
-      bubbleTailLeft = tailLeft
-      shownText = text
-      bubble.set(text: text, name: name, color: color, deny: outcome == "deny", tailLeft: tailLeft, key: "\(text)|\(outcome)")
-    }
-  }
+  // ---------------------------------------------------------------- per frame
 
-  func update(now: TimeInterval, user: SIMD3<Float>, needsCommander: Bool, bubbleWanted: Bool = true, thinking think: Bool = false) {
+  func update(now: TimeInterval, user: SIMD3<Float>) {
+    let dt = Float(min(0.1, max(0.001, now - lastNow)))
+    lastNow = now
+    guard !node.isHidden else { return }
     let t = Float(now)
-    if think != thinking { setThinking(think) }
+    if thinking != wasThinking { setThinking(thinking) }
     if thinking {
       // Slow pulse of the halo (size and brightness) and a travelling dot on the face.
       let k = 0.5 + 0.5 * sin(t * 2.4)
@@ -407,53 +441,109 @@ final class Robot {
       }
     }
     nametag.setSuffix(thinking ? " · thinking…" : hovered ? " · tap to ask" : "")
-    node.simdPosition = SIMD3(home.x, home.y + 0.035 * sin(t * 1.3 + phase), home.z)
-    // Turn toward the user while speaking or when a decision is waiting; otherwise face the work.
-    let speaking = now - spokeAt < 9
-    let toUser = user - node.simdPosition
-    let yawUser = atan2(toUser.x, toUser.z)
-    let target = speaking || needsCommander ? yawUser : homeYaw
-    var dyaw = target - node.simdEulerAngles.y
+    nametag.setActive(speaking)
+    applyMood(mood)
+    if speaking && !wasSpeaking { speakingSince = now }
+    wasSpeaking = speaking
+
+    // Glide toward the target (exponential approach, speed-capped).
+    let d = target - pos
+    let dist = simd_length(d)
+    if dist > 0.001 {
+      let step = min(dist, max(dist * (1 - exp(-dt * 2.2)), 0), maxSpeed * dt)
+      pos += d / dist * step
+    }
+    // Job motion: gentle, task-shaped.
+    var off = SIMD3<Float>(0, 0.035 * sin(t * 1.3 + phase), 0)
+    var jobYaw: Float = 0, jobPitch: Float = 0
+    let r = SIMD3<Float>(cos(homeYaw), 0, -sin(homeYaw))
+    if !speaking {
+      switch task {
+      case "plants": off += r * (0.10 * sin(t * 0.5 + phase)); jobYaw = 0.12 * sin(t * 0.5 + phase); jobPitch = 0.16 + 0.05 * sin(t * 0.9)
+      case "panel": off += r * (0.16 * sin(t * 0.4 + phase)); jobPitch = 0.07 * sin(t * 1.4)
+      case "crates": off += r * (0.28 * sin(t * 0.33 + phase)); jobYaw = 0.35 * sin(t * 0.33 + phase + 1.2)
+      case "bench": jobPitch = 0.10 + 0.05 * sin(t * 1.1); jobYaw = 0.1 * sin(t * 0.4)
+      case "console": jobYaw = 0.30 * sin(t * 0.42 + phase)
+      case "rock": jobPitch = 0.25
+      case "lander": jobYaw = 0.45 * sin(t * 0.5 + phase)
+      default: break
+      }
+    }
+    // Arm: out and grinding, or folded.
+    if let arm {
+      let want: Float = armOut ? -1.0 : 0
+      var cur = arm.simdEulerAngles.x
+      cur += (want - cur) * (1 - exp(-dt * 3))
+      arm.simdEulerAngles.x = cur
+      if armOut {
+        arm.simdEulerAngles.x += 0.05 * sin(t * 9)
+        bit?.simdEulerAngles.y += dt * 24
+        off += SIMD3(0.004 * sin(t * 47), 0.004 * sin(t * 53), 0)
+      }
+    }
+    // Facing: toward what it looks at, else its work.
+    var wantYaw = homeYaw + jobYaw
+    var wantPitch = jobPitch
+    if let lp = lookPoint {
+      let v = lp - pos
+      let h = hypot(v.x, v.z)
+      if h > 0.05 {
+        wantYaw = atan2(v.x, v.z)
+        wantPitch = -max(-0.45, min(0.45, atan2(v.y, h))) * 0.7
+      }
+    }
+    var dyaw = wantYaw - yaw
     while dyaw > .pi { dyaw -= 2 * .pi }
     while dyaw < -.pi { dyaw += 2 * .pi }
-    node.simdEulerAngles.y += dyaw * 0.08
-    updateBubble(now: now, user: user, speaking: speaking && !text.isEmpty && bubbleWanted)
+    yaw += dyaw * (1 - exp(-dt * (speaking ? 6 : 3.6)))
+    node.simdEulerAngles.y = yaw
+    node.simdPosition = pos + off
+    pitch += (wantPitch - pitch) * (1 - exp(-dt * 5))
+    lean += ((speaking ? 1 : 0) - lean) * (1 - exp(-dt * 4))
+    body.simdEulerAngles.x = pitch + 0.08 * lean
     // Nametag billboard: always faces the viewer, upright (the parent yaw is undone).
-    nametag.node.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
-    // Keep the tag off the wall screens: try above, higher, then below the robot; fade to 40% if nothing clears.
+    let toUser = user - node.simdPosition
+    let yawUser = atan2(toUser.x, toUser.z)
+    nametag.node.simdEulerAngles.y = yawUser - yaw
     var tagTarget: Float = 0.62, tagFade: CGFloat = 1, bestArea = Float.infinity
     let np = node.simdPosition
     for ty in [Float(0.62), 0.8, 1.0, -0.55, -0.75] {
-      let a = ScreenRects.overlap(center: np + SIMD3(0, ty, 0), w: 1.12, h: 0.17, user: user)
+      let a = ScreenRects.overlap(center: np + SIMD3(0, ty * tagScale, 0), w: 1.12 * tagScale, h: 0.17 * tagScale, user: user)
       if a < bestArea { bestArea = a; tagTarget = ty }
       if a == 0 { break }
     }
     if bestArea > 0 { tagFade = 0.4 }
     tagY += (tagTarget - tagY) * 0.12
-    nametag.node.simdPosition = SIMD3(0, tagY, 0)
+    nametag.node.simdPosition = SIMD3(0, tagY * tagScale, 0)
+    let pulseTag: Float = speaking ? 1 + 0.07 * sin(Float(now - speakingSince) * 7) : 1
+    let ts = tagScale * pulseTag
+    nametag.node.simdScale = SIMD3(repeating: ts)
     nametag.node.opacity += (tagFade - nametag.node.opacity) * 0.15
-    if !speaking && spokeAt > 0 && now - spokeAt < 9.2 && mood != "suspicious" { setMood(needsCommander ? "attentive" : "calm") }
-    // Lean toward the commander and brighten the rim while speaking; pulse when the action went through.
-    let dt = Float(now - spokeAt)
-    lean += ((speaking && !text.isEmpty ? 1 : 0) - lean) * 0.06
-    body.simdEulerAngles.x = 0.1 * lean
-    var pulse: Float = 0
-    if outcome == "allow" { pulse = 0.9 * max(0, 1 - dt / 1.5) * (0.5 + 0.5 * sin(dt * 7 - 1.57)) }
-    else if outcome == "deny" { pulse = 0.35 * max(0, 1 - dt / 2.8) * (0.5 + 0.5 * sin(dt * 3.2 - 1.57)) }
-    let boost = 0.7 * max(0, 1 - dt / 1.2) + 0.25 * lean
-    let rim = rimBase + boost + pulse
-    for m in shells { m.setValue(NSNumber(value: rim), forKey: "rimK") }
+
+    // Rim: bright while speaking (with a decaying burst at the start), plus the cue halo.
+    let since = Float(now - speakingSince)
+    let burst = speaking ? 0.7 * max(0, 1 - since / 1.2) : 0
+    let rimK = rimBase + burst + 0.35 * lean + (cueOn ? 0.5 + 0.4 * sin(t * 4.5) : 0)
+    for m in shells { m.setValue(NSNumber(value: rimK), forKey: "rimK") }
     if !thinking {
-      let hs = 1 + 0.25 * pulse
+      let hs = 1 + (speaking ? 0.12 + 0.08 * sin(since * 6) : 0) + (cueOn ? 0.15 * (0.5 + 0.5 * sin(t * 4.5)) : 0)
       halo.scale = SCNVector3(hs, hs, hs)
     }
-    // Eyes glance: toward the commander (or the speaker's side) when engaged, otherwise drift now and then.
+    updateCueHalo(t: t, yawUser: yawUser)
+
+    // Eyes glance: toward the target when engaged, otherwise drift now and then.
     if now > nextGlance {
       nextGlance = now + Double.random(in: 1.5...4.5)
       glanceTo = Float.random(in: 0...1) < 0.4 ? 0 : Float.random(in: -1...1)
     }
     var gx = glanceTo
-    if speaking || needsCommander { gx = max(-1, min(1, sin(yawUser - node.simdEulerAngles.y) * 3)) }
+    if let lp = lookPoint {
+      let v = lp - pos
+      var rel = atan2(v.x, v.z) - yaw
+      while rel > .pi { rel -= 2 * .pi }
+      while rel < -.pi { rel += 2 * .pi }
+      gx = max(-1, min(1, sin(rel) * 3))
+    }
     glance += (gx - glance) * 0.15
     eyeL.simdPosition.x = -eyeX + 0.012 * glance
     eyeR.simdPosition.x = eyeX + 0.012 * glance
@@ -465,37 +555,44 @@ final class Robot {
       eyeR.runAction(blink)
     }
   }
-}
 
-enum RobotCrew {
-  /// The colour of the agent with this display name (e.g. "Rules"; the pre-rename names still resolve for old tapes); nil for an unknown name.
-  static func color(forAgent name: String) -> PlatformColor? {
-    let legacy = ["cargo keeper": "receiver", "bill checker": "ap", "money keeper": "treasury", "rule keeper": "controller"]
-    if let r = legacy[name.lowercased()] { return Palette.role(r) }
-    return layout.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }.map { Palette.role($0.role) }
+  /// A big pulsing glow behind the robot: the one obvious thing to look at.
+  private func updateCueHalo(t: Float, yawUser: Float) {
+    if cueOn && cueHalo == nil {
+      let n = SCNNode(geometry: SCNPlane(width: 1.5, height: 1.5))
+      n.geometry?.materials = [Tex.glowMaterial(tone, strength: 1)]
+      n.renderingOrder = 60
+      n.position = SCNVector3(0, 0, -0.1)
+      node.addChildNode(n)
+      cueHalo = n
+    }
+    guard let h = cueHalo else { return }
+    h.isHidden = !cueOn
+    guard cueOn else { return }
+    let k = 0.5 + 0.5 * sin(t * 4.5)
+    let s = tagScale > 1.5 ? tagScale * 0.9 : 1
+    h.simdScale = SIMD3(repeating: (1.0 + 0.3 * k) * s)
+    h.opacity = CGFloat(0.55 + 0.45 * k)
+    h.simdEulerAngles.y = yawUser - node.simdEulerAngles.y
   }
 
-  /// Angle (deg, 0 = straight ahead), distance and height for each role.
-  static let layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] = [
-    ("requester", "Engineer", -48, 2.45, 1.38),
-    ("receiver", "Cargo", -27, 2.75, 1.02),
-    ("controller", "Rules", 16, 2.45, 2.12),
-    ("ap", "Bills", 31, 2.75, 1.10),
-    ("treasury", "Money", 50, 2.45, 1.38),
-  ]
+}
 
-  static func build(into root: SCNNode) -> [String: Robot] {
-    var out: [String: Robot] = [:]
-    for l in layout {
-      let pos = Room.ring(l.deg, r: l.r, y: l.y)
-      // Face slightly outward toward the window/screens when idle.
-      // Idle: turned ~40 degrees toward its work; it turns to the user when it speaks.
-      let yaw = atan2(Float(-pos.x), Float(-pos.z)) + (l.deg == 0 ? 0 : (l.deg > 0 ? 0.7 : -0.7))
-      let r = Robot(role: l.role, name: l.name, color: Palette.role(l.role), at: pos, faceYaw: yaw)
-      root.addChildNode(r.node)
-      root.addChildNode(r.bubble.node)
-      out[l.role] = r
+/// Names and colours of the legacy agents, kept for the decision cards ("proposed by Rules") and old tapes.
+enum RobotCrew {
+  /// The colour of the agent with this display name (the crew names, and the pre-rename names for old tapes); nil for an unknown name.
+  static func color(forAgent name: String) -> PlatformColor? {
+    let legacy = ["cargo keeper": "supply", "bill checker": "supply", "money keeper": "supply", "rule keeper": "rules",
+                  "cargo": "supply", "bills": "supply", "money": "supply"]
+    if let r = legacy[name.lowercased()] { return CrewIDs.color(r) }
+    return CrewIDs.all.first { CrewIDs.name($0).caseInsensitiveCompare(name) == .orderedSame }.map { CrewIDs.color($0) }
+  }
+
+  /// Compatibility for the spectator overlay: the crew ids with their names (angle/radius/height are the inside anchors).
+  static var layout: [(role: String, name: String, deg: Float, r: Float, y: Float)] {
+    CrewIDs.all.map { id in
+      let m = CrewMarks.inside(id)
+      return (id, CrewIDs.name(id), m.deg, m.r, m.y)
     }
-    return out
   }
 }

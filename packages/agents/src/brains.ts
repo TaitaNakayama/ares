@@ -22,11 +22,17 @@ export interface BrainContext {
   self: Actor;
   fmtTime: (t: Time) => string;
   itemName: (sku: string) => string;
+  /** The world's domain tools for this actor (power, life support, the lab), when it has any. */
+  worldTools?: { name: string; description: string; parameters: Record<string, unknown> }[];
+  /** Read-only world state for prompts (power level, reserves, the lab). */
+  worldState?: Record<string, unknown>;
 }
 
 export interface Brain {
   readonly role: AgentRole;
   readonly kind: "rules" | "llm";
+  /** The engine actor this brain speaks for, when a role has several (Engineer, Life and Science are all requesters). */
+  readonly actorId?: string;
   react(input: AgentInput, ctx: BrainContext): Promise<Intent[]> | Intent[];
 }
 
@@ -45,8 +51,8 @@ export class RequesterRules implements Brain {
         type: "create_requisition",
         params: { sku: n.sku, qty: n.qty, orderBy: n.orderBy, reason: n.reason, context: n.context },
         rationale: n.reason,
-        say: `${n.reason} Requesting ${n.qty} ${ctx.itemName(n.sku)}.`,
-        short: n.short ?? `Need ${n.qty} ${ctx.itemName(n.sku)}.`,
+        say: `Requesting ${n.qty} ${plainName(ctx.itemName(n.sku))}.`,
+        short: `Requesting ${n.qty} ${plainName(ctx.itemName(n.sku))}.`,
         mood: "worried",
       },
     ];
@@ -67,13 +73,14 @@ export class ReceiverRules implements Brain {
       return `${good}${ordered !== undefined ? ` of ${ordered}` : ""} ${ctx.itemName(l.sku)}${l.qtyRejected ? ` (${l.qtyRejected} damaged)` : ""}`;
     });
     const short = po ? d.lines.some((l) => l.qtyReceived - l.qtyRejected < (po.lines.find((x) => x.sku === l.sku)?.qty ?? 0)) : false;
+    const missing = po ? d.lines.reduce((n, l) => n + Math.max(0, (po.lines.find((x) => x.sku === l.sku)?.qty ?? 0) - (l.qtyReceived - l.qtyRejected)), 0) : 0;
     return [
       {
         type: "record_receipt",
         params: { poId: d.poId, lines: d.lines, note: d.note, sourceRef: d.docId },
         rationale: `Counted delivery for ${d.poId}`,
-        say: `Delivery counted for ${d.poId}: ${parts.join(", ")}.${short ? " Short delivery." : ""}`,
-        short: `${parts.join(", ")} arrived.${short ? " Short!" : ""}`,
+        say: short ? `${missing} missing from this delivery. Counted the rest.` : "Delivery counted. Everything arrived.",
+        short: short ? `${missing} missing from this delivery. Counted the rest.` : "Delivery counted. Everything arrived.",
         mood: short ? "attentive" : "calm",
       },
     ];
@@ -95,8 +102,8 @@ export class ApRules implements Brain {
             type: "record_quote",
             params: { ...q, sourceRef: doc.id },
             rationale: `Quote document ${doc.id} from ${doc.from}`,
-            say: `Quote from ${e.vendors.get(q.vendorId)?.name ?? doc.from}: ${q.qtyAvailable} ${ctx.itemName(q.sku)} at ${formatCents(q.unitPrice)} each.`,
-            short: `Quote: ${q.qtyAvailable} at ${compact(q.unitPrice)} each from ${e.vendors.get(q.vendorId)?.name ?? doc.from}.`,
+            say: `Quote in from ${e.vendors.get(q.vendorId)?.name ?? doc.from}.`,
+            short: `Quote in from ${e.vendors.get(q.vendorId)?.name ?? doc.from}.`,
           },
         ];
       }
@@ -107,8 +114,8 @@ export class ApRules implements Brain {
             type: "record_invoice",
             params: { ...inv, sourceRef: doc.id },
             rationale: `Invoice document ${doc.id} from ${doc.from}`,
-            say: `Invoice ${inv.vendorInvoiceNo} from ${e.vendors.get(inv.vendorId)?.name ?? doc.from}: ${inv.lines.map((l) => `${l.qty} ${ctx.itemName(l.sku)}`).join(", ")}.`,
-            short: `Invoice in: bills ${inv.lines.map((l) => `${l.qty} ${ctx.itemName(l.sku)}`).join(", ")}.`,
+            say: `Invoice in from ${e.vendors.get(inv.vendorId)?.name ?? doc.from}.`,
+            short: `Invoice in from ${e.vendors.get(inv.vendorId)?.name ?? doc.from}.`,
           },
         ];
       }
@@ -126,7 +133,8 @@ export class ApRules implements Brain {
         price_over_po: "Billed above the order price!",
         duplicate: "This looks like a duplicate!",
       };
-      return [{ type: "__say", params: {}, rationale: "", say: `Flag: ${f.detail}.`, short: shortFlag[f.code] ?? `Flag: ${f.code.replace(/_/g, " ")}`, mood: "suspicious" }];
+      const line = shortFlag[f.code] ?? `Flag: ${f.code.replace(/_/g, " ")}.`;
+      return [{ type: "__say", params: {}, rationale: `Flag: ${f.detail}`, say: line, short: line, mood: "suspicious" }];
     }
     const recorded = ev(input, "invoice_recorded");
     if (recorded) return this.trySubmit(recorded.invoice as Invoice, ctx);
@@ -166,14 +174,14 @@ export class ApRules implements Brain {
     const billed = inv.lines.reduce((s, l) => s + l.qty, 0);
     const paying = m.lines.reduce((s, l) => s + l.payQty, 0);
     const earlier = m.lines.reduce((s, l) => s + l.alreadyBilled, 0);
-    const say =
+    const detail =
       paying < billed
         ? earlier > 0
           ? `Invoice bills ${billed}, but ${earlier} were already paid on earlier invoices. Paying only for the ${paying} received since: ${formatCents(m.payable)}.`
           : `Invoice bills ${billed}, we received ${paying}. Paying only for ${paying}: ${formatCents(m.payable)}.`
         : `Invoice matches order and receipt. Submitting ${formatCents(m.payable)}.`;
-    const short = paying < billed ? `Billed ${billed}, got ${paying}. Paying for ${paying} only.` : `Invoice matches. Submitting ${compact(m.payable)}.`;
-    return [{ type: "submit_invoice", params: { invoiceId: inv.id, amount: m.payable }, rationale: say, say, short, mood: paying < billed ? "attentive" : "calm" }];
+    const say = paying < billed ? (earlier > 0 ? "Some were paid already. Paying only the rest." : `${billed - paying} never arrived. I won't pay for those.`) : "Invoice matches. Sending it for approval.";
+    return [{ type: "submit_invoice", params: { invoiceId: inv.id, amount: m.payable }, rationale: detail, say, short: say, mood: paying < billed ? "attentive" : "calm" }];
   }
 }
 
@@ -193,8 +201,8 @@ export class TreasuryRules implements Brain {
           type: "confirm_funds",
           params: { requisitionId: r.id },
           rationale: `Estimated ${formatCents(est)}`,
-          say: `Affordable: about ${formatCents(est)}, leaving ${after} days of runway. Must be ordered by ${ctx.fmtTime(r.orderBy)}.`,
-          short: `Affordable: ${compact(est)}. Order by ${ctx.fmtTime(r.orderBy)}.`,
+          say: "We can afford it.",
+          short: "We can afford it.",
         },
       ];
     }
@@ -204,18 +212,18 @@ export class TreasuryRules implements Brain {
       const already = [...e.payments.values()].filter((p) => p.invoiceId === inv.id && p.status !== "cancelled").reduce((s, p) => s + p.amount, 0);
       const amount = (inv.approvedAmount ?? 0) - already;
       if (amount <= 0) return [];
-      return [{ type: "schedule_payment", params: { invoiceId: inv.id, amount }, rationale: "Approved invoice", say: `Scheduling ${formatCents(amount)} to the verified account on file.`, short: `Paying ${compact(amount)} to the verified account.` }];
+      return [{ type: "schedule_payment", params: { invoiceId: inv.id, amount }, rationale: "Approved invoice", say: "Paying the verified account on file.", short: "Paying the verified account on file." }];
     }
     const po = ev(input, "po_created");
     if (po) {
       const p = po.po as { id: string; terms: string; total: number };
       if (p.terms !== "prepay") return [];
-      return [{ type: "schedule_payment", params: { poId: p.id, amount: p.total }, rationale: "Prepaid order", say: `Prepayment of ${formatCents(p.total)} scheduled to the verified account.`, short: `Prepaying ${compact(p.total)} to the verified account.` }];
+      return [{ type: "schedule_payment", params: { poId: p.id, amount: p.total }, rationale: "Prepaid order", say: "Prepaying the verified account on file.", short: "Prepaying the verified account on file." }];
     }
     const sched = ev(input, "payment_scheduled");
     if (sched) {
       const p = sched.payment as { id: string; amount: number; vendorId: string };
-      return [{ type: "execute_payment", params: { paymentId: p.id }, rationale: "Scheduled payment due", say: `Paid ${formatCents(p.amount)} to ${e.vendors.get(p.vendorId)?.name}.`, short: `Paid ${compact(p.amount)} to ${e.vendors.get(p.vendorId)?.name}.`, mood: "happy" }];
+      return [{ type: "execute_payment", params: { paymentId: p.id }, rationale: "Scheduled payment due", say: `Paid ${e.vendors.get(p.vendorId)?.name}.`, short: `Paid ${e.vendors.get(p.vendorId)?.name}.`, mood: "happy" }];
     }
     return [];
   }
@@ -232,7 +240,7 @@ export class ControllerRules implements Brain {
     const submitted = ev(input, "invoice_submitted");
     if (submitted) {
       const inv = submitted.invoice as Invoice;
-      return [{ type: "approve_invoice", params: { invoiceId: inv.id }, rationale: "Three-way match passed", say: `Approved invoice ${inv.vendorInvoiceNo}.`, short: "Three-way match passed. Approved." }];
+      return [{ type: "approve_invoice", params: { invoiceId: inv.id }, rationale: "Three-way match passed", say: "Match passed. Invoice approved.", short: "Match passed. Invoice approved." }];
     }
     const held = ev(input, "invoice_held");
     if (held) {
@@ -240,13 +248,13 @@ export class ControllerRules implements Brain {
       const reasons = held.reasons as { rule: string; detail: string }[];
       const priceIssue = reasons.find((r) => r.rule === "match.price_within_tolerance" || r.rule === "contract.price");
       if (priceIssue) {
-        return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: `Billed above agreed price: ${priceIssue.detail}. Request a corrected invoice.` }, rationale: priceIssue.detail, say: `Rejected invoice ${inv.vendorInvoiceNo}: ${priceIssue.detail}.`, mood: "suspicious" }];
+        return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: `Billed above agreed price: ${priceIssue.detail}. Request a corrected invoice.` }, rationale: priceIssue.detail, say: "Rejected. Billed above the agreed price.", short: "Rejected. Billed above the agreed price.", mood: "suspicious" }];
       }
       if (reasons.some((r) => r.rule === "match.po_exists")) {
-        return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: "No matching purchase order." }, rationale: "no PO", say: `Rejected invoice ${inv.vendorInvoiceNo}: no matching purchase order.`, mood: "suspicious" }];
+        return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: "No matching purchase order." }, rationale: "no PO", say: "Rejected. There's no matching order.", short: "Rejected. There's no matching order.", mood: "suspicious" }];
       }
       const bank = reasons.find((r) => r.rule === "vendor.bank_matches_master");
-      if (bank) return [{ type: "__say", params: {}, rationale: "", say: `Holding invoice ${inv.vendorInvoiceNo}: ${bank.detail}. Out-of-band check sent.`, mood: "suspicious" }];
+      if (bank) return [{ type: "__say", params: {}, rationale: "", say: "Holding this bill. Asking Earth about the bank.", short: "Holding this bill. Asking Earth about the bank.", mood: "suspicious" }];
       return [];
     }
     const decision = ev(input, "decision");
@@ -258,7 +266,7 @@ export class ControllerRules implements Brain {
         const invoiceId = (p?.action.params as { invoiceId?: string } | undefined)?.invoiceId;
         const inv = invoiceId ? e.invoices.get(invoiceId) : undefined;
         if (inv && inv.status === "received") {
-          return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: `Duplicate: ${dup.detail}` }, rationale: dup.detail, say: `Duplicate invoice blocked: ${dup.detail}.`, mood: "suspicious" }];
+          return [{ type: "reject_invoice", params: { invoiceId: inv.id, reason: `Duplicate: ${dup.detail}` }, rationale: dup.detail, say: "Duplicate invoice blocked.", short: "Duplicate invoice blocked.", mood: "suspicious" }];
         }
       }
       return [];
@@ -274,8 +282,8 @@ export class ControllerRules implements Brain {
             type: "hold_vendor",
             params: { vendorId: v.vendorId, reason: "Bank-change request was fraudulent (impersonation). Vendor record locked pending re-verification." },
             rationale: v.answer,
-            say: `Verification failed: the bank change was fake. ${vendor?.name} locked. ${formatCents(saved)} saved.`,
-            short: `Fake bank change! Supplier locked. ${compact(saved)} saved.`,
+            say: "The bank change was fake. Supplier locked.",
+            short: "The bank change was fake. Supplier locked.",
             mood: "suspicious",
           },
         ];
@@ -285,7 +293,7 @@ export class ControllerRules implements Brain {
         const req = q?.requisitionId ? e.requisitions.get(q.requisitionId) : undefined;
         // If a human already holds the decision, the rebuilt escalation options carry it; don't act around them.
         if (q && req && (req.status === "open" || req.status === "escalated") && !e.openEscalationFor({ kind: "requisition", id: req.id })) {
-          return [{ type: "approve_requisition", params: { requisitionId: req.id, quoteId: q.id }, rationale: "Bank change verified", say: `Bank change verified by call-back. Re-checking ${vendor?.name}'s quote.` }];
+          return [{ type: "approve_requisition", params: { requisitionId: req.id, quoteId: q.id }, rationale: "Bank change verified", say: "Bank change verified. Approving the order.", short: "Bank change verified. Approving the order." }];
         }
       }
       return [];
@@ -305,13 +313,13 @@ export class ControllerRules implements Brain {
     const cleanFull = assessed.filter((a) => a.failed.length === 0 && a.q.qtyAvailable >= req.qty).sort((a, b) => a.q.unitPrice - b.q.unitPrice);
     if (cleanFull[0]) {
       const q = cleanFull[0].q;
-      return [{ type: "approve_requisition", params: { requisitionId: req.id, quoteId: q.id }, rationale: "Cheapest clean quote covering the full request", say: `Ordering ${req.qty} from ${e.vendors.get(q.vendorId)?.name} at ${formatCents(q.unitPrice)} each.`, short: `Approved: ${req.qty} from ${e.vendors.get(q.vendorId)?.name}.` }];
+      return [{ type: "approve_requisition", params: { requisitionId: req.id, quoteId: q.id }, rationale: "Cheapest clean quote covering the full request", say: `Ordering from ${e.vendors.get(q.vendorId)?.name}.`, short: `Ordering from ${e.vendors.get(q.vendorId)?.name}.` }];
     }
     const intents: Intent[] = [];
     const problems: string[] = [];
     for (const a of assessed) {
       if (a.failed.some((r) => r.rule === "vendor.bank_matches_master")) {
-        intents.push({ type: "request_verification", params: { vendorId: a.q.vendorId, subject: { kind: "quote", id: a.q.id } }, rationale: "Bank details differ from vendor master", say: `${e.vendors.get(a.q.vendorId)?.name} wants payment to a new bank account. Verification call-back requested.`, short: "Payment blocked. Asking Earth to verify the bank change.", mood: "suspicious" });
+        intents.push({ type: "request_verification", params: { vendorId: a.q.vendorId, subject: { kind: "quote", id: a.q.id } }, rationale: "Bank details differ from vendor master", say: "That's a scam. Payment blocked.", short: "That's a scam. Payment blocked.", mood: "suspicious" });
       }
       if (a.failed.length) problems.push(`${e.vendors.get(a.q.vendorId)?.name}: ${a.failed.map((r) => r.detail).join("; ")}`);
     }
@@ -321,12 +329,17 @@ export class ControllerRules implements Brain {
       type: "escalate",
       params: { subject: { kind: "requisition", id: req.id }, reason: problems.join(" | ") || "No acceptable quote." },
       rationale: problems.join(" | "),
-      say: `I can't approve this order: ${problems.join("; ")}. Escalating.`,
+      say: "I can't approve this. Commander, your call.",
       short: "I can't approve this. Commander, your call.",
       mood: "suspicious",
     });
     return intents;
   }
+}
+
+/** "battery modules (10 kWh)" -> "battery modules": a name to say out loud (no extra numbers). */
+export function plainName(name: string): string {
+  return name.replace(/\s*\([^)]*\)/g, "").trim();
 }
 
 /** "$9,896,697.15" -> "$9.9M": headline money. */

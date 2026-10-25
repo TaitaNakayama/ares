@@ -5,7 +5,8 @@ import simd
 struct VRState: Decodable {
   struct Power: Decodable { var socPct: Double?; var solarKWhPerSol: Double?; var loadKWhPerSol: Double?; var solsLeft: Double?; var drillOn: Bool? }
   struct Payment: Decodable { var id: String; var vendor: String?; var amountText: String? }
-  struct Money: Decodable { var cashText: String?; var runwayDays: Int?; var committedText: String?; var savedText: String?; var payments: [Payment]? }
+  struct Incoming: Decodable { var label: String?; var eta: String? }
+  struct Money: Decodable { var cashText: String?; var runwayDays: Int?; var committedText: String?; var savedText: String?; var payments: [Payment]?; var savedBig: String?; var incoming: Incoming? }
   struct Option: Decodable { var id: String; var label: String; var detail: String?; var proposedBy: String? }
   struct Waiting: Decodable { var id: String; var reason: String?; var decideByText: String?; var options: [Option] }
   struct Earth: Decodable { var id: String; var vendor: String?; var replyEtaText: String?; var replyInMin: Int? }
@@ -14,7 +15,33 @@ struct VRState: Decodable {
   /// The real Perseverance reference the scientist shows (all optional; the app has bundled defaults).
   struct Science: Decodable { var scientist: String?; var instrument: String?; var sol: Double?; var target: String?; var credit: String?; var image: String?; var source: String?; var caption: String? }
   /// Two-part demo: `part` outside/inside, `station` pad/science/solar/door (absent in old tapes = inside).
-  struct SceneInfo: Decodable { var part: String?; var station: String?; var mode: String?; var science: Science? }
+  struct SceneInfo: Decodable {
+    var part: String?; var station: String?; var mode: String?; var science: Science?
+    /// Show contract: title|outside|entering|inside|crisis|decision|consequence|later|resolved|explore.
+    var act: String?
+    var title: Title?
+    /// The one glowing thing to look at: science | door | card | engineer.
+    var cue: String?
+    var closeupOpen: Bool?
+    var reality: Reality?
+  }
+  struct Title: Decodable { var text: String?; var style: String? }
+  struct Reality: Decodable { var offer: Bool?; var caption: String?; var credit: String? }
+  /// One crew member (keyed by id: engineer | life | science | supply | rules).
+  struct Crew: Decodable {
+    var name: String?; var color: String?; var icon: String?
+    var place: String?; var task: String?; var lookAt: String?; var mood: String?
+    var approach: Bool?; var thinking: Bool?
+  }
+  struct Speaking: Decodable { var seq: Int?; var speaker: String?; var to: String?; var text: String?; var holdMs: Int?; var via: String? }
+  struct World: Decodable {
+    struct WPower: Decodable { var socPct: Double?; var level: String?; var panels: Double? }
+    struct WLife: Decodable { var o2Pct: Double?; var waterDays: Double? }
+    var power: WPower?; var life: WLife?; var lab: String?; var drill: String?
+    var tau: Double?; var alarm: Bool?; var dust: Double?
+  }
+  struct DecisionOption: Decodable { var id: String; var label: String?; var icon: String?; var speaker: String?; var proposedBy: String? }
+  struct Decision: Decodable { var id: String?; var options: [DecisionOption]?; var gazed: String?; var chosen: String? }
   var seed: String?
   var policyVersion: Int?
   var beat: Int?
@@ -35,6 +62,10 @@ struct VRState: Decodable {
   var thinking: [String]?
   var agentMode: String?
   var scene: SceneInfo?
+  var crew: [String: Crew]?
+  var speaking: Speaking?
+  var world: World?
+  var decision: Decision?
 }
 
 /// WebSocket link to the Mac. Tries every baked server URL until one answers,
@@ -362,6 +393,20 @@ final class Link: NSObject, @unchecked Sendable {
     guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
     task?.send(.string(s)) { _ in }
   }
+
+  private func sendJSON(_ msg: [String: Any]) {
+    guard let d = try? JSONSerialization.data(withJSONObject: msg), let s = String(data: d, encoding: .utf8) else { return }
+    task?.send(.string(s)) { _ in }
+  }
+
+  /// Tapped a glowing crew cue (`vr_tap`: science | engineer).
+  func tap(target: String) { guard !isReplay else { return }; sendJSON(["type": "vr_tap", "target": target]) }
+  /// Gaze rested on a decision option (nil = left the card).
+  func gazeOption(_ id: String?) { guard !isReplay else { return }; sendJSON(["type": "vr_gaze_option", "optionId": id.map { $0 as Any } ?? NSNull()]) }
+  /// The stereo close-up opened or closed locally.
+  func closeup(open: Bool) { guard !isReplay else { return }; sendJSON(["type": "vr_closeup", "open": open]) }
+  /// The reality check opened or closed locally.
+  func reality(on: Bool) { guard !isReplay else { return }; sendJSON(["type": "vr_reality", "on": on]) }
 
   func decide(escalationId: String, optionId: String) {
     if isReplay {

@@ -1,11 +1,11 @@
 import { Rng, type BankAccount, type Contract, type Item, type PriceObservation, type Vendor } from "@ares/engine";
 
 /**
- * Freight to the Mars surface, $/kg: Falcon Heavy expendable list price US$150M (2017)
- * / 16.8 t to Mars (Wikipedia "Falcon Heavy", accessed 2026-10-23; SpaceX's own sheet 404'd).
- * Landing losses ignored. Everything else here is SIMULATED.
+ * Freight to the Mars surface, $/kg: a planning assumption for a cargo-ship era (SIMULATED).
+ * The 2017 Falcon Heavy expendable list price (US$150M / 16.8 t, about $8,900/kg) made one battery
+ * module cost ~$735k delivered, which no judge believes for emergency batteries. Everything here is SIMULATED.
  */
-export const FREIGHT_USD_PER_KG = 150_000_000 / 16_800;
+export const FREIGHT_USD_PER_KG = 400;
 
 export interface CatalogItem extends Item {
   massKg: number;
@@ -15,7 +15,7 @@ export interface CatalogItem extends Item {
 }
 
 export const CATALOG: CatalogItem[] = [
-  { sku: "BAT-10", name: "battery modules (10 kWh)", unit: "module", massKg: 75, earthUsd: 35_000, category: "power" },
+  { sku: "BAT-10", name: "battery modules (10 kWh)", unit: "module", massKg: 75, earthUsd: 8_000, category: "power" },
   { sku: "FLT-HEPA", name: "air filters", unit: "cartridge", massKg: 2, earthUsd: 400, category: "life" },
   { sku: "WTR-CART", name: "water recycler cartridges", unit: "cartridge", massKg: 6, earthUsd: 1_200, category: "life" },
   // 30 crew-days of food at 1.51 kg/crew-day (NASA BVAD Rev1, Table 3-33).

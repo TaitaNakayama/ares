@@ -58,14 +58,81 @@ enum RoleLabel {
   }
 }
 
-/// "Rules": always-readable label above a robot, in its colour.
+/// Small vector icons for the five crew members, drawn in code (y down). `rect` is the square to draw in.
+enum CrewIcon {
+  static func draw(_ ctx: CGContext, id: String, in rect: CGRect, color: PlatformColor) {
+    let s = min(rect.width, rect.height)
+    ctx.saveGState()
+    ctx.translateBy(x: rect.midX, y: rect.midY)
+    ctx.scaleBy(x: s, y: s)
+    ctx.setFillColor(color.cgColor)
+    ctx.setStrokeColor(color.cgColor)
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
+    func rrect(_ r: CGRect, _ rad: CGFloat) { ctx.addPath(CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil)); ctx.fillPath() }
+    switch id {
+    case "engineer": // wrench
+      ctx.rotate(by: -.pi / 4)
+      rrect(CGRect(x: -0.085, y: -0.12, width: 0.17, height: 0.62), 0.07)
+      ctx.fillEllipse(in: CGRect(x: -0.2, y: -0.52, width: 0.4, height: 0.4))
+      ctx.setBlendMode(.clear)
+      ctx.fill(CGRect(x: -0.075, y: -0.56, width: 0.15, height: 0.26))
+      ctx.setBlendMode(.normal)
+    case "life": // droplet
+      let p = CGMutablePath()
+      p.move(to: CGPoint(x: 0, y: -0.5))
+      p.addCurve(to: CGPoint(x: 0.3, y: 0.15), control1: CGPoint(x: 0.08, y: -0.28), control2: CGPoint(x: 0.3, y: -0.08))
+      p.addCurve(to: CGPoint(x: 0, y: 0.48), control1: CGPoint(x: 0.3, y: 0.36), control2: CGPoint(x: 0.16, y: 0.48))
+      p.addCurve(to: CGPoint(x: -0.3, y: 0.15), control1: CGPoint(x: -0.16, y: 0.48), control2: CGPoint(x: -0.3, y: 0.36))
+      p.addCurve(to: CGPoint(x: 0, y: -0.5), control1: CGPoint(x: -0.3, y: -0.08), control2: CGPoint(x: -0.08, y: -0.28))
+      ctx.addPath(p)
+      ctx.fillPath()
+    case "science": // microscope
+      rrect(CGRect(x: -0.32, y: 0.36, width: 0.64, height: 0.11), 0.04)
+      rrect(CGRect(x: -0.08, y: 0.18, width: 0.34, height: 0.07), 0.03)
+      ctx.setLineWidth(0.09)
+      ctx.addArc(center: CGPoint(x: -0.02, y: 0.06), radius: 0.30, startAngle: -0.9, endAngle: 1.5, clockwise: false)
+      ctx.strokePath()
+      ctx.saveGState()
+      ctx.translateBy(x: 0.02, y: -0.14)
+      ctx.rotate(by: -0.45)
+      rrect(CGRect(x: -0.09, y: -0.34, width: 0.18, height: 0.5), 0.05)
+      rrect(CGRect(x: -0.05, y: 0.14, width: 0.1, height: 0.12), 0.02)
+      ctx.restoreGState()
+    case "supply": // box with tape
+      rrect(CGRect(x: -0.4, y: -0.3, width: 0.8, height: 0.66), 0.07)
+      ctx.setBlendMode(.clear)
+      ctx.fill(CGRect(x: -0.07, y: -0.3, width: 0.14, height: 0.24))
+      ctx.fill(CGRect(x: -0.4, y: -0.12, width: 0.8, height: 0.035))
+      ctx.setBlendMode(.normal)
+    default: // rules: shield with a check
+      let p = CGMutablePath()
+      p.move(to: CGPoint(x: 0, y: -0.5))
+      p.addLine(to: CGPoint(x: 0.38, y: -0.34))
+      p.addCurve(to: CGPoint(x: 0, y: 0.5), control1: CGPoint(x: 0.38, y: 0.2), control2: CGPoint(x: 0.14, y: 0.4))
+      p.addCurve(to: CGPoint(x: -0.38, y: -0.34), control1: CGPoint(x: -0.14, y: 0.4), control2: CGPoint(x: -0.38, y: 0.2))
+      p.closeSubpath()
+      ctx.addPath(p)
+      ctx.fillPath()
+      ctx.setBlendMode(.clear)
+      ctx.setLineWidth(0.09)
+      ctx.move(to: CGPoint(x: -0.15, y: 0.0)); ctx.addLine(to: CGPoint(x: -0.03, y: 0.14)); ctx.addLine(to: CGPoint(x: 0.17, y: -0.14))
+      ctx.strokePath()
+      ctx.setBlendMode(.normal)
+    }
+    ctx.restoreGState()
+  }
+}
+
+/// Always-readable label above a robot: icon + one-word name, in the agent's colour. `active` (speaking) fills the pill.
 final class Nametag {
   let node: SCNNode
   private let sprite: SpritePanel
   private let name: String, role: String, color: PlatformColor
   private var suffix = ""
+  private var active = false
   init(name: String, role: String, color: PlatformColor) {
-    self.name = name; self.role = role; self.color = color
+    self.name = name; self.role = CrewIDs.id(forRole: role); self.color = color
     let w: CGFloat = 1.12, h: CGFloat = 0.17
     sprite = SpritePanel(width: w, height: h, pixelsPerMeter: 800)
     node = sprite.node
@@ -81,20 +148,33 @@ final class Nametag {
     redraw()
   }
 
+  /// The agent is speaking: the pill fills with its colour.
+  func setActive(_ on: Bool) {
+    guard on != active else { return }
+    active = on
+    redraw()
+  }
+
   private func redraw() {
     let label = name + suffix
-    let color = self.color
-    sprite.update(key: label) { ctx, size in
-      Draw.fill(ctx, CGRect(origin: .zero, size: size), PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.92), radius: size.height / 2)
-      ctx.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
-      ctx.setLineWidth(5)
+    let color = self.color, id = role, active = self.active
+    sprite.update(key: "\(label)|\(active)") { ctx, size in
+      let bg = active ? PlatformColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.98) : PlatformColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 0.92)
+      Draw.fill(ctx, CGRect(origin: .zero, size: size), bg, radius: size.height / 2)
+      if active { Draw.fill(ctx, CGRect(origin: .zero, size: size), color.withAlphaComponent(0.30), radius: size.height / 2) }
+      ctx.setStrokeColor(color.withAlphaComponent(0.95).cgColor)
+      ctx.setLineWidth(active ? 9 : 5)
       ctx.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 3, dy: 3), cornerWidth: size.height / 2 - 3, cornerHeight: size.height / 2 - 3, transform: nil))
       ctx.strokePath()
+      let ih = size.height * 0.62
+      let iconRect = CGRect(x: size.height * 0.30, y: (size.height - ih) / 2, width: ih, height: ih)
+      CrewIcon.draw(ctx, id: id, in: iconRect, color: color)
+      let left = iconRect.maxX + size.height * 0.12
       var fs: CGFloat = 70
       var font = PlatformFont.systemFont(ofSize: fs, weight: .heavy)
-      while (label as NSString).size(withAttributes: [.font: font]).width > size.width - 70, fs > 30 { fs -= 2; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
+      while (label as NSString).size(withAttributes: [.font: font]).width > size.width - left - 40, fs > 30 { fs -= 2; font = PlatformFont.systemFont(ofSize: fs, weight: .heavy) }
       let tw = (label as NSString).size(withAttributes: [.font: font]).width
-      _ = Draw.text(label, at: CGPoint(x: (size.width - tw) / 2, y: (size.height - font.lineHeight) / 2), size: fs, weight: .heavy, color: color, width: size.width)
+      _ = Draw.text(label, at: CGPoint(x: left + (size.width - left - 30 - tw) / 2, y: (size.height - font.lineHeight) / 2), size: fs, weight: .heavy, color: color, width: size.width)
     }
   }
 }
@@ -115,9 +195,9 @@ final class SpeechBubble {
   }
 
   /// `tailLeft`: the speaker is to the bubble's left (as seen by the viewer).
-  func set(text: String, name: String, color: PlatformColor, deny: Bool, tailLeft: Bool, key: String) {
+  func set(text: String, name: String, color: PlatformColor, deny: Bool, tailLeft: Bool, key: String, icon: String? = nil) {
     let hsc = headerScale
-    sprite.update(key: "\(key)|\(tailLeft)|\(hsc)") { ctx, size in
+    sprite.update(key: "\(key)|\(tailLeft)|\(hsc)|\(icon ?? "")") { ctx, size in
       let tail: CGFloat = 70
       let body = CGRect(x: tailLeft ? tail : 0, y: 0, width: size.width - tail, height: size.height).insetBy(dx: 4, dy: 4)
       let bg = PlatformColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 0.95)
@@ -137,7 +217,12 @@ final class SpeechBubble {
       Draw.fill(ctx, body.insetBy(dx: 5, dy: 5), bg, radius: 40)
       let hs = 42 * hsc
       let headH = hs * 1.25
-      _ = Draw.text(name.uppercased(), at: CGPoint(x: body.minX + 36, y: body.minY + 18), size: hs, weight: .heavy, color: color)
+      var nameX = body.minX + 36
+      if let icon {
+        CrewIcon.draw(ctx, id: icon, in: CGRect(x: nameX, y: body.minY + 14, width: hs * 1.2, height: hs * 1.2), color: color)
+        nameX += hs * 1.2 + 14
+      }
+      _ = Draw.text(name.uppercased(), at: CGPoint(x: nameX, y: body.minY + 18), size: hs, weight: .heavy, color: color)
       if deny {
         let rs = hs * 0.9
         let rw = ("REFUSED" as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: rs, weight: .heavy)]).width

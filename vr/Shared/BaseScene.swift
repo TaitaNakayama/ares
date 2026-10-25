@@ -57,6 +57,8 @@ final class BaseScene {
   let outside: Outside
   private let screens: WallScreens
   private var robots: [String: Robot] = [:]
+  /// The five crew robots, their one speech bubble and the outdoor props (Crew.swift).
+  private(set) var crew: Crew!
   private let debug = TextPanel(width: 1.6, height: 0.6, pixelsPerMeter: 600)
   /// Head-locked arrow toward a speaking robot that is outside the view. The spectator camera is wider than the head pose, so it turns this off.
   var showsSpeakerArrow = true
@@ -110,7 +112,8 @@ final class BaseScene {
     var wallScreens: WallScreens!
     added { wallScreens = WallScreens(root: rootNode) }
     screens = wallScreens
-    robots = RobotCrew.build(into: scene.rootNode)
+    crew = Crew(root: scene.rootNode, outside: outside, scene: scene)
+    robots = crew.bots
     buildReticle()
     buildCards()
     arrow.node.renderingOrder = 9_000
@@ -118,15 +121,23 @@ final class BaseScene {
     debug.node.position = Room.ring(180, r: Room.radius - 0.1, y: 1.6)
     debug.node.look(at: SCNVector3(0, 1.6, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, 1))
     scene.rootNode.addChildNode(debug.node)
-    director = OutdoorDirector(scene: scene, outside: outside, indoorNodes: indoor + [debug.node, cardRoot], indoorRobots: robots)
+    director = OutdoorDirector(scene: scene, outside: outside, indoorNodes: indoor + [debug.node, cardRoot], indoorRobots: [:])
     show = ShowDirector(scene: scene, outside: outside)
+    adoptCrew()
+  }
+
+  /// The crew owns its robots in both sets: drop the director's two legacy outdoor robots and wire the crew to it.
+  private func adoptCrew() {
+    for r in director.outdoorRobots.values { r.node.removeFromParentNode(); r.bubble.node.removeFromParentNode() }
+    crew.director = director
+    crew.openCloseUp = { [unowned self] in self.openCloseUpAtHead() }
   }
 
   /// A full-view black quad on this camera node for the fade to black (the headset passes `head`, the Mac its camera).
   func attachFade(to camera: SCNNode) { director.attachFade(to: camera); show.attach(to: camera) }
 
   /// The robots the judge can see and gaze at: the two at their outdoor stations, or the five indoors.
-  private var liveRobots: [Robot] { director.isOutside ? Array(director.outdoorRobots.values) : Array(robots.values) }
+  private var liveRobots: [Robot] { crew.liveBots }
 
   private func buildReticle() {
     let ring = SCNTorus(ringRadius: 0.012, pipeRadius: 0.0025)
@@ -195,7 +206,7 @@ final class BaseScene {
     var robotHit: (role: String, d: Float)?
     if hitNode == nil {
       for r in liveRobots {
-        for (c, rad) in [(r.worldPosition, Float(0.34)), (r.worldPosition + SIMD3(0, 0.62, 0), Float(0.2))] {
+        for (c, rad) in [(r.worldPosition, Float(0.34) * r.tagScale), (r.tagPosition, Float(0.2) * r.tagScale)] {
           let t = simd_dot(c - origin, fwd)
           guard t > 0.3, simd_length(c - (origin + fwd * t)) < rad else { continue }
           if t < (robotHit?.d ?? .infinity) { robotHit = (r.role, t) }
@@ -229,8 +240,6 @@ final class BaseScene {
     setHover(hitNode)
     let needs = !(latest?.waiting ?? []).isEmpty && !director.isOutside
     if (needs && !cardsVisible && now >= hideUntil) || (director.isOutside && cardsVisible) { refreshCards(latest) }
-    // One bubble at a time: the newest speaker's.
-    let speaker = now - captionAt < 9 ? captionRole : nil
     let nowThinking = link.thinkingRoles
     if !nowThinking.subtracting(thinkingRoles).isEmpty { Sound.shared.thinkingStarted() }
     thinkingRoles = nowThinking
@@ -239,11 +248,7 @@ final class BaseScene {
       lastDecisionHeard = link.lastDecision
     }
     decisionPrimed = true
-    for r in liveRobots {
-      r.hovered = r.role == hoveredRobot
-      r.update(now: time, user: origin, needsCommander: needs, bubbleWanted: r.role == speaker, thinking: thinkingRoles.contains(r.role))
-    }
-    if director.isOutside { director.scientist.update(now: time, user: origin, bubbleWanted: speaker == "scientist") }
+    crew.update(now: time, eye: origin, fwd: fwd, link: link, hovered: hoveredRobot, needsCommander: needs)
     updateArrow(worldFromHead: worldFromHead)
     screens.update(latest, now: time, linkText: link.statusText)
     updateDebug(link: link, fps: fps)
@@ -251,7 +256,8 @@ final class BaseScene {
 
   /// Head-locked arrow at the edge of the view toward the newest speaker, only while that robot is out of view.
   private func updateArrow(worldFromHead: simd_float4x4) {
-    guard showsSpeakerArrow, let role = captionRole, now - captionAt < 9, let robot = (director.isOutside ? director.outdoorRobots[role] : robots[role]), robot.isSpeaking(now: now) else { arrow.node.isHidden = true; return }
+    guard showsSpeakerArrow, let robot = crew.speakerBot(now: now) else { arrow.node.isHidden = true; return }
+    let role = robot.role
     let wp = robot.worldPosition
     let local4 = (worldFromHead.inverse) * SIMD4(wp.x, wp.y + 0.1, wp.z, 1)
     guard let place = OffscreenArrow.place(local: SIMD3(local4.x, local4.y, local4.z)) else { arrow.node.isHidden = true; return }
@@ -275,20 +281,7 @@ final class BaseScene {
     outside.show(Consequence.active(in: st))
     show.apply(st, now: now) // after the legacy consequences: the show contract's `world` has the last word
     Sound.shared.setStorm(tau: tauNow)
-    var newest: (role: String, r: VRState.Robot)?
-    for (role, r) in st.robots ?? [:] {
-      guard let seq = r.seq else { continue }
-      if role == "scientist" {
-        director.scientist.hear(text: r.short ?? r.text ?? "", seq: seq, now: now)
-        if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
-        continue
-      }
-      guard let robot = robots[role] else { continue }
-      robot.hear(text: r.short ?? r.text ?? "", mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
-      director.outdoorRobots[role]?.hear(text: r.text ?? r.short ?? "", /* outdoors: the full line, never the server's clipped `short` */ mood: r.mood ?? "calm", outcome: r.outcome ?? "said", seq: seq, now: now)
-      if seq > (newest?.r.seq ?? -1) { newest = (role, r) }
-    }
-    if let n = newest, let seq = n.r.seq, seq != captionSeq { showCaption(role: n.role, r: n.r, seq: seq) }
+    crew.apply(st, now: now)
     refreshCards(st)
   }
 
@@ -317,6 +310,7 @@ final class BaseScene {
     guard now - lastTap > 0.35 else { return }
     lastTap = now
     taps += 1
+    if let used = crew.handleTap(robot: hoveredRobot, now: now) { lastTapText = used; Sound.shared.play("select", volume: 0.7); return }
     if let used = tapOutside() { lastTapText = used; return }
     guard cardsVisible, let h = hovered, let name = h.name, name.hasPrefix("card:"), let i = Int(name.dropFirst(5)), i < cardTargets.count, !cardTargets[i].esc.isEmpty else {
       if let role = hoveredRobot, now - (lastAsk[role] ?? -100) > 3 {
@@ -428,6 +422,7 @@ final class BaseScene {
     if cardsVisible { return (0, -4) }
     // Money just saved: show it on the MONEY screen.
     if now - savedChangedAt > 2.5 && now - savedChangedAt < 8 { return (60, 2) }
+    if let t = crew.directorLook(now: now) { return t }
     if now - captionAt < 5, let role = captionRole {
       switch role {
       case "requester": return (-42, 0)
