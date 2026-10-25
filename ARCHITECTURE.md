@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-_Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
+_Kept current with the build. Last updated Sat 2026-10-24 23:00 PT._
 
 ## The idea in one diagram
 
@@ -8,17 +8,17 @@ _Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
  WORLD (swappable)                 AGENTS (propose only)              ENGINE (world-agnostic, deterministic)
  packages/world-mars               packages/agents                    packages/engine
  ┌──────────────────────┐  events  ┌───────────────────────┐ proposal ┌──────────────────────────────────────┐
- │ seed -> suppliers,    │────────▶ │ requester  (Engineer) │────────▶ │ parseAction (zod)                     │
- │ prices, history,      │          │ receiver   (Cargo)    │          │ authenticate actor (credential)        │
- │ planted errors        │          │ ap         (Bills)    │          │ policy.evaluate -> RuleResult[]        │
- │ ANSWER KEY (private)  │          │ treasury   (Money)    │          │   verdict: allow | hold | escalate |   │
+ │ seed -> suppliers,    │────────▶ │ requester  (Engineer, │────────▶ │ parseAction (zod)                     │
+ │ prices, history,      │          │   Life, Science)      │          │ authenticate actor (credential)        │
+ │ planted errors        │          │ receiver   (Supply)   │          │ policy.evaluate -> RuleResult[]        │
+ │ ANSWER KEY (private)  │          │ ap + treasury (Supply)│          │   verdict: allow | hold | escalate |   │
  │ power(tau), Mars24,   │◀──────── │ controller (Rules)    │◀──────── │            deny                        │
  │ light time, director, │  engine  └───────────────────────┘  events  │ executor (only path to state + ledger) │
  │ Earth/commander sims  │  events     rules brain (default)           │   ledger: double entry, hash chain,     │
  └──────────────────────┘             LLM brain (optional)            │           one-shot posting tokens       │
                                                                        │   audit log, escalations, verifications │
                                                                        └──────────────────────────────────────┘
-                          packages/server (node:http + ws :8787): real-time clock, demo director, APIs
+                          packages/server (node:http + ws :8787): real-time clock, the show (show.ts), APIs
                               │ vr_state (compact)                         │ full state + events
                      iPhone 16 Pro, AresVR (native)                  Laptop console (React)
 ```
@@ -28,10 +28,10 @@ _Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
 | Package | Role | Key files |
 |---|---|---|
 | `packages/engine` | Generic P2P core. Never mentions Mars. | `engine.ts` (submit → evaluate → execute, escalations, trace), `policy.ts` (schema + defaults + rule labels), `ledger.ts`, `audit.ts`, `actions.ts` (zod schemas = LLM tool schemas) |
-| `packages/agents` | Role brains + orchestrator (discrete-event loop) | `brains.ts` (rules brains), `orchestrator.ts` (binds identities, routes events, narration), `world.ts` (World interface) |
+| `packages/agents` | Role brains + orchestrator (discrete-event loop) | `brains.ts` (rules brains), `llm-agent.ts` (LLM brain), `lines.ts` (spoken-line rules and `speak`), `orchestrator.ts` (binds identities, routes events, narration, world tools), `world.ts` (World interface) |
 | `packages/world-mars` | The Mars simulation and story | `world.ts` (setup, planted errors, answer key, Earth/commander sims, demo beats), `catalog.ts` (seeded market), `power.ts` (Opportunity-calibrated), `mars-time.ts` (Mars24, light time) |
 | `packages/eval` | Scores runs against the answer key | `index.ts` (`runEval`, `scoreRun`), `main.ts` (CLI) |
-| `packages/server` | Hub for the headset and console | `main.ts` |
+| `packages/server` | Hub for the headset and console; runs the show | `main.ts` (sessions, APIs, WebSocket), `show.ts` (acts, the line queue, the decision card) |
 | `packages/console` | Laptop console (React 19 + Vite 8) | `app/` |
 | `vr/` | Native iOS VR app (Swift + SceneKit + Google Cardboard SDK) | `AresVR/Sources/*`, `project.yml` (XcodeGen) |
 | `terrain/` | USGS DEM/ortho → OBJ meshes + textures | `build.py` |
@@ -50,15 +50,15 @@ _Kept current with the build. Last updated Fri 2026-10-23 20:45 PT._
 | An escalated item is decided only by its target, after delivery | `escalation.routing` + `decideRules` | review M1/M2/N6 |
 | Bank changes never redirect money without an out-of-band check | `vendor.bank_matches_master` → hold + verification (≥ 1 round trip) | p2p, fuzz, eval (fraud payments = 0) |
 
-## Data flow of the main demo (beats 1-7)
+## Data flow of the main demo
 
-1. World delivers 34 of 36 filters, then an invoice for 36. AP submits the matched amount (34 units). The policy denies anything else. The controller approves and treasury pays the verified account.
-2. The world ramps tau 0.6 → 4.6. Power drops (Opportunity calibration), and the requester files a need for 40 batteries before the manifest closes.
+1. Outside, the world delivers 34 of 36 crates (air filters), then an invoice for 36. Accounts payable (Supply) submits the matched amount (34 units); the policy denies anything else. Rules approves and treasury (Supply) pays the verified account.
+2. The storm ramps tau 0.6 → 4.6. Solar power drops (Opportunity calibration) and the Engineer files a need for 12 batteries (`BAT-10`) before the manifest closes.
 3. Treasury `confirm_funds` (runway rule).
-4. Two quotes arrive. The usual supplier's quote asks for a new bank account at 3x the price. AP's flags come from policy rules: bank mismatch, robust z-score, contract.
-5. The controller requests an out-of-band verification and escalates. The engine routes the decision to the **local** authority because Earth's answer (2 × 12.5 min light time + 3 h call-back) can't arrive before the deadline. Options are built from state: buy N within the emergency limit, wait, the operational lever (drill), reject.
-6. The commander decides with gaze + tap. `decide` re-checks every sub-action against policy as the commander.
-7. Earth's answer arrives after the round trip: fake. The quote is voided, the vendor is put on hold, and the saved amount is recorded.
+4. Two quotes arrive. The usual supplier's quote is 3× the price and asks for a new bank account; the trusted supplier has only 6. The flags come from policy rules: bank mismatch, robust log z-score against history, contract.
+5. Rules requests an out-of-band verification from Earth and escalates. The engine routes the decision to the **local** authority because Earth's answer (the round-trip light time, ~25 min on Sol 214) can't arrive before the deadline. Options come from state and from the escalating agent (up to three, each dry-run through policy): shut down the drill, pause the lab, or buy the 6 batteries from the trusted supplier.
+6. The commander decides with gaze + tap. `decide` re-checks every sub-action against policy as the commander. Levers become `directive` events to the crew member who owns the machine, who uses a world tool (`MarsWorld.act`) to carry it out.
+7. Earth's answer arrives after the round trip: fake. The quote is voided, the supplier is put on hold, and the saved amount (~$1.4M, the scam quote's total) is recorded.
 
 ## The agents (packages/agents)
 
@@ -86,17 +86,19 @@ event (world or engine) ─▶ LlmBrain.react ──▶ router.complete ──�
 - **Labels**: each proposal's `source` is what produced it (`rules`, `llm`, `parser`, `human`, `console`), never the brain's capability. `/api/agents/history` lists every model call: layer, time, prompt tokens read, and why it fell back.
 - **Eval**: `scripts/eval-llm-story.ts` runs the full story per seed with the LLM brains and the rules brains, and reports beats in order, fallbacks by role and reason, replaced lines, latency, denials, and whether the pump report reached the commander.
 
-## The two-part demo (outside, then inside)
+## The show (packages/server/src/show.ts)
 
-The judge starts outside on the real Jezero terrain at ground level and walks in as the storm rises. Everything the scene shows comes from `vr_state`:
+The judge's experience is one class, `Show`, on a real-time timeline plus engine-event triggers. Spec: [docs/demo/script.md](docs/demo/script.md) (acts, timings, target lines, numbers, contract).
 
-- `scene.part`: `outside` | `inside`; `scene.station`: `pad` | `science` | `solar` | `door` | null. The server's director (`POST /api/director/next`) advances: **pad** (the cargo lander; the world runs beat 1, the short delivery, so Cargo's counting line is said beside the boxes) → **science** (a crew scientist, `robots.scientist`, not one of the five agents, with world-written lines and the real Perseverance reference in `scene.science`) → **solar** (the Engineer's panel-check line, then the storm warning; beat 2 starts, tau ramps) → **door** (the judge gazes at the base door and presses; the headset sends `{"type":"vr_enter"}`; the director auto-enters after 25 s if nobody does) → `part: inside` (a `scene` push message too). Autoplay runs part 1 in about 40 s.
-- **Free roam (judge autonomy outside):** when the headset sends `{"type":"vr_station","station":"pad"|"science"|"solar"|"rover"}` (the judge looked at a station marker and pressed), the server runs that station's content once (`MarsWorld.visit`), walks the judge there (the scene follows `scene.station`), and marks `scene.mode = "free"` with `scene.visited`. The storm warning interrupts after `ARES_ROAM_STORM_MS` (45 s) from the first visit, or 6 s after the pad, science and solar stations have all been seen; beat 1 runs in the background if the pad was skipped; then the door, with auto-enter 30 s later. Autoplay and `director/next` keep the fixed order (`scene.mode = "auto"`); on free roam, `director/next` brings the storm now. `POST /api/director/station {station}` drives it from the console. The rover station has no story content: it is where the "reality check" (the real Perseverance panorama) lives.
-- Lines follow the same rules as everything else: agents' lines come from their brains (model or rules), the scientist's and the Engineer's station lines are written by the world from the power model and the credited reference; nothing outside states a number the engine or world didn't provide.
-- The spectator follows through both parts: the headset's pose stream carries orientation plus the head position (`vr_pose.p`), the scene yaw of the walk (`wy`) and whether the science close-up is open (`cu`), so the Mac camera moves along the same path (camera = `Rot(wy) * q` at `p`, lightly smoothed). Without a live headset the spectator runs the same walk from the server's `scene.station`.
-- The REPLAY tape records part 1 too (`scripts/record-tape.ts` drives the four stations and `enter`).
+- **Acts:** `title` → `outside` (the lander, the science arm, the storm on the rim) → `entering` (the door; the judge taps it or it opens after a timeout) → `inside` → `crisis` → `decision` → `consequence` → `later` ("25 MINUTES LATER", a time-lapse) → `resolved` (Earth's answer, "SCAM BLOCKED · $1.4M SAVED") → `explore` (Act 4: the reality check and free questions). `POST /api/show/start`, `/api/show/autoplay {choice, seed}` (hands-free run), `/api/show/log` (acts and every line said).
+- **One line queue:** one bubble at a time, ≥ 1 s between lines, each held 2.5 s + 0.4 s per word. Each line is a `SpeakRequest` (speaker, addressee, intent, facts, the script's target line); `speak` (`packages/agents/src/lines.ts`) asks the router with only a `say` tool, checks the result against the text rules (≤ 10 words, no semicolons, ≤ 1 number, numbers from the facts only), retries once asking for shorter, then falls back to the target line (`via: rules`). Deadline 6 s.
+- **The engine drives the story, not the clock, from the crisis on:** `requisition_created`, `quote_recorded`, `flag_raised`, `verification_requested`, `escalation_delivered`, `po_created`, `verification_answered` and `vendor_status_changed` each trigger their lines or cards. The sim runs at 1× from the verification request, so Earth's answer can't land mid-decision; `later` then time-lapses to it.
+- **The decision card:** built from the escalation's options (agent-proposed first), each with a one-line tradeoff the crew member who owns it says when the judge gazes at it (prefetched). The judge's tap goes through `decideAsCommander` (the engine re-checks it); the consequence lines react to the world state that actually changed, once per change.
+- **Headset contract:** `vr_state` carries `crew` (pose, task, mood, glow), `speaking` (who, to whom, the line), `scene {act, title, cue, closeupOpen, reality}`, `world` (power, dust, drill, lab, water), `decision` and `money`. The headset sends `vr_tap`, `vr_gaze_option`, `decide`, `vr_closeup`, `vr_reality`, `vr_ask`, `vr_enter`. Before the crisis the show masks power to ok and caps dust, so the storm only bites once the judge is inside.
+- **Automated check:** `scripts/show-check.ts` runs N live shows and checks the text rules, the act order, the outcomes (short delivery paid as matched, no scam payment, Earth confirms, the supplier locked, the saved amount shown, the choice visible in the world, three options, the Act 4 offer) and the headset fps. `scripts/show-capture.sh` keeps a round's evidence (frames, key frames by act, an MP4, the subtitles) for the first-time-judge reviewer.
+- Lines follow the same rules as everything else: nothing states a number the engine or world didn't provide; the world's invented numbers are labelled SIMULATED in [docs/demo/script.md](docs/demo/script.md).
 
-Scene-side contract for the builders (vr/Shared): the outdoor set (lander with pallets at the pad, the science site, the solar field, the habitat with its pressure door) is laid out on the real terrain with the judge's path pad → science → solar → door at steady walking speed (no sudden acceleration; a few seconds per leg), the robots that belong outside (Cargo at the pad, Engineer at the solar field) stand at their stations while the others stay inside; the scientist is a labelled crew figure whose gaze-tap opens the credited close-up; the door tap triggers `vr_enter`; the storm (tau) drives sky colour, dust particles and the dimming of panels and lights, inside and out. Art direction: [ART.md](ART.md); third-party assets and NASA imagery: [CREDITS.md](CREDITS.md).
+Art direction: [ART.md](ART.md); third-party assets and NASA imagery: [CREDITS.md](CREDITS.md).
 
 ## The headset (vr/)
 
@@ -104,7 +106,7 @@ Scene-side contract for the builders (vr/Shared): the outdoor set (lander with p
 
 - `CardboardSession` wraps the Cardboard C API: head pose, eye matrices, lens distortion and the Metal distortion renderer. The V2 viewer profile is the default when no QR has been scanned.
 - `VRViewController` runs the MTKView loop: two SceneKit offscreen passes (one per eye), then the distortion pass, at 60 fps. Touch-down is the button, and long-press rescans the QR.
-- `BaseScene` holds the room (`Room`) and the window view (`Outside`: terrain, a cube-map sky from tau and sun, fog, sun light, panels, drill, dust). It also holds `WallScreens`, the five robots (`Robots`) and the 2×2 decision cards.
+- `BaseScene` holds the room (`Room`) and the window view (`Outside`: terrain, a cube-map sky from tau and sun, fog, sun light, panels, drill, dust). It also holds `WallScreens`, the five crew (`Robots`, `Crew`: nametag, glow, turn-to-addressee, one speech bubble) and the three-option decision card.
 - `Link` is a WebSocket client with several baked addresses, reconnects, stats and frame capture. If no server answers it plays the bundled tape (`tape.json`, recorded from the live server for each choice).
 
 ## The spectator view (vr/Spectator, macOS)

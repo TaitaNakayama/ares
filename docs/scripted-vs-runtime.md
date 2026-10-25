@@ -1,36 +1,31 @@
-# What is scripted, and what the agents produce at runtime
+# What is scripted, and what the agents decide live
 
-_For the pitch. Checked against the code on Sat 2026-10-24 (world: `packages/world-mars/src/world.ts`; agents: `packages/agents/src/llm-agent.ts`, `brains.ts`; engine: `packages/engine`)._
+_For the pitch. The show: `packages/server/src/show.ts`; text rules: `packages/agents/src/lines.ts`; world: `packages/world-mars`; spec: [demo/script.md](demo/script.md). Checked against STATUS.md and the script on 2026-10-24; I did not re-read the code line by line._
 
-## Scripted or pre-written (the world and the engine, not the agents)
+**In one breath:** the world and the show script the events and the staging. The five crew agents decide what to do about them and say it in their own words, inside a policy engine that checks every proposal and keeps the money deterministic. When a model is slow, wrong or too wordy, plain rules take the turn and the label says so.
 
-**The situation (the world writes it; the agents don't choose it):**
-- The prologue: a routine order of 36 air filters a month ago, with its reason sentence.
-- Beat 1: exactly 34 of 36 filters arrive ("2 cartridges missing from the cargo manifest") and the invoice bills 36.
-- The dust storm: tau fixed at 4.6, ramping over 20 simulated minutes; the need for exactly 40 battery modules with a 90-minute order deadline; the need's reason and headline sentences are templates filled with numbers from the power model.
-- The two battery quotes: the usual supplier at exactly 3x its historical price with a freshly generated fake bank account, and the trusted supplier at its normal price for min(15, commander's limit / price) units.
-- Earth's answer to the bank verification: looked up in the world's answer key, with pre-written sentences ("Supplier says it never changed its bank details. The request was fraudulent."), delivered after the real light-time round trip plus processing time.
-- The Earth CFO simulator (buy, then approve, then wait), the automatic release of a locked supplier two days later, and the "Ice drill powered down…" line.
-- Part 1 outside: the four stations and their order on autoplay; the crew scientist's two lines (world-written, with the real Perseverance reference filled in by code); the Engineer's panel-check line and the storm warning ("Commander, get inside") at the solar field (world-written from the power model).
-- The judge's decision options that the engine builds: "Buy N now from X", "Wait for verification", "Shut down the ice drill", "Reject the request", and the two options on a report ("Approve the recommendation", "No action now"); their wording is template text with engine numbers.
-- The card text when nothing is pending ("ALL CLEAR … Nothing needs you"), the "ENTER THE BASE" prompt, screen labels, the beat names ("Short delivery", "Suspicious quote", …).
-- The REPLAY tape: a recording of one real run (the agents' lines in it were produced by the model at recording time; on playback nothing is live).
-- Mechanical steps stay on the rules brains by design: entering structured quotes and invoices, executing an already scheduled payment, voicing a flag the engine raised, the escalation note on a report (the agent's own recommendation is used).
+## Scripted (the world and the show, not the agents)
 
-**Deterministic controls (never the model):** every policy verdict, the three-way match, price statistics (robust log z-score), bank-change detection and verification routing, approval limits, segregation of duties, the ledger, "$ saved", the audit trail.
+- **The situation:** Sol 214 at Jezero; the delivery of 34 of 36 filters against an invoice for 36 (the missing crates); the dust storm and its timing; the need for 12 battery modules in a short window; the two quotes (the usual supplier at 3x its price to a fresh bank account, the trusted supplier at its normal price with 6, later); Earth's answer after the real round-trip light time (25 minutes), played as the "25 MINUTES LATER" time-lapse; the supplier lock afterwards.
+- **The staging:** the four acts and their order; the title, the door, the window going dark, the Power screen dropping into red, the alarm, the end card, the "SCAM BLOCKED · $1.4M SAVED" payoff; where each robot stands and what job it mimes; the cues (the one glowing thing at a time); the real Perseverance stereo image and panorama and their credits.
+- **The target lines:** every scene has a scripted line of the same intent. It is spoken only if the live line fails.
+- **The three standard options** (shut down the drill, pause the lab, buy trusted batteries) fill any slot Rules leaves empty.
+- **Presentation rules:** one bubble at a time, at least 1 s apart, held 2.5 s plus 0.4 s per word, a held beat before Rules asks the question.
+- **Numbers:** freight $400/kg, a 10 kWh module about $38k delivered, limits Rules $125k / commander $600k / Earth $25M. All SIMULATED.
+- **The recorded REPLAY tape:** one real run; nothing on it is live.
 
-## Produced by the agents at runtime (the model decides, policy checks)
+## Deterministic controls (never a model)
+Every policy verdict, the three-way match, price statistics (robust log z-score), bank-change detection and verification routing, approval limits, segregation of duties, the ledger and its one-shot tokens, the amount saved, the audit trail, and the world's check on every use of an agent's base tool (can the drill be powered down, can the lab be paused).
 
-At each decision point the agent gets the event and a code-written state summary and chooses among the actions policy allows it:
-- **Engineer:** whether and what to request on an operational need; what to do with any free-text report (a catalog request, or a report to the commander with its own recommendation); its spoken lines.
-- **Cargo:** how to record a delivery from the counted lines and the note; its lines.
-- **Bills:** what amount to submit after the match (with the match figures provided); whether to raise a flag; reading free-text invoices; its lines.
-- **Money:** whether funds cover a request; what to schedule when an invoice is approved; its lines.
-- **Rules:** at quote time: approve, reject, request verification, or escalate — and the **options it proposes to the commander** (each dry-run through policy); on a submitted or held invoice: approve or reject; after Earth's answer: hold the supplier or approve; its lines, including the escalation's reason text.
-- **Any agent:** the answer when the judge looks at it and presses ("what's going on"), from the current state.
-- **Reports:** which agent handles a typed event (model routing, keyword fallback) and the recommendation that reaches the commander.
+## Live: what the agents decide
+At each decision point an agent gets the event and a code-written state summary, and chooses among the actions allowed for its role.
+- **Engineer, Life, Science:** whether and how to act on the base with their own tools (power the drill down, ration power, set life-support priority, pause the lab), whether to request a purchase, and their spoken lines. Each tool use is checked by the world.
+- **Supply:** how to record the delivery, what to bill and pay (as three separate engine roles: receiving, bills, payments), what to flag, and its lines.
+- **Rules:** approve, reject, request verification or escalate; the options it proposes to the commander (each dry-run through policy, illegal ones dropped); holding the supplier after Earth's answer; its lines.
+- **Any agent:** the answer when the judge looks at it and presses; and for typed console events, which crew member handles it and the recommendation on its card (pump and injury to Life, supplier bankruptcy to Rules).
+- **The exact words** of every line, within the text rules. The model's answers are kept in an on-disk response cache keyed by the exact request (`packages/agents/src/llm.ts`, `CachedProvider`), so the venue's network can drop without losing them: when a scene's facts are the same as in an earlier run, the line is the model's earlier answer, replayed. Those lines are labelled `cached` in `/api/show/log`, the subtitles file and `scripts/show-check.ts`; a scene with new facts (a different seed, a judge's question, a different choice) asks the model again.
 
-**Guards that can replace model output (labelled `rules` in the audit trail when they do):** a timeout, an error, an invalid or unknown tool call, an id the engine doesn't have, a line that states a number or id the engine didn't provide (replaced by the rules' line), no action where the rules would act, and the escalation floor (if the rules would hand the decision to the human and the model doesn't, the escalation still happens). In the 30-seed eval (Sat 15:40), 4% of decisions were taken by rules this way (12 of 301), 0 lines were replaced, and 0 lines with wrong facts reached the display.
+## What can replace model output (labelled `rules`)
+A timeout, an error, an invalid or unknown tool call, an id the engine doesn't have, a line that breaks the text rules (more than 10 words, a semicolon, more than one number, a fact the engine didn't provide) after one shorter retry, no action where the rules would act, and the escalation floor. SAFE MODE does this for every agent at once. In the round-2 checked runs (three seeds, all three choices), 78 of 78 lines came from the model and all were within the rules; most were replayed from the cache because the scenes' facts repeat across seeds, so run `scripts/show-check.ts` with a cleared cache (`.cache/llm`) before quoting a live rate.
 
-## How to say it in one breath
-"The world throws the events — the short delivery, the storm, the fake quote, Earth's answer. The five agents decide what to do about them with a language model, inside a policy engine that checks every proposal and keeps the money deterministic. When the model is slow or wrong, plain rules take the turn and the audit trail says so."
+The earlier 30-seed LLM story eval (30/30 promised outcomes, 4% rules fallbacks) predates the crew redesign and has not been repeated on it.

@@ -1,54 +1,42 @@
-# Pitch (about 3 min core plus optional deep dives)
+# Pitch (about 3 minutes)
 
-Total demo: part 1 outside is about 40 s (autoplay), then the control-room story is about 2-3 min.
+**The one idea:** On Mars, nobody can call Earth for help. An AI crew keeps the base alive on its own and only brings the commander the decisions that really matter.
 
-Setup before each judge:
-- Phone in the viewer, on a fresh run (console → **Reset**).
-- Console open on the Live feed.
-- Speak while they look.
+Setup before each judge: console open, **Reset**, phone in the viewer, spectator on the laptop. Spoken parts are in quotes. Full timeline: [script.md](demo/script.md).
 
-## 0:00-0:30 Part 1, outside (judge puts the headset on; about 30 s of speaking over the ~40 s walk)
-"You're the commander of a Mars base, standing on the real Jezero terrain. Nobody here handles money. The finance team, the bank and the suppliers are on Earth, 25 light-minutes away. Five AI agents run purchasing and payments for you. A model proposes, deterministic controls decide, and plain rules are the floor. They have to be *more* trustworthy than a person, not less."
+## 0:00-0:30 Before the headset goes on (you say this)
+"On Mars you can't call Earth for help. A message takes 25 minutes round trip, and a dust storm doesn't wait. So the base runs itself. Five AI robots handle power, air, science, supplies and money, and they only come to you for the decisions that really matter. You're the commander. Put this on."
 
-"A cargo lander just arrived. Cargo, the green one, counted the boxes: 34 air filters, two short. The invoice bills 36. Bills matches it against the order and the receipt and pays for 34. No human needed. Walk on: the crew scientist is sampling the delta rock. Look at her and tap, and you get a real Perseverance close-up with its NASA credit. Then the Engineer at the solar field warns the storm is rising. Look at the base door and tap to go inside."
+(Press **Start show** as the headset goes on. The judge does not need instructions: one glowing thing at a time shows what to look at.)
 
-(Beat 1 happens here, at the pad. Part 1 runs on autoplay in about 40 s; if the judge is slower, let them. Press **Next beat** when they are inside.)
+## 0:30-2:30 What the judge experiences (about 2 minutes; stay quiet, point at the spectator if they want context)
+- **Outside**, on the real Jezero terrain. The Engineer welcomes them. Science offers the real Perseverance stereo image in 3D (tap it). Supply finds two crates missing and won't pay for them. A storm rises. "Commander, get inside."
+- **Inside**, the storm hits and power drops. Supply finds batteries on Earth at triple the normal price, to a new bank account. Rules: "That's a scam. Payment blocked." It asks Earth, which is 25 minutes away, and then asks the judge: "What do we give up?"
+- **The decision**: three options on a card (shut the drill, pause the lab, buy trusted batteries). Looking at one makes the affected robot say the cost. The judge picks, and the base changes: lights go dark, power recovers. "25 minutes later" Earth confirms the scam: "SCAM BLOCKED · $1.4M SAVED."
+- **Optional**: "Want to see where we really are?" opens the real Perseverance 360° panorama. "This is real Mars. The base isn't built yet."
 
-## 0:30-1:20 Beats 2-5 (press **Next beat**): the storm and the fraud
-"A dust storm, the one you saw rising outside. Look out the window: real Jezero terrain from NASA. Solar power drops on Opportunity's real 2018 curve. The Engineer, in orange, needs 40 batteries before the cargo manifest closes."
+## 2:30-3:00 How it works, in 30 seconds (you say this)
+"The robots are language-model agents, but they only propose. Every action goes through deterministic controls: price statistics, three-way match, bank verification, spending limits, segregation of duties. Only an approved action can move money, and if a model is slow or off-script, plain rules take over and the log says so. Every action is labelled by what produced it, and SAFE MODE switches every agent to rules instantly. What the robots say follows text rules: one bubble at a time, ten words at most, one number, numbers on the wall screens. A line that breaks a rule is retried shorter, then replaced. Events are scripted; what the agents do and say is live."
 
-"Here's the trap. The usual supplier's quote is three times their price history and asks for payment to a new bank account. That's business email compromise, and it hit 74% of companies last year. Bills flags both, using statistics, not the model's opinion. Rules, in purple, reasons about it, asks Earth to verify by call-back and blocks it. Earth can't answer before the deadline, so it comes to you."
+## Close
+"The robots kept the base alive, caught a scam, and asked you what to give up. Independent reviewers attacked the controls three times and we fixed everything they found. On 200 fresh scenarios the rules brains paid no fraudster and the books always balanced. And the engine never mentions Mars: the same code could run a ship or a restaurant."
 
-## 1:20-1:50 Beat 6: the judge decides
-"Look at a card and press the button. Every option was checked against policy for you before it was shown, including ones the agent proposed itself: buy 15 from a supplier we've verified, wait, or shut the ice drill."
+## Questions and deep dives
+- **Is the crew really AI?** Yes, five model-backed agents. Engineer, Life and Science use their own tools on the base (the drill, power rationing, life support, the lab); the world checks each use. Supply is one face for three separate engine roles (receiving, bills, payments) so segregation of duties holds. Rules approves every payment.
+- **Ask a robot**: look at one and press; it answers live from the current state.
+- **Invent an event** on the console (after the show): free text or a preset. Broken pump and injury go to Life, supplier bankruptcy to Rules, and a card comes back from that crew member.
+- **SAFE MODE**: every agent drops to rules instantly.
+- **Rogue Rules** (console): a malicious Rules brain approves the fraudster, pays without approval, confirms the fake bank. Every attempt is refused by policy.
+- **Trace** (Ledger, click a payment): request, quote, order, payment, every rule that passed, who proposed and who approved, the hash chain.
+- **Policy editor**: change a limit and replay; give the controller payment rights and it is rejected.
+- **Scorecard**: 200 fresh seeds in seconds. Recall 91.7% overall; subtle 3-7% overpricing is caught far less often, and we show that on purpose.
+- **Real vs invented**: real terrain (HiRISE), real sun (Mars24), real storm power curve (Opportunity 2018), real light time, real Perseverance images with credits. Suppliers, prices ($400/kg freight, ~$38k per battery module) and budgets are SIMULATED.
 
-## 1:50-2:30 Beat 7 and the close
-"Earth's answer just arrived, after the real light-time delay: the bank change was fake. $89 million saved. Here's the key part: the agents only *propose*. Deterministic code checks every action against policy before anything moves, and if a model is slow or off-script, the rules answer and the proposal is labeled that way. Independent reviewers attacked the controls three times. We fixed everything they found, and on 100 held-out scenarios, with the rules brains, it never paid a fraudster."
-
-## Deep dives (if they stay)
-A0. **Look around the room**: the control room is textured and lived-in (lockers with fictional name tapes, hydroponics, wall screens, a LOCATION screen on the real Jezero orbital map). The Mac spectator view follows the judge's position and orientation through both parts.
-A. **Ask an agent**: look at a robot, press the button. It answers live from current state. A "thinking" face shows while a model decides.
-B. **Invent an event** (console → Inject → Report, after the story): type anything, or use a preset (broken water pump, crew injury needing medicine, supplier bankruptcy). The agent routes it to the commander with a recommendation.
-C. **SAFE MODE** (console): every agent drops to the deterministic rules instantly. The story still runs.
-0. **Rogue agent** (console → **Rogue Rules**, then Autoplay): "Now I've replaced Rules' brain with a malicious one. It approves the fraudster, pays without approval, and confirms the fake bank itself." The headset shows "REFUSED BY POLICY" on each attempt. "The agent's intent doesn't matter, only what the policy lets through." Turn it off afterwards.
-1. **Trace** (console → Ledger → click the last payment): the request, quote, PO, payment, every rule that passed, who proposed and who approved, and the hash chain.
-2. **Policy changes behavior** (Policy tab):
-   - Lower the Commander's emergency limit from $12M to $5M and apply. Reset and replay: the option becomes "Buy 6".
-   - Try to give the controller payment rights. It's rejected for segregation of duties.
-3. **Your own invoice** (Inject → Paste a document): paste any invoice text. Change the bank or bill too many units, then watch the robots catch it.
-4. **Scorecard** (run 50 fresh seeds): about 4 s.
-   - 100% on blatant errors.
-   - 35% on subtle +3-7% overpricing, with the trade-off curve. We show where it fails on purpose.
-5. **Architecture:**
-   - The engine never mentions Mars; the same code runs a restaurant or a research ship.
-   - Three model layers: cloud first when online, a local model as the offline fallback (slower: 9-17 s on a cold prompt), rules as the floor. Every proposal is labeled `llm`, `rules`, `parser` or `human`.
-   - Statistics, the three-way match, bank verification and escalation routing stay deterministic.
-   - Eval: 30 seeds with the cloud layer, every promised outcome on 30/30, 301 model decisions, 4% fell back to rules, median 2.8 s per decision.
-   - Money moves only through the executor, with one-shot ledger tokens.
-6. **Hyphenate's own scenario:** use Inject to create a need, quote or invoice as they describe it.
+## Numbers we quote
+The earlier 30-seed LLM story eval (30/30 promised outcomes, 4% rules fallbacks) predates the crew redesign; say so if asked. Live-show checker (`scripts/show-check.ts`): first run 23/23 model lines within the text rules and all 9 promised outcomes; run again before submission.
 
 ## If something breaks
-- **No connection:** the headset plays the recorded run (the "Offline replay" label shows). Keep the console story going on the laptop. The Mac spectator view shows REPLAY too.
-- **A model is slow or down:** the rules answer and the story continues; or press SAFE MODE.
-- **Headset is fine but the console isn't:** run `curl -X POST localhost:8787/api/director/next`.
-- **Last resort:** the screen recording in `docs/demo/`.
+- **Model slow or odd**: SAFE MODE. The show still runs.
+- **Connection lost**: the headset plays a recorded run labelled REPLAY.
+- **Show stuck**: **Reset**, then **Start show** or **Autoplay show**.
+- **Last resort**: the screen recording in `docs/demo/`.

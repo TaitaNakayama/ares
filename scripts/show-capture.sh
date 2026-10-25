@@ -22,6 +22,6 @@ while true; do
 done
 curl -s $BASE/api/show/log | python3 -c "
 import json,sys; s=json.load(sys.stdin)
-for l in s['lines']: print(f\"{l['at']/1000:6.1f}s  {l['act']:11s}  {l['speaker'].upper():8s} -> {l['to']:8s} [{l['via']}]  {l['text']}\")" > $OUT/subtitles.txt
+for l in s['lines']: print(f\"{l['at']/1000:6.1f}s  {l['act']:11s}  {l['speaker'].upper():8s} -> {l['to']:8s} [{l['via']}{'·cached' if l.get('cached') else ''}]  {l['text']}\")" > $OUT/subtitles.txt
 ffmpeg -v error -y -framerate 0.6 -pattern_type glob -i "$OUT/frames/*.jpg" -vf "scale=1280:-2,fps=12" -c:v libx264 -pix_fmt yuv420p -crf 26 $OUT/show.mp4
 echo "$n frames; $(wc -l < $OUT/subtitles.txt) lines; $OUT/show.mp4"

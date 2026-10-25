@@ -47,11 +47,14 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 |---|---|---|---|
 | 0:40 | The door seals. Warm light, soft hum, plants under grow lights, glowing screens, the storm through the window. The two agents not met yet are mid-task and glance up. | | |
 | 0:42 | Life at the oxygen machine by the plants. | life → judge | "Welcome back, Commander. Air's fresh." [5 / 0] |
-| 0:47 | Rules at the main console. | rules → judge | "Quiet day. Nothing suspicious." [4 / 0] |
+| 0:46 | Supply by the crates, the crates come back. | supply → rules | "We only paid for the crates that came." [8 / 0] |
+| 0:47 | Rules at the main console. | rules → judge | "Good catch. Otherwise, a quiet day." [5 / 0] (round 2: replaces "Quiet day. Nothing suspicious." so the missing crates resolve) |
 | ~0:50 | The storm hits: window dark brown, panels outside fade, the Power screen drops into red, a low alarm. The need for batteries is raised. | life → engineer | "Power's dropping. The oxygen makers need it." [7 / 0] |
 | | | engineer → life | "We can't run air, drill, and lab." [7 / 0] |
+| | Pushback (round 2). | life → engineer | "Air comes first. Always." [4 / 0] |
 | | Quotes arrive (Supply records them). | supply → rules | "I found batteries on Earth." [5 / 0] |
-| | The usual supplier's quote is flagged: price ≈ 3x history. | supply → rules | "This quote is triple the normal price." [7 / 1] |
+| | Quick question (round 2). | rules → supply | "Who's selling them?" [3 / 0] |
+| | The usual supplier's quote is flagged: price ≈ 3x history. | supply → rules | "Our usual supplier. Triple the normal price." [7 / 1] |
 | | Same quote: bank details differ from the master. | supply → rules | "And they want payment to a new account." [8 / 0] |
 | | Rules turns red, eyes narrow; requests verification. | rules → supply | "That's a scam. Payment blocked." [5 / 0] |
 | | | rules → judge | "I've asked Earth to check. That takes 25 minutes." [9 / 1] (the number is the real round-trip light time for the scene's date, rounded) |
@@ -73,6 +76,7 @@ Then:
 |---|---|---|
 | Window text "25 MINUTES LATER" (time-lapse to Earth's reply). | | |
 | Earth's answer arrives: the bank change was fake. The Money screen shows one big number: the amount saved. | rules → judge | "Earth confirms it. That account was a scam." [8 / 0] |
+| The payoff stands alone on the window for ~4 s (round 2): "SCAM BLOCKED · $1.4M SAVED". | | |
 | Rules locks the supplier. | rules → judge | "Supplier blocked. The base is safe, Commander." [7 / 0] |
 | The storm thins. End card over the window: "An AI crew that keeps a Mars base alive. And knows when to ask you." | | |
 
