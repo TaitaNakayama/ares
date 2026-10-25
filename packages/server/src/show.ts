@@ -87,6 +87,9 @@ export class Show {
   private tradeoffAt = new Map<string, number>();
   private crisisAt = 0;
   private stormStarted = false;
+  /** Real time the storm was first seen and whether it has thinned (the sim clock stalls while agents think, so what the judge sees ramps on the wall clock). */
+  private stormRealAt = 0;
+  private stormEnded = false;
   private savedBig: string | null = null;
   private incoming: { label: string; eta: string } | null = null;
   private earthAnswered = false;
@@ -131,7 +134,7 @@ export class Show {
     this.unsub = undefined;
     Object.assign(this, {
       act: "title", active: false, title: this.openingTitle(), cue: null, crew: Show.initialCrew(), speaking: null, queue: [], pumping: false, lastLineEnd: 0,
-      closeupOpen: false, realityOn: false, decision: null, reacted: new Set<string>(), crisisAt: 0, stormStarted: false, savedBig: null, incoming: null, earthAnswered: false, laterShown: false, quoteSaid: false, payoffShown: false, waitForHold: undefined, closed: false, batteryReq: undefined, autoplayChoice: undefined,
+      closeupOpen: false, realityOn: false, decision: null, reacted: new Set<string>(), crisisAt: 0, stormStarted: false, stormRealAt: 0, stormEnded: false, savedBig: null, incoming: null, earthAnswered: false, laterShown: false, quoteSaid: false, payoffShown: false, waitForHold: undefined, closed: false, batteryReq: undefined, autoplayChoice: undefined,
     });
     this.tradeoffs.clear();
     this.tradeoffAt.clear();
@@ -183,6 +186,7 @@ export class Show {
     this.at(23_500, () => {
       this.crewSet("engineer", { lookAt: "rim", mood: "worried" });
       this.stormStarted = true;
+      this.stormRealAt = Date.now();
       this.orch.scheduleAll(this.world.startStorm(this.orch.engine));
       this.line({ speaker: "engineer", actor: "engineer", to: "rim", intent: "A dust storm is rising over the crater rim. Warn the crew.", target: "Dust storm incoming." });
       this.line({
@@ -198,7 +202,7 @@ export class Show {
     if (this.act !== "outside") return `not now (${this.act})`;
     this.set({ act: "entering", cue: null });
     this.crewSet("engineer", { lookAt: null, mood: "calm" });
-    if (!this.stormStarted) { this.stormStarted = true; this.orch.scheduleAll(this.world.startStorm(this.orch.engine)); }
+    if (!this.stormStarted) { this.stormStarted = true; this.stormRealAt = Date.now(); this.orch.scheduleAll(this.world.startStorm(this.orch.engine)); }
     console.log(`[show] entering (${by})`);
     this.at(4500, () => {
       this.world.enter();
@@ -500,6 +504,7 @@ export class Show {
       speaker: "rules", actor: "rules", to: "judge", intent: "You've locked the scam supplier. The base is safe.", target: "Supplier blocked. The base is safe, Commander.",
       onStart: () => {
         this.crewSet("rules", { mood: "calm", approach: false });
+        this.stormEnded = true;
         this.orch.scheduleAll(this.world.endStorm(this.orch.engine));
         this.set({ act: "resolved" });
       },
@@ -652,7 +657,9 @@ export class Show {
     const base = w.baseState(now) as { power: { level: "ok" | "low" | "critical"; panels: number }; life: unknown; lab: string; drill: string; tau: number; dust: number };
     const t = w.telemetry(now, this.orch.engine) as { socPct: number };
     const beforeCrisis = !this.crisisAt;
-    const dust = !this.stormStarted ? 0 : beforeCrisis ? Math.min(this.crew.engineer.place === "outside" ? 0.75 : 0.5, base.dust) : base.dust;
+    // The storm rises over ~4 s of real time on the Engineer's warning (0.8 outside, 0.5 seen from inside before the crisis), then follows the sim; it never thins before the closing line.
+    const rise = this.stormRealAt ? Math.min(1, (Date.now() - this.stormRealAt) / 4000) : 0;
+    const dust = !this.stormStarted ? 0 : beforeCrisis ? (this.crew.engineer.place === "outside" ? 0.8 : 0.5) * rise : this.stormEnded ? base.dust : Math.max(0.5, base.dust);
     const level = beforeCrisis ? "ok" : base.power.level;
     const alarm = !beforeCrisis && level === "critical" && ["crisis", "decision", "consequence"].includes(this.act);
     const crew = Object.fromEntries(
