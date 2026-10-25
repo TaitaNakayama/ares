@@ -130,7 +130,7 @@ export class Show {
     this.unsub = undefined;
     Object.assign(this, {
       act: "title", active: false, title: this.openingTitle(), cue: null, crew: Show.initialCrew(), speaking: null, queue: [], pumping: false, lastLineEnd: 0,
-      closeupOpen: false, realityOn: false, decision: null, reacted: new Set<string>(), crisisAt: 0, stormStarted: false, savedBig: null, incoming: null, earthAnswered: false, laterShown: false, quoteSaid: false, batteryReq: undefined, autoplayChoice: undefined,
+      closeupOpen: false, realityOn: false, decision: null, reacted: new Set<string>(), crisisAt: 0, stormStarted: false, savedBig: null, incoming: null, earthAnswered: false, laterShown: false, quoteSaid: false, payoffShown: false, waitForHold: undefined, closed: false, batteryReq: undefined, autoplayChoice: undefined,
     });
     this.tradeoffs.clear();
     this.tradeoffAt.clear();
@@ -171,7 +171,7 @@ export class Show {
     this.set({ act: "title", title: this.openingTitle(), cue: null });
     // Act 1: outside.
     this.at(3000, () => this.set({ act: "outside", title: null }));
-    this.at(5000, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars, and say the crew has the base handled.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
+    this.at(5000, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars. The crew keeps the base alive: power, air, water.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
     this.at(9500, () =>
       this.line({
         speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm. Ask if they want a closer look.", target: "Grinding into ancient delta rock. Want a closer look?",
@@ -179,7 +179,7 @@ export class Show {
       }),
     );
     this.at(12_000, () => this.orch.scheduleAll(this.world.beatDelivery(this.orch.engine)));
-    this.at(26_000, () => {
+    this.at(23_500, () => {
       this.crewSet("engineer", { lookAt: "rim", mood: "worried" });
       this.stormStarted = true;
       this.orch.scheduleAll(this.world.startStorm(this.orch.engine));
@@ -205,7 +205,9 @@ export class Show {
       this.set({ act: "inside" });
       // Before the storm hits, the crew talks about a calm base (the power drop is the next beat, not this one).
       this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", facts: "Oxygen 99%. Air quality good.", target: "Welcome back, Commander. Air's fresh." }));
-      this.at(3000, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "From the main console: it's a quiet day, nothing suspicious in the books.", facts: "No open flags. No pending payments.", target: "Quiet day. Nothing suspicious." }));
+      // The crates come back: Supply tells Rules it paid only for what arrived, and Rules signs off a quiet day.
+      this.at(3000, () => this.line({ speaker: "supply", actor: "money", to: "rules", intent: "Tell Rules you paid only for the crates that actually arrived.", facts: "The filter invoice was paid for the delivered crates only.", target: "We only paid for the crates that came." }));
+      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Approve that, and tell the commander it's otherwise a quiet day, nothing suspicious.", facts: "No open flags. No pending payments.", target: "Good catch. Otherwise, a quiet day." }));
       this.at(11_000, () => this.crisis());
     });
     return "entering the base";
@@ -219,6 +221,7 @@ export class Show {
     const facts = this.powerFacts();
     this.line({ speaker: "life", actor: "life", to: "engineer", intent: "The storm is cutting solar power. The oxygen makers need it.", facts, target: "Power's dropping. The oxygen makers need it." });
     this.line({ speaker: "engineer", actor: "engineer", to: "life", intent: "There isn't enough power to run air, the ice drill and the lab together.", facts, target: "We can't run air, drill, and lab." });
+    this.line({ speaker: "life", actor: "life", to: "engineer", gapMs: 1000, intent: "Push back: air always comes first.", facts, target: "Air comes first. Always." });
   }
 
   private onMessage(m: OrchestratorMessage): void {
@@ -257,6 +260,7 @@ export class Show {
         if (!this.batteryReq || q.requisitionId !== this.batteryReq || this.quoteSaid) break;
         this.quoteSaid = true;
         this.line({ speaker: "supply", actor: "bills", to: "rules", intent: "You found batteries for sale on Earth.", target: "I found batteries on Earth." });
+        this.line({ speaker: "rules", actor: "rules", to: "supply", gapMs: 1000, intent: "Ask quickly who is selling them.", target: "Who's selling them?" });
         break;
       }
       case "flag_raised": {
@@ -317,16 +321,11 @@ export class Show {
       }
       case "vendor_status_changed": {
         const v = d.vendor as { id: string; status: string };
-        if (v.status !== "hold" || !this.earthAnswered) break;
-        this.line({
-          speaker: "rules", actor: "rules", to: "judge", intent: "You've locked the scam supplier. The base is safe.", target: "Supplier blocked. The base is safe, Commander.",
-          onStart: () => {
-            this.crewSet("rules", { mood: "calm", approach: false });
-            this.orch.scheduleAll(this.world.endStorm(this.orch.engine));
-            this.set({ act: "resolved" });
-          },
-        });
-        this.afterLines(2500, () => this.endCard());
+        if ((v.status === "hold" || v.status === "blocked") && this.waitForHold) {
+          const go = this.waitForHold;
+          this.waitForHold = undefined;
+          go();
+        }
         break;
       }
     }
@@ -336,7 +335,7 @@ export class Show {
     const eng = this.orch.engine;
     const failed = new Set(eng.quoteRules(q).filter((r) => !r.ok).map((r) => r.rule));
     const pc = eng.priceCheck(q.vendorId, q.sku, q.unitPrice);
-    if (pc.anomalous || failed.has("price.anomaly")) this.line({ speaker: "supply", actor: "bills", to: "rules", intent: "One quote is about three times this supplier's normal price.", facts: `Quoted ${pc.ratio.toFixed(1)}x the historical median.`, target: "This quote is triple the normal price." });
+    if (pc.anomalous || failed.has("price.anomaly")) this.line({ speaker: "supply", actor: "bills", to: "rules", intent: "Answer: it's our usual supplier, but at about three times its normal price.", facts: `Quoted ${pc.ratio.toFixed(1)}x the historical median by the usual supplier.`, target: "Our usual supplier. Triple the normal price." });
     if (failed.has("vendor.bank_matches_master")) this.line({ speaker: "supply", actor: "bills", to: "rules", intent: "The same quote wants payment to a new bank account.", target: "And they want payment to a new account." });
   }
 
@@ -467,7 +466,8 @@ export class Show {
   }
 
   private afterEarth(): void {
-    if (this.title?.style !== "window") return;
+    if (this.title?.style !== "window" || this.payoffShown) return;
+    this.payoffShown = true;
     this.set({ title: null });
     const eng = this.orch.engine;
     const saved = eng.prevented.filter((p) => p.code === "fraud_confirmed").reduce((s, p) => s + p.amount, 0) || eng.prevented.reduce((s, p) => s + p.amount, 0);
@@ -475,9 +475,35 @@ export class Show {
       speaker: "rules", actor: "rules", to: "judge", intent: "Earth confirmed it: that bank account was a scam.", target: "Earth confirms it. That account was a scam.",
       onStart: () => { this.savedBig = saved ? `${compact(saved)} saved` : null; this.host.notify(); },
     });
-    // If Rules already locked the supplier before Earth's line, say the closing line now.
-    const v = [...eng.vendors.values()].find((x) => x.status === "hold");
-    if (v) this.onEngine({ seq: 0, at: eng.now, type: "vendor_status_changed", data: { vendor: v } });
+    // The payoff stands alone on the window for a moment, then Rules closes (once the supplier is really locked).
+    this.afterLines(600, () => {
+      this.set({ title: { text: saved ? `SCAM BLOCKED · ${compact(saved)} SAVED` : "SCAM BLOCKED", style: "window" } });
+      this.at(4200, () => {
+        this.set({ title: null });
+        const close = () => this.closingLine();
+        if ([...eng.vendors.values()].some((x) => x.status === "hold" || x.status === "blocked")) close();
+        else this.waitForHold = close;
+        this.at(8000, () => { if (this.waitForHold) { this.waitForHold = undefined; close(); } });
+      });
+    });
+  }
+
+  private payoffShown = false;
+  private waitForHold?: () => void;
+  private closed = false;
+
+  private closingLine(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.line({
+      speaker: "rules", actor: "rules", to: "judge", intent: "You've locked the scam supplier. The base is safe.", target: "Supplier blocked. The base is safe, Commander.",
+      onStart: () => {
+        this.crewSet("rules", { mood: "calm", approach: false });
+        this.orch.scheduleAll(this.world.endStorm(this.orch.engine));
+        this.set({ act: "resolved" });
+      },
+    });
+    this.afterLines(2500, () => this.endCard());
   }
 
   private endCard(): void {
@@ -625,7 +651,7 @@ export class Show {
     const base = w.baseState(now) as { power: { level: "ok" | "low" | "critical"; panels: number }; life: unknown; lab: string; drill: string; tau: number; dust: number };
     const t = w.telemetry(now, this.orch.engine) as { socPct: number };
     const beforeCrisis = !this.crisisAt;
-    const dust = !this.stormStarted ? 0 : beforeCrisis ? Math.min(0.5, base.dust) : base.dust;
+    const dust = !this.stormStarted ? 0 : beforeCrisis ? Math.min(this.crew.engineer.place === "outside" ? 0.75 : 0.5, base.dust) : base.dust;
     const level = beforeCrisis ? "ok" : base.power.level;
     const alarm = !beforeCrisis && level === "critical" && ["crisis", "decision", "consequence"].includes(this.act);
     const crew = Object.fromEntries(
