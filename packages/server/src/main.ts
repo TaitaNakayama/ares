@@ -228,7 +228,14 @@ function scheduleVrState(): void {
 }
 
 /** Compact state for the headset: three wall screens, five robots, the decision panel, the window. */
+/** Development only (loopback): fields merged over the live vr_state so the scene can be built before the server drives them. */
+let devPatch: Record<string, unknown> = {};
+
 function vrState() {
+  return { ...vrStateLive(), ...devPatch };
+}
+
+function vrStateLive() {
   const s = session;
   const e = s.orch.engine;
   const t = s.world.telemetry(e.now, e);
@@ -568,6 +575,13 @@ const server = http.createServer(async (req, res) => {
       const text = await session.orch.ask(role, typeof b.question === "string" ? b.question.slice(0, 300) : undefined);
       scheduleVrState();
       return send(res, 200, { ok: true, text, message: text });
+    }
+    if (path === "/api/dev/vrstate" && req.method === "POST") {
+      // {"patch": {...}} merges top-level fields over vr_state; {"patch": null} clears it.
+      const b = await readJson(req);
+      devPatch = b.patch && typeof b.patch === "object" ? { ...devPatch, ...(b.patch as Record<string, unknown>) } : {};
+      scheduleVrState();
+      return send(res, 200, { ok: true, keys: Object.keys(devPatch) });
     }
     if (path === "/api/agents/mode" && req.method === "GET") return send(res, 200, router.status());
     if (path === "/api/agents/history" && req.method === "GET") {
