@@ -56,9 +56,17 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   }()
   #endif
 
-  static let server = "ws://127.0.0.1:8787/?client=spectator"
-  static let statsURL = URL(string: "http://127.0.0.1:8787/api/spectator/stats")!
-  static let frameURL = URL(string: "http://127.0.0.1:8787/api/spectator/frame")!
+  /// The server's port: 8787, or ARES_PORT in debug builds (captures against a private server).
+  static let port: String = {
+    #if DEBUG
+    return ProcessInfo.processInfo.environment["ARES_PORT"] ?? "8787"
+    #else
+    return "8787"
+    #endif
+  }()
+  static let server = "ws://127.0.0.1:\(port)/?client=spectator"
+  static let statsURL = URL(string: "http://127.0.0.1:\(port)/api/spectator/stats")!
+  static let frameURL = URL(string: "http://127.0.0.1:\(port)/api/spectator/frame")!
 
   override func loadView() {
     let root = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))

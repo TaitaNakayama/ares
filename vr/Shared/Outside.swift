@@ -554,15 +554,16 @@ final class Outside {
   private var stormAimedOutdoor: Bool?
   private func aimStorm(height: Float? = nil, bandHeight: Float? = nil) {
     let dir: SIMD3<Float> = outdoor ? SIMD3(Spots.rimDir.x, 0, Spots.rimDir.y) : SIMD3(-290, 0, -345) / 450.4
+    let wallD: Float = outdoor ? 210 : 450, bandD: Float = outdoor ? 120 : 270
     if stormAimedOutdoor != outdoor {
       stormAimedOutdoor = outdoor
-      stormWall.simdPosition = dir * 450
+      stormWall.simdPosition = dir * wallD
       stormWall.simdLook(at: .zero, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
-      stormBand.simdPosition = dir * 270
+      stormBand.simdPosition = dir * bandD
       stormBand.simdLook(at: .zero, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, 1))
     }
-    if let h = height { stormWall.simdPosition = SIMD3(dir.x * 450, h / 2 - 12, dir.z * 450) }
-    if let h = bandHeight { stormBand.simdPosition = SIMD3(dir.x * 270, h / 2 - 6, dir.z * 270) }
+    if let h = height { stormWall.simdPosition = SIMD3(dir.x * wallD, h / 2 - 12, dir.z * wallD) }
+    if let h = bandHeight { stormBand.simdPosition = SIMD3(dir.x * bandD, h / 2 - 6, dir.z * bandD) }
   }
 
   /// The solar field's brightness: 1 = clean panels in the sun, 0 = dark and dust-coated (the storm took the light).
