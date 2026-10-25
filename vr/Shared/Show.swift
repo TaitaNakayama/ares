@@ -90,6 +90,7 @@ final class ShowDirector {
   func apply(_ st: VRState, now: TimeInterval) {
     act = st.scene?.act
     cue = st.scene?.cue
+    applyWorld(st.world)
     let ti = st.scene?.title
     let text = ti?.text ?? ""
     let style = ti?.style ?? ""
@@ -118,6 +119,18 @@ final class ShowDirector {
   }
 
   private var endShown = ""
+
+  // MARK: the world (the crisis and its consequences)
+
+  /// `world.*` -> what you can see and hear: the solar field outside fades with `power.panels`, the alarm sounds while
+  /// `alarm`, the lab's lights follow `lab`, the ice drill follows `drill`. (The window's darkness is `dust` via the tau.)
+  private func applyWorld(_ w: VRState.World?) {
+    guard let w else { return }
+    outside?.setPanels(level: Float(w.power?.panels ?? 1))
+    Sound.shared.setAlarm(w.alarm ?? false)
+    Dressing.lab?.set(on: (w.lab ?? "on") != "paused")
+    if let d = w.drill { outside?.setDrill(on: d != "off") }
+  }
 
   private func drawTitle(_ text: String) {
     titleText.update(key: "t|" + text) { ctx, size in

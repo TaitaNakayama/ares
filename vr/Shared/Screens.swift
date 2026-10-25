@@ -18,6 +18,9 @@ final class WallScreens {
   private var loadHistory: [Double] = []
   private var sampleSerial = 0
   private var lastSample: TimeInterval = -10
+  /// The crisis: a red additive wash over the POWER screen that pulses while `world.power.level` is critical.
+  private let powerGlow = SCNNode()
+  private var powerLevel = "ok"
 
   /// Beat names, from the story definition in world-mars (storyBeat): the demo's 7 steps.
   static let beatNames = ["", "Delivery", "Dust storm", "Battery request", "Quote flagged", "Blocked, sent to Earth", "Commander decides", "Earth's verdict"]
@@ -59,6 +62,20 @@ final class WallScreens {
       Self.frame(for: n, w: 2.1, h: 1.2)
       root.addChildNode(Self.wallGlow(deg: deg, y: 1.78, w: 2.1, h: 1.2))
     }
+    // Red wash over the POWER screen (hidden until the level drops).
+    let pg = SCNPlane(width: 2.4, height: 1.5)
+    let pgm = SCNMaterial()
+    pgm.lightingModel = .constant
+    pgm.diffuse.contents = Tex.glow(PlatformColor(red: 1.0, green: 0.12, blue: 0.08, alpha: 1))
+    pgm.blendMode = .add
+    pgm.writesToDepthBuffer = false
+    pg.materials = [pgm]
+    powerGlow.geometry = pg
+    powerGlow.position = SCNVector3(0, 0, 0.012)
+    powerGlow.renderingOrder = 60
+    powerGlow.opacity = 0
+    powerGlow.isHidden = true
+    power.node.addChildNode(powerGlow)
     // "Waiting for you" sits on the console under the window, tilted up toward the user.
     let w = waiting.node
     w.position = Room.ring(0, r: 2.62, y: 1.0)
@@ -74,7 +91,26 @@ final class WallScreens {
     root.addChildNode(Self.wallGlow(deg: 180, y: 2.4, w: 1.5, h: 0.84))
   }
 
+  /// `ok` | `low` | `critical` (from `world.power.level`): the POWER screen goes amber, or red and pulsing.
+  private func setPowerLevel(_ level: String) {
+    guard level != powerLevel else { return }
+    powerLevel = level
+    powerGlow.removeAllActions()
+    switch level {
+    case "critical":
+      powerGlow.isHidden = false
+      powerGlow.opacity = 0.2
+      powerGlow.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.75, duration: 0.45), .fadeOpacity(to: 0.15, duration: 0.45)])))
+    case "low":
+      powerGlow.isHidden = false
+      powerGlow.runAction(.fadeOpacity(to: 0.22, duration: 0.5))
+    default:
+      powerGlow.runAction(.sequence([.fadeOut(duration: 0.8), .hide()]))
+    }
+  }
+
   func update(_ s: VRState?, now: TimeInterval, linkText: String) {
+    setPowerLevel(s?.world?.power?.level ?? "ok")
     if now - lastSample > 3 {
       lastSample = now
       sampleSerial += 1
@@ -94,28 +130,31 @@ final class WallScreens {
 
   private func drawPower(_ s: VRState?) {
     let p = s?.power
-    let soc = p?.socPct ?? 0
+    let wl = s?.world?.power?.level ?? "ok"
+    let soc = s?.world?.power?.socPct ?? p?.socPct ?? 0
     let tau = s?.tau ?? 0
     let left = p?.solsLeft
     let drill = p?.drillOn ?? true
     let time = s?.time ?? ""
-    let key = "\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)"
+    let key = "\(Int(soc))|\(Int(left.map { $0 * 10 } ?? -1))|\(Int(tau * 10))|\(drill)|\(Int(p?.solarKWhPerSol ?? 0))|\(Int(p?.loadKWhPerSol ?? 0))|\(time)|\(sampleSerial)|\(wl)"
     let tauH = tauHistory, solarH = solarHistory, loadH = loadHistory
     let solar = p?.solarKWhPerSol ?? 0, load = p?.loadKWhPerSol ?? 0
     power.update(key: key) { ctx, size in
-      Kit.chrome(ctx, size, accent: Palette.orange)
-      Kit.header(ctx, size, title: "POWER", color: Palette.orange, icon: Icon.bolt, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
-      let low = (left ?? 99) < 6
-      let tone = low ? Palette.red : Palette.green
+      let crit = wl == "critical", lowLevel = wl == "low"
+      let accent = crit ? Palette.red : lowLevel ? Palette.amber : Palette.orange
+      Kit.chrome(ctx, size, accent: accent)
+      Kit.header(ctx, size, title: crit ? "POWER · CRITICAL" : lowLevel ? "POWER · LOW" : "POWER", color: accent, icon: crit ? Icon.warning : Icon.bolt, right: time.isEmpty ? nil : time, rightIcon: Icon.clock)
+      let low = (left ?? 99) < 6 || crit || lowLevel
+      let tone = crit ? Palette.red : low ? Palette.amber : Palette.green
       // Battery ring.
       let c1 = CGRect(x: 24, y: 104, width: 560, height: 392)
       Kit.card(ctx, c1)
       let center = CGPoint(x: c1.midX, y: c1.minY + 186)
       Kit.ring(ctx, center: center, radius: 140, thickness: 28, fraction: CGFloat(soc / 100), color: tone)
       Icon.battery(ctx, CGRect(x: center.x - 28, y: center.y - 104, width: 56, height: 38), Palette.dim)
-      _ = Draw.text("\(Int(soc.rounded()))%", at: CGPoint(x: c1.minX, y: center.y - 62), size: 84, weight: .heavy, color: low ? Palette.red : Palette.text, width: c1.width, align: .center)
-      let reserve = left.map { String(format: "%.1f sols left", $0) } ?? "Charging"
-      _ = Draw.text(reserve, at: CGPoint(x: c1.minX, y: c1.maxY - 78), size: Kit.Size.label, weight: .heavy, color: low ? Palette.amber : Palette.text, width: c1.width, align: .center)
+      _ = Draw.text("\(Int(soc.rounded()))%", at: CGPoint(x: c1.minX, y: center.y - 62), size: 84, weight: .heavy, color: crit ? Palette.red : low ? Palette.amber : Palette.text, width: c1.width, align: .center)
+      let reserve = crit ? "Critical" : lowLevel ? "Low" : (left.map { String(format: "%.1f sols left", $0) } ?? "Charging")
+      _ = Draw.text(reserve, at: CGPoint(x: c1.minX, y: c1.maxY - 78), size: Kit.Size.label, weight: .heavy, color: crit ? Palette.red : low ? Palette.amber : Palette.text, width: c1.width, align: .center)
       // Solar vs use.
       let c2 = CGRect(x: 604, y: 104, width: 716, height: 392)
       Kit.card(ctx, c2)

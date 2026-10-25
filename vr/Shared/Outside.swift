@@ -619,7 +619,7 @@ final class Outside {
     setDrill(on: !consequences.contains(.iceDrillOffline))
   }
 
-  private func setDrill(on: Bool) {
+  func setDrill(on: Bool) {
     guard on != drillOn else { return }
     drillOn = on
     drawSign(online: on)

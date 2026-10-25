@@ -147,6 +147,7 @@ enum Dressing {
     storage(lit)
     equipment(lit, emis)
     whiteboard(lit)
+    labBench(lit)
     door(lit, emis)
     sideTable(lit)
     floorCables(lit)
@@ -155,6 +156,9 @@ enum Dressing {
     groundDecals(decals)
 
     root.addChildNode(bake(lit))
+    let labLights = LabLights(holder: { deg, r in holder(deg, r: r) })
+    root.addChildNode(labLights.node)
+    lab = labLights
     root.addChildNode(bake(emis))
     let d = bake(decals)
     d.renderingOrder = 40
@@ -373,7 +377,7 @@ enum Dressing {
     let body = solid(PlatformColor(red: 0.30, green: 0.32, blue: 0.33, alpha: 1))
     let names = ["T. VASQUEZ", "M. LINDQVIST"]
     let tints = [PlatformColor(red: 0.38, green: 0.47, blue: 0.47, alpha: 1), PlatformColor(red: 0.50, green: 0.40, blue: 0.36, alpha: 1)]
-    for (i, deg) in [Float(-92.5), Float(-100.5)].enumerated() {
+    for (i, deg) in [Float(141.5), Float(149.5)].enumerated() {
       let h = holder(deg, r: 3.66)
       h.addChildNode(box(0.50, 1.95, 0.46, body, at: SCNVector3(0, 0.975, 0)))
       let door = picture(CGSize(width: 256, height: 1024)) { c in
@@ -403,7 +407,7 @@ enum Dressing {
       out.addChildNode(h)
     }
     // Patch above the lockers.
-    let p = holder(-96.5, r: Room.radius - 0.012, y: 2.4)
+    let p = holder(145.5, r: Room.radius - 0.012, y: 2.4) // above the lockers
     p.addChildNode(patchNode(0, size: 0.34))
     out.addChildNode(p)
   }
@@ -575,7 +579,7 @@ enum Dressing {
   private static func equipment(_ out: SCNNode, _ emis: SCNNode) {
     let steel = solid(PlatformColor(red: 0.36, green: 0.40, blue: 0.42, alpha: 1))
     // O2 SCRUBBER B
-    let a = holder(146, r: 3.62)
+    let a = holder(-102.5, r: 3.62) // beside the hydroponics corner, where Life works
     a.addChildNode(box(0.96, 1.7, 0.58, steel, at: SCNVector3(0, 0.85, 0), chamfer: 0.015))
     a.addChildNode(flat(equipmentFront("O2 SCRUBBER B", size: CGSize(width: 512, height: 640), accent: PlatformColor(red: 0.95, green: 0.85, blue: 0.35, alpha: 1)), w: 0.92, h: 1.65, at: SCNVector3(0, 0.85, 0.292)))
     out.addChildNode(a)
@@ -635,14 +639,81 @@ enum Dressing {
       c.move(to: CGPoint(x: 885, y: 500)); c.addLine(to: CGPoint(x: 910, y: 450)); c.strokePath()
     }
     // Pushed off the curved wall by more than the chord sagitta (0.061 m at +-0.7 m) so the ends never sink in.
-    let h = holder(103, r: Room.radius - 0.11, y: 1.55)
+    let h = holder(103, r: Room.radius - 0.11, y: 2.07)
     h.addChildNode(box(1.48, 0.96, 0.03, Tex.material(Tex.brushed()), at: SCNVector3(0, 0, -0.005)))
     h.addChildNode(flat(board, w: 1.4, h: 0.875, at: SCNVector3(0, 0, 0.012)))
     h.addChildNode(box(0.9, 0.03, 0.06, Tex.material(Tex.brushed()), at: SCNVector3(0, -0.5, 0.03))) // marker tray
     out.addChildNode(h)
-    let p = holder(103, r: Room.radius - 0.012, y: 2.35)
+    let p = holder(84, r: Room.radius - 0.012, y: 2.35)
     p.addChildNode(patchNode(1, size: 0.3))
     out.addChildNode(p)
+  }
+
+  // ---------------------------------------------------------------- the lab bench (Science, +110 degrees)
+
+  /// The lab's lamp and strip light (they go dark when the lab is paused). One per scene.
+  static var lab: LabLights?
+
+  /// A bench under the whiteboard: cabinet and worktop, a sample rack of vials, a microscope, two dishes. The lights are `LabLights`.
+  private static func labBench(_ out: SCNNode) {
+    let steel = solid(PlatformColor(red: 0.30, green: 0.33, blue: 0.35, alpha: 1))
+    let panel = solid(PlatformColor(red: 0.24, green: 0.27, blue: 0.29, alpha: 1))
+    let dark = solid(PlatformColor(white: 0.10, alpha: 1))
+    let alu = Tex.material(Tex.brushed())
+    let h = holder(106, r: 3.55)
+    h.addChildNode(box(1.3, 0.85, 0.5, steel, at: SCNVector3(0, 0.425, 0), chamfer: 0.01))
+    h.addChildNode(box(1.34, 0.045, 0.58, alu, at: SCNVector3(0, 0.8725, 0.03), chamfer: 0.006))
+    for x: CGFloat in [-0.32, 0.32] {
+      for y: CGFloat in [0.62, 0.22] {
+        h.addChildNode(box(0.60, 0.34, 0.01, panel, at: SCNVector3(x, y, 0.255)))
+        h.addChildNode(box(0.22, 0.02, 0.02, dark, at: SCNVector3(x, y + 0.12, 0.27)))
+      }
+    }
+    // Sample rack: a tray with two rows of vials in the sample colours.
+    h.addChildNode(box(0.38, 0.03, 0.15, dark, at: SCNVector3(-0.42, 0.91, 0.06)))
+    let tints: [PlatformColor] = [PlatformColor(red: 0.30, green: 0.80, blue: 0.95, alpha: 1), PlatformColor(red: 1.0, green: 0.70, blue: 0.25, alpha: 1), PlatformColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1), PlatformColor(red: 0.85, green: 0.45, blue: 0.85, alpha: 1)]
+    for row in 0..<2 {
+      for k in 0..<4 {
+        let vial = SCNNode(geometry: SCNCylinder(radius: 0.016, height: 0.10))
+        vial.geometry?.materials = [solid(tints[(k + row) % 4])]
+        vial.position = SCNVector3(-0.55 + CGFloat(k) * 0.085, 0.975, 0.025 + CGFloat(row) * 0.07)
+        h.addChildNode(vial)
+        let cap = SCNNode(geometry: SCNCylinder(radius: 0.018, height: 0.016))
+        cap.geometry?.materials = [solid(PlatformColor(white: 0.9, alpha: 1))]
+        cap.position = SCNVector3(vial.position.x, 1.03, vial.position.z)
+        h.addChildNode(cap)
+      }
+    }
+    // Microscope: base, stage, an arm, the tube leaning toward the user, the eyepiece.
+    let scope = solid(PlatformColor(red: 0.80, green: 0.80, blue: 0.78, alpha: 1))
+    h.addChildNode(box(0.16, 0.025, 0.24, scope, at: SCNVector3(0.0, 0.91, 0.06), chamfer: 0.006))
+    h.addChildNode(box(0.11, 0.01, 0.11, dark, at: SCNVector3(0.0, 0.99, 0.10)))
+    let arm = box(0.04, 0.30, 0.045, scope, at: SCNVector3(0, 1.06, -0.03), chamfer: 0.008)
+    arm.simdEulerAngles.x = -0.25
+    h.addChildNode(arm)
+    let tube = SCNNode(geometry: SCNCylinder(radius: 0.028, height: 0.20))
+    tube.geometry?.materials = [scope]
+    tube.position = SCNVector3(0, 1.13, 0.045)
+    tube.simdEulerAngles.x = -0.45
+    h.addChildNode(tube)
+    let eye = SCNNode(geometry: SCNCylinder(radius: 0.016, height: 0.07))
+    eye.geometry?.materials = [dark]
+    eye.position = SCNVector3(0, 1.235, 0.00)
+    eye.simdEulerAngles.x = -0.45
+    h.addChildNode(eye)
+    let obj = SCNNode(geometry: SCNCylinder(radius: 0.013, height: 0.05))
+    obj.geometry?.materials = [dark]
+    obj.position = SCNVector3(0, 1.03, 0.10)
+    h.addChildNode(obj)
+    // Two dishes.
+    for x: CGFloat in [0.20, 0.30] {
+      let d = SCNNode(geometry: SCNCylinder(radius: 0.045, height: 0.012))
+      d.geometry?.materials = [solid(PlatformColor(red: 0.75, green: 0.85, blue: 0.85, alpha: 1))]
+      d.position = SCNVector3(x, 0.901, 0.15)
+      h.addChildNode(d)
+    }
+    out.addChildNode(h)
+    out.addChildNode(wallSign("LAB BENCH · SCIENCE", deg: 106, y: 2.72, em: 0.08, bg: PlatformColor(red: 0.08, green: 0.22, blue: 0.12, alpha: 1), fg: PlatformColor(red: 0.85, green: 1.0, blue: 0.85, alpha: 1)))
   }
 
   // ---------------------------------------------------------------- pressure door
@@ -803,12 +874,13 @@ enum Dressing {
     let blob = Tex.decalMaterial(Tex.blob())
     // (angle, radius, local x, local z, width, depth)
     let spots: [(Float, Float, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-      (-92.5, 3.66, 0, 0.04, 0.95, 0.85), (-100.5, 3.66, 0, 0.04, 0.95, 0.85), // lockers
+      (141.5, 3.66, 0, 0.04, 0.95, 0.85), (149.5, 3.66, 0, 0.04, 0.95, 0.85), // lockers
+      (106, 3.6, 0, 0.05, 1.5, 0.7), // lab bench
       (-123, 3.62, 0, 0, 2.1, 1.0),   // hydroponics
       (-142, 3.62, 0, 0, 1.7, 0.95),  // storage rack
       (-153.5, 3.58, 0, 0, 0.95, 0.95), (-157, 3.58, 0, 0, 0.95, 0.95), // barrels
       (-166.5, 3.62, 0, 0.05, 1.25, 0.95), // water recycler
-      (146, 3.62, 0, 0.05, 1.45, 0.95),    // O2 scrubber
+      (-102.5, 3.62, 0, 0.05, 1.45, 0.95),    // O2 scrubber
       (126, 3.84, 0, 0.12, 1.7, 0.55),     // pressure door
       (166, 3.62, 0, 0, 1.5, 0.9),         // side table
     ]
@@ -824,12 +896,13 @@ enum Dressing {
     // Tight contact shadows hugging each footprint (visibly darker at the base, fading ~0.15 m out).
     // (angle, radius, local x, local z, footprint width, footprint depth)
     let feet: [(Float, Float, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-      (-92.5, 3.66, 0, 0, 0.50, 0.46), (-100.5, 3.66, 0, 0, 0.50, 0.46), // lockers
+      (141.5, 3.66, 0, 0, 0.50, 0.46), (149.5, 3.66, 0, 0, 0.50, 0.46), // lockers
+      (106, 3.6, 0, 0, 1.3, 0.55), // lab bench
       (-123, 3.62, 0, 0, 1.5, 0.5),    // hydroponics
       (-142, 3.62, 0, 0, 1.25, 0.55),  // storage rack
       (-153.5, 3.58, 0, 0, 0.62, 0.62), (-157, 3.58, 0, 0, 0.62, 0.62), // barrels
       (-166.5, 3.62, 0, -0.04, 0.8, 0.65), // water recycler
-      (146, 3.62, 0, 0, 0.96, 0.58),       // O2 scrubber
+      (-102.5, 3.62, 0, 0, 0.96, 0.58),       // O2 scrubber
       (126, 3.84, 0, 0.1, 1.3, 0.3),       // pressure door sill
       (166, 3.62, 0, 0, 1.0, 0.5),         // side table
     ]

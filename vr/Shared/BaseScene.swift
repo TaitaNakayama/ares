@@ -270,10 +270,10 @@ final class BaseScene {
       lastSaved = saved
     }
     director.apply(st, now: now)
-    show.apply(st, now: now)
     let tauNow = ShowDirector.effectiveTau(st)
     outside.apply(tau: tauNow, sunAzimuth: st.sun?.azimuth ?? 120, sunElevation: st.sun?.elevation ?? 45)
     outside.show(Consequence.active(in: st))
+    show.apply(st, now: now) // after the legacy consequences: the show contract's `world` has the last word
     Sound.shared.setStorm(tau: tauNow)
     var newest: (role: String, r: VRState.Robot)?
     for (role, r) in st.robots ?? [:] {
