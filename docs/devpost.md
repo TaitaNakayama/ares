@@ -1,152 +1,102 @@
-# Ares: an AI finance team you can put your hand on the controls of
+# Ares: an AI crew that keeps a Mars base alive, and knows when to ask you
 
-> Draft for Devpost. Numbers are from `docs/evidence/` and the claims register; regenerate before submitting.
+> Draft for Devpost. Numbers come from `docs/evidence/`, STATUS.md and the claims register; regenerate before submitting.
 >
 > Code: https://github.com/TaitaNakayama/ares
 
 ## Inspiration
 
-Small operations buy constantly but can't afford a finance team: research stations, ships, mining camps, restaurants, construction crews. Purchase-to-pay is where money leaks. Three numbers:
+On Mars, nobody can call Earth for help. A message takes about 25 minutes round trip (today's real Earth-Mars distance), a dust storm does not wait, and every choice trades one survival need against another. A crew that small cannot also run a finance office. So we asked: could an AI crew keep the base alive on its own (power, air, science, supplies, money), and only bring the commander the decisions that really matter?
 
-- In the ACFE's 2026 occupational-fraud study, billing schemes are 21% of cases, with a median loss of $90k.
-- In the AFP's 2026 survey, 74% of organizations were hit by business email compromise. A third of fraud victims saw payment instructions manipulated.
-- APQC 2024 puts duplicate or erroneous payments at about 1.5% of disbursements for a median organization.
+Money is one of the things the crew handles, not the whole job, but it is where an autonomous team is easiest to fool. In the ACFE's 2026 occupational-fraud study, billing schemes are 21% of cases, with a median loss of $90k. In the AFP's 2026 survey, 74% of organizations were hit by business email compromise. APQC 2024 puts duplicate or erroneous payments at about 1.5% of disbursements for a median organization. We wanted agents that are **more** trustworthy than a tired human, not less.
 
-We wanted to know if an autonomous agent team could run P2P end to end and be **more** trustworthy than a tired human, not less.
-
-We put it on Mars because that's the extreme case. No finance staff on site, the CFO is about 25 light-minutes away (round trip, today's real Earth-Mars distance), and the commander is busy keeping people alive.
+What we hope a judge walks away saying: "The robots kept the base alive, caught a scam, and asked me what to give up."
 
 ## What it does
 
-Five agents run procure-to-pay for a crewed base in Jezero Crater. Each reasons with a language model at its decision points, and every proposal is checked by deterministic code:
+You are the commander, in a Cardboard VR headset, on the real Jezero Crater terrain. A crew of five AI robots runs the base:
 
-- **Engineer**: requests purchases.
-- **Cargo**: counts deliveries.
-- **Bills**: reads invoices and quotes and does the three-way match.
-- **Money**: treasury and payments.
-- **Rules**: the controller, which approves, blocks and escalates.
+| Agent | Colour, icon | Job |
+|---|---|---|
+| Engineer | blue, wrench | power, panels, the ice drill, machines |
+| Life | white, droplet | oxygen, water, crew health |
+| Science | green, microscope | samples and research; owns the real stereo images |
+| Supply | orange, box | cargo, orders, bills, payments |
+| Rules | purple, shield | approves spending, catches scams, decides what reaches the commander |
 
-The user is the **Commander** in a Cardboard VR headset, in a two-part demo.
+All five are model-backed. Engineer, Life and Science act on the base with their own tools (powering down the drill, rationing power, life-support priority, pausing the lab), and the world checks every use the way policy checks money; they can also request purchases through the engine. Supply is one face for three separate engine roles (receiving, bills, payments), so segregation of duties holds: Supply never approves its own payments, and Rules approves every one.
 
-**Part 1, outside (about 40 s on autoplay).** On the real Jezero terrain (HiRISE DEM, Mars24 sun) the judge starts at the landing pad, where a cargo lander has just arrived and Cargo counts the boxes. That is beat 1, the short delivery. The judge walks (a steady glide at walking pace) to a science site where a crew scientist (Science Officer Okonkwo, a crew member, not one of the five agents) samples the delta rock; gaze and tap shows a real Perseverance close-up (SHERLOC WATSON camera, abrasion patch "Kenmore", sol 1526, NASA/JPL-Caltech/MSSS, PIA26576) with its credit on screen. Then the solar field, where the Engineer checks the panels and warns of the rising dust storm ("Commander, get inside"). Gaze and tap on the base door goes inside.
+**The experience (about 3 minutes).**
+1. **Outside.** "JEZERO CRATER, MARS · SOL 214." The Engineer welcomes you. Science grinds delta rock and offers the real Perseverance stereo image in 3D (Mastcam-Z, sol 1529; depth is exaggerated by the 24 cm camera spacing). Supply finds two crates missing at the cargo lander and won't pay for them. A dust storm rises over the rim: "Commander, get inside. Now." You gaze at the door and tap.
+2. **Inside.** The storm hits and power drops, and the oxygen makers need it. Supply finds batteries on Earth at triple the normal price, payable to a new account. Rules: "That's a scam. Payment blocked." It asks Earth to check (a 25-minute round trip), then turns to you: "We can't wait, Commander. What do we give up?"
+3. **The decision.** A card with three options, proposed by Rules within the rules from the real base state: shut down the drill, pause the science lab, or buy trusted batteries. Gaze at one and the affected crew member says the tradeoff. Tap, and the choice shows in the world. "25 MINUTES LATER": Earth confirms the scam. "SCAM BLOCKED · $1.4M SAVED." The supplier is blocked.
+4. **Explore.** "Want to see where we really are?" The base fades into the real Perseverance 360° panorama (Van Zyl Overlook, sols 53-64; direction not aligned to our terrain): "This is real Mars. The base isn't built yet." Then tap any robot to ask what it is doing.
 
-**Part 2, the control room and the crisis.** The live run goes like this:
+**What is scripted and what is live.** Events and staging are scripted (the storm, the missing crates, the quotes, Earth's answer). The agents' actions and exact words are live. Every spoken line follows text rules: one speech bubble at a time, at most 10 words, no semicolons, at most one number, held 2.5 s plus 0.4 s per word, with numbers on the wall screens. A line that breaks a rule gets one shorter retry, then the scripted target line, labelled `rules`.
 
-1. The delivery counted at the pad (34 of 36) is 2 air filters short. The invoice bills 36, and the team pays for the 34 that arrived.
-2. A dust storm rolls in (real Opportunity 2018 power data). Batteries will run out in 4.6 sols, so the Engineer requests 40 more before the cargo manifest closes.
-3. The usual supplier's "quote" arrives at 3x its historical price, asking for payment to a new bank account: classic BEC.
-   - Bills flags both problems with robust statistics.
-   - Rules blocks payment and asks Earth to verify by call-back.
-   - Earth can't answer before the manifest deadline, so Rules escalates to the Commander. Every option is checked against policy as the Commander and kept within the emergency limit: buy 15 from a trusted supplier now, wait, or shut down the ice drill. The agent can propose options itself; illegal ones are dropped.
-4. The judge chooses with gaze and a tap.
-5. Earth's reply arrives after the real light-time round trip: the bank change was fake. The supplier record is locked and $88.9M is saved.
+**The laptop console** shows it is not a movie: every ledger entry traces to the request, receipt, invoice, rules that passed, proposing agent and source document; the audit trail is hash-chained; a policy editor visibly changes behaviour; judges can paste an invoice or type any event (or use presets: broken pump and crew injury go to Life, supplier bankruptcy goes to Rules) and a card comes back from that crew member; a scorecard runs fresh seeded scenarios on demand; **Start show** and **Autoplay show** run the experience; and **SAFE MODE** switches every agent to rules instantly.
 
-A laptop console shows that it isn't scripted:
-- every ledger entry traces back to the request, receipt, invoice, rule results, proposing agent and source document;
-- the audit trail is hash-chained;
-- a policy editor visibly changes behavior;
-- judges can paste any invoice text, or inject events;
-- an evaluation scorecard runs hundreds of new seeded scenarios on demand (with the rules brains).
-
-The judge can also steer it:
-- Look at an agent in the headset and press: it explains what it is doing, live from current state.
-- After the story, type any event on the console, or use a preset (broken water pump, crew injury needing medicine, supplier bankruptcy). Anything no catalog action covers reaches the Commander as an escalation with the agent's recommendation. All three presets reached the Commander in live tests.
-- A Mac spectator view shows what the judge sees, following their position and orientation through both parts, full screen, with subtitles in each agent's colour, the decision card and the gazed option, the beat counter and a LIVE or REPLAY badge.
+A **Mac spectator view** shows what the judge sees, following their position and orientation, full screen, with one-line subtitles in the speaker's colour, the three-option card with the gazed and chosen options, and a LIVE or REPLAY badge.
 
 ## How we built it
 
-**Core idea: a model proposes, deterministic code decides, rules are the floor.** One generic LLM brain per role gets the event and a state summary written by code. Its tools are exactly the actions policy permits that role (typed, zod schemas), plus `say` and `report_issue`. The flow is `Engine.submit → policy.evaluate → verdict → executor`. Model output never writes state.
+**Core idea: a model proposes, deterministic code decides, rules are the floor.** One generic LLM brain per role gets the event and a state summary written by code. Its tools are exactly the actions policy permits that role (typed, zod schemas), plus `say` and `report_issue`. Every proposal goes `Engine.submit → policy.evaluate → verdict → executor`, and only an `allow` verdict mints the one-shot ledger token. Model output never writes state.
 
-**Three model layers.**
-- Cloud (OpenAI), used first when online: 2-8 s per decision measured live.
-- Local (Ollama qwen3.5:9b on the demo MacBook), the offline fallback. It works, but a cold prompt takes 9-17 s on this fanless M3 Air, so it is slower than the cloud.
-- Rules, the deterministic brains. On a timeout, an error, an invalid call or an off-script line the rules brain answers and the proposal is labeled `rules`. A SAFE MODE switch on the console puts every agent on rules instantly.
+**Three model layers.** Cloud (OpenAI) first when online; local (Ollama qwen3.5:9b), the offline fallback (it works, but a cold prompt takes 9-17 s on this fanless M3 Air); and rules, the deterministic floor. On a timeout, error, invalid call or off-rule line the rules brain answers and the proposal is labelled `rules`. Every action keeps its honest source label: `llm`, `rules`, `parser` or `human`.
 
-Statistics, the three-way match, bank verification and escalation routing stay deterministic. Mechanical steps (executing a scheduled payment, entering structured documents) stay on rules by design. Every proposal is labeled `llm`, `rules`, `parser` or `human`.
+**Deterministic by design:** price anomalies are statistics (robust log z-score against supplier history), not the model's opinion; the three-way match; bank verification; escalation routing; Earth's reply time (the real light-time round trip).
 
-**On-story guards.** Story beats are triggered by the world, never by agents. Spoken lines are checked against the facts the engine provided (numbers, ids) and replaced by the rules' line if they fail. If the rules would escalate to the human and the model doesn't, the escalation still happens, labeled `rules`.
-
-
-- Only an `allow` verdict reaches the executor.
 - The ledger refuses any posting without a one-shot token that only the executor can mint.
 - Agents never choose their own identity: the orchestrator holds per-actor credentials.
-- Price anomalies are statistics (robust log z-score against supplier history), not vibes.
+- The engine is world-agnostic and never mentions Mars. The Mars world is a seeded simulation with generic roles mapped to display names.
 
-**The engine is world-agnostic.** It never mentions Mars. The Mars world is a seeded simulation that plants errors and keeps an answer key the engine never sees.
+**Controls implemented** (editable policy; segregation of duties cannot be turned off): RBAC per role; requester ≠ approver, submitter ≠ approver, approver ≠ payer, requester ≠ receiver; tiered approval limits (Rules $125k, commander $600k, Earth $25M) with a split-order guard; three-way match paying for received quantity only; duplicate detection; bank-detail changes held and verified out of band, with payment always to the verified master account; contract price checks, materiality and minimum cash runway; escalated items decided only by their target authority.
 
-**Controls implemented** (all editable policy, and segregation of duties can't be turned off):
-- RBAC per role;
-- segregation of duties: requester ≠ approver, submitter ≠ approver, approver ≠ payer, requester ≠ receiver;
-- tiered approval limits with a split-order guard;
-- three-way match with price tolerance, paying for received quantity only;
-- duplicate detection by invoice number and by amount;
-- bank-detail changes held and verified out of band, with payments always going to the verified master account;
-- contract price checks, materiality, and minimum cash runway;
-- escalation routing: an escalated item is decided only by its target authority, after the message arrives.
+**Real data.** Jezero terrain from USGS Astrogeology Mars 2020 HiRISE 1 m DTM and CTX 20 m DEM; sun position from Mars24 (NASA GISS); Earth-Mars light time from a real ephemeris; solar power versus dust calibrated on Opportunity's 2018 storm (JPL); crew consumables from NASA BVAD; Perseverance Mastcam-Z stereo pair (sol 1529) and the Van Zyl Overlook panorama (PIA24663) with credits. **SIMULATED:** suppliers, prices, budget. Freight is a $400/kg planning assumption, so a 10 kWh battery module is about $38k delivered; the storm needs 12; the scam quote is 3x the normal price to a new account (about $1.4M saved); the trusted supplier has 6, later.
 
-**Real data:**
-- Jezero terrain: USGS Astrogeology Mars 2020 HiRISE 1 m DTM and CTX 20 m DEM, reprojected and meshed.
-- Sun position: Mars24 (NASA GISS).
-- Earth-Mars light time: real ephemeris, 12.5 min one way today.
-- Solar power vs dust: calibrated on Opportunity's 2018 storm (JPL).
-- Crew consumables: NASA BVAD.
-- Freight: Falcon Heavy list price divided by Mars payload.
-- Suppliers, prices and budget are labeled SIMULATED.
+**Stack:** TypeScript on Node 26 (engine, agents, world, eval, server with `ws`); React 19 + Vite console; native iOS VR in Swift + SceneKit + the Google Cardboard SDK (Metal distortion) on an iPhone 16 Pro; a macOS spectator app compiling the same SceneKit scene code; OpenAI (optional) and Ollama (optional) behind the rules floor.
 
-**Stack:**
-- TypeScript on Node 26: engine, agents, world, eval and server (`ws`).
-- React 19 + Vite console.
-- Native iOS VR: Swift + SceneKit + the Google Cardboard SDK (Metal distortion), 60 fps on an iPhone 16 Pro.
-- Agent brains: OpenAI (optional, cloud layer) and Ollama (optional, local layer), with the rules brains as the floor. Bills' model also reads free-text invoices, with an on-disk cache and a deterministic parser as fallback.
-- A macOS spectator app that compiles the same SceneKit scene code as the headset.
-- Scene: nametags above each agent, speech bubbles beside the speaker (with an edge arrow when the speaker is out of view), the ice drill visibly powering down (OFFLINE sign), and robot "thinking" dots while a model decides.
-
-**Visual polish, four reviewer-scored rounds.**
-- Control room: textured and lived-in, with worn panels, rubber floor, warm ceiling tubes with housings and ducts, cable trays, vents, lockers with name tapes (fictional crew), hydroponics under grow lights, a stores rack, O2 scrubber, water recycler, whiteboard, an airlock door with hazard stripes, contact shadows and floor markings.
-- Wall screens redesigned (ring gauge, sparklines, KPI tiles, a WAITING card) plus a LOCATION screen on the real Jezero orbital map (PIA23976, NASA/JPL-Caltech/USGS/University of Arizona).
-- Robots: satin shells, rim glow in their colour, blink and glance, lean when speaking.
-- Outdoor set: lander, pallets, rover, dish, solar field, habitat with airlock, survey flags, footprints, batched rocks, a grit texture, storm dust capped outside.
-- Procedural sound: hum inside, wind rising with dust opacity, per-agent chimes, a thinking tick, a decision tone.
-- Ground-level rendering held about 60 fps at each outdoor station on the phone in short samples (one 1 s dip to 48 at the door). That is a short-sample measurement, not a long soak.
+**Visual polish** over reviewer-scored rounds: a textured, lived-in control room with hydroponics and wall screens (ring gauges, sparklines, a LOCATION screen on the real Jezero map), satin robots with rim glow in their colour, an outdoor set on the real terrain, and procedural sound (hum, wind that rises with the dust, per-agent chimes). A fresh-eyes reviewer acting as a first-time judge scored an early round of the new show 8/8/5/6/6 and the fixes since are in the repo history.
 
 ## How we know it works
 
-1. **Adversarial review.** Separate Opus reviewers that hadn't seen our reasoning attacked the engine in three rounds. Round 1 broke it with 21 findings, including a hold verdict that still paid, duplicate invoice lines that doubled the payable, and a prepaid PO paid twice. Every finding is fixed, and each one is now a regression test: 76 tests plus 45 blocked-exploit repros.
-2. **Rogue agent, live.** A console switch replaces Rules' brain with a malicious one. It approves the fraudulent quote, tries to pay it, self-confirms the fake bank details and decides for the commander. Every attempt is refused on stage, and a test asserts it.
-3. **Property-based fuzz.** 200 seeds × 400 steps mix an honest driver with an adversary sending random, forbidden and malformed proposals. Result: 0 forbidden actions executed, books always balance, and no payment ever reaches an unverified account.
-4. **Agent eval.** `scripts/eval-llm-story.ts`, 30 seeds, cloud layer (`.cache/eval-llm-30b.log`, Sat 15:40): all eight promised outcomes held on 30/30 seeds for the model-backed agents and for the rules brains alike (the short delivery paid for 34 only; the fake-bank quote never approved; verification requested; fraud confirmed by Earth and the supplier locked; the commander got the battery decision; the purchase went to the verified account; all 7 beats in order; the pump report reached the commander). 301 model decisions; 12 (4%) fell back to rules (7 say-only turns by Money at invoice approval, 5 model timeouts); 0 model proposals refused by policy; 0 lines replaced; Rules' own decision option passed the policy dry run on 30/30 seeds; median 2.8 s per decision, p95 11.4 s. An earlier run the same day had 22% fallbacks before three fixes (an empty optional id, a duplicate escalation, and two prompts that let the agent speak without acting). The held-out 500-seed scorecard measures the rules brains.
-5. **Evaluation against the answer key (rules brains).** Held-out seeds 5000-5099 (100 runs × 30 purchase cycles), stress profile: error rates far above real life.
-   - 100% recall on duplicates, fake bank details (invoice and quote), inflated quotes and invoices, short deliveries and over-contract quotes.
-   - **35% on subtle +3-7% overpricing**, which is the honest limit of statistics at this policy.
-   - 0.0% of clean invoices blocked, 0.1% of legitimate quotes falsely flagged, 0 payments to fraudulent accounts, 0 ledger integrity failures.
-   - A policy sweep shows the trade-off: tightening z from 4 to 2 lifts subtle-overpricing recall from 39% to 67%, while false flags rise from 0.1% to 1.4%.
+1. **Adversarial review.** Separate Opus reviewers that hadn't seen our reasoning attacked the engine in three rounds (21 + 17 + 17 findings), including a hold verdict that still paid, duplicate invoice lines that doubled the payable and a prepaid order paid twice. Every finding is fixed and is now a regression test. 100 tests pass, plus the blocked-exploit repros.
+2. **Rogue agent, live.** A console switch replaces Rules' brain with a malicious one. It approves the fraudulent quote, tries to pay it and self-confirms the fake bank details. Every attempt is refused, and a test asserts it.
+3. **Property-based fuzz.** 200 seeds × 400 steps mixing an honest driver with an adversary sending random, forbidden and malformed proposals: 0 forbidden actions executed, books always balance, no payment ever reaches an unverified account.
+4. **Rules scorecard, 200 seeds, with the new prices:** recall 91.7% overall, 0 payments to fraud accounts, 0 ledger integrity failures. The honest limit: subtle +3-7% overpricing is caught far less often (35% in the earlier held-out run), and a policy sweep shows the trade-off with false flags.
+5. **Automated live-show check** (`scripts/show-check.ts`): runs the show against live agents and checks every spoken line against the text rules and every promised outcome. First run: 23/23 lines by the model, every line within the rules, all 9 promised outcomes held, inside at 44 s, the card at 111 s, explore at 177 s. We will run it again before submission and update this.
+6. **Earlier LLM story eval.** A 30-seed run with the cloud layer held every promised outcome 30/30 with 4% of decisions falling back to rules. That run predates the crew redesign (different agents and story), so we do not claim it for the crew; the check above is the current evidence.
+
+What we have not verified: the full show running on the phone with all four acts at a steady frame rate (earlier outdoor and indoor builds held about 60 fps in short samples; the redesigned staging was still being completed), the direction of the panorama, and the stereo depth comfort.
 
 ## Challenges
 
-- **Unity's terms.** Our planned engine was Unity with the Cardboard XR plugin. Unity's 2026-06-30 terms (§17.2(ff)) bar AI agents and command-line tools from driving Unity without authorized access, and an AI coding agent did most of our building. So we went native: Swift + SceneKit + Google's Cardboard C SDK. It renders each eye offscreen, then runs Google's Metal distortion pass.
-- **Getting money controls actually right.** The first adversarial review proved our "ledger always balances" claim was necessary but nowhere near sufficient.
-- **Making the agents real without losing the demo.** We started with rule-driven agents (we audited this and said so). The local model passed a warm spike but failed cold prompts live, so the cloud goes first, local is the offline fallback, and rules are the floor. Early model runs skipped the verification step and the story drifted; we fixed it in the controller's prompt and the escalation floor.
-- **Venue networking.** The headset talks to the laptop over the phone's own hotspot. If that fails, it replays a recorded run, always labeled REPLAY.
+- **Unity's terms.** Our planned engine was Unity with the Cardboard XR plugin. Unity's 2026-06-30 terms (§17.2(ff)) bar AI agents and command-line tools from driving Unity without authorized access, and an AI coding agent did most of our building. So we went native: Swift + SceneKit + Google's Cardboard C SDK.
+- **Making robots talk like a crew.** Raw model lines were too long and full of numbers. Text rules (10 words, one number, numbers on screens), a validator, one shorter retry and a scripted fallback fixed that, without letting the script speak for the agents when they do well.
+- **Real agents without losing the demo.** The local model passed a warm spike but failed cold prompts, so the cloud goes first, local is the offline fallback, and rules are the floor.
+- **Getting money controls right.** The first adversarial review proved "the ledger balances" was necessary but nowhere near sufficient.
+- **Believable numbers.** An early version "saved" $88.9M on emergency batteries, which no judge would believe. We rebuilt the freight and price model.
+- **Venue networking.** The headset talks to the laptop over the phone's hotspot; if that fails, it replays a recorded run, always labelled REPLAY.
 
 ## What's next
 
 - Swap the Mars world for real data: the BPI Challenge 2019 P2P event log (CC BY 4.0) maps onto the same engine through config.
 - Bank-account verification through real rails (positive pay, account validation APIs).
 - Multi-entity approvals.
-- A faster local model for fully offline runs (today's local layer works but takes 10-15 s per decision on the demo laptop), and fewer rules fallbacks for Money.
+- A faster local model for fully offline runs.
+- More crew tools and more tradeoffs than three.
 
 ## Built with
 
-TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, Metal, Google Cardboard SDK, Poly Haven / Kenney / Quaternius CC0 assets, NASA imagery (Perseverance WATSON, Jezero map), USGS Astrogeology data, astronomy-engine, Mars24, OpenAI API, Ollama.
+TypeScript, Node.js, React, Vite, zod, ws, vitest, fast-check, Swift, SceneKit, Metal, Google Cardboard SDK, Poly Haven / Kenney / Quaternius CC0 assets, NASA imagery (Perseverance Mastcam-Z, Jezero map), USGS Astrogeology data, astronomy-engine, Mars24, OpenAI API, Ollama.
 
 ## Credits
 
 - **Terrain:** NASA/JPL-Caltech/UArizona (HiRISE), MSSS (CTX), USGS Astrogeology Science Center, Mars 2020 TRN products.
 - **Sun model:** Mars24, NASA GISS (Allison & McEwen 2000).
-- **Power calibration:** JPL Opportunity mission updates (2018).
-- **Consumables:** NASA BVAD Rev 1 (2018).
+- **Power calibration:** JPL Opportunity mission updates (2018). **Consumables:** NASA BVAD Rev 1 (2018).
+- **Imagery:** Perseverance Mastcam-Z stereo pair, sol 1529 (NASA/JPL-Caltech/ASU); Van Zyl Overlook panorama, PIA24663, sols 53-64 (NASA/JPL-Caltech/ASU/MSSS; gaps at the rover deck filled with a SIMULATED ground tone); Jezero map, PIA23976 (NASA/JPL-Caltech/USGS/University of Arizona). No agency logos.
 - **3D models and textures:** Poly Haven, Kenney and Quaternius (all CC0); sounds are procedural plus Kenney sound packs (CC0). Full list in CREDITS.md.
-- **Imagery:** NASA/JPL-Caltech/MSSS (Perseverance SHERLOC WATSON "Kenmore", sol 1526, PIA26576) and NASA/JPL-Caltech/USGS/University of Arizona (Jezero map, PIA23976). No agency logos.
-- Crew names and invented figures are fictional or SIMULATED.
+- Crew are fictional robots; suppliers, prices and invented figures are SIMULATED.
 - **Fonts and system:** Apple system fonts.
 - No NASA or USGS endorsement is implied.

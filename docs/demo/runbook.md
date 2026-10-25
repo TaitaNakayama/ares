@@ -1,39 +1,44 @@
 # Demo-day runbook (Sun 2026-10-25)
 
-Everything below runs on the MacBook; the phone is the headset. Do it in this order, 20 minutes before judging.
+Everything runs on the MacBook; the phone is the headset. Do it in this order, 20 minutes before judging. The show is about 3 minutes: [script.md](script.md).
 
 ## 1. Network
 - Turn on the iPhone's Personal Hotspot; join the Mac to it (venue Wi-Fi is slow and may isolate clients). The headset app tries 172.20.10.2-14 after its baked addresses.
-- If the headset can't find the Mac within a minute: `scripts/build-ios.sh` once while the Mac is on the hotspot (it bakes the current IPs), phone unlocked.
-- Cloud (OpenAI) needs the hotspot's internet. Without it the agents use the local model (slow, 10-15 s) and then rules; the story still completes.
+- If the headset can't find the Mac within a minute: run `scripts/build-ios.sh` once while the Mac is on the hotspot (it bakes the current IPs), phone unlocked.
+- The cloud layer needs the hotspot's internet. Without it the agents use the local model (slow, 10-15 s), then rules; the show still completes.
 
 ## 2. Start
 ```bash
-scripts/start-local-llm.sh                    # fresh Ollama (memory back to ~9 GB), model warm
-node packages/server/src/main.ts              # :8787; watch for "LLM layers: local qwen3.5:9b; cloud gpt-6.1-sol; mode auto"
-scripts/build-spectator.sh                    # Mac spectator, full screen in its own Space (swipe to it)
-open http://localhost:8787                    # the console, in a browser on the laptop
+scripts/start-local-llm.sh                    # fresh Ollama, model warm
+node packages/server/src/main.ts              # :8787; look for "LLM layers: local ...; cloud ...; mode auto"
+scripts/build-spectator.sh                    # Mac spectator, full screen in its own Space (swipe to it); --windowed to test
+open http://localhost:8787                    # the console
 ```
-Then open Ares on the phone (unlocked, Auto-Lock Never), put it in the viewer. The console header should show the headset connected and "LLM local … · cloud …".
+Open Ares on the phone (unlocked, Auto-Lock Never) and put it in the viewer. The console header should show the headset connected and the model layers.
 
-## 3. The run (about 3-3.5 min)
-- Console → Director → **Autoplay** (or press **Next** for each beat yourself: pad → science → solar → door → inside; then the agents run).
-- Part 1 (≈40 s): the judge is at the landing pad; walks to the scientist (gaze + press: the real Perseverance close-up); to the solar field (storm warning); to the door (gaze + press to enter; auto-enter after 25 s).
-- Part 2: the delivery/invoice beat resolves, the storm hits, the fake quote is flagged, Rules asks Earth and escalates: the judge decides on the card (one option is tagged "proposed by Rules"). Earth's answer arrives after a time-lapse; "$88.9M saved".
-- Judge autonomy: look at a robot and press (it explains itself); after the story, Console → Inject → Report (the three presets or any text).
+## 3. The run
+- Console: **Reset**, then **Start show** (or `curl -X POST localhost:8787/api/show/start`). The title appears as the judge puts the headset on.
+- **Autoplay show** (or `POST /api/show/autoplay` with `{"choice":"drill"|"lab"|"buy"}`) plays everything hands-free, choosing that option: use it for recordings, not for judges.
+- The judge only follows the one glowing thing: Science (tap for the stereo image), the door (gaze and tap; auto-enters after 20 s), the card (gaze at an option to hear the tradeoff, tap to choose), then the Engineer (Act 4, the real panorama; tap again to come back).
+- The console pill shows the act, the cue and the line being said, with its `llm` or `rules` badge. `GET /api/show/log` has the full log.
+- After the end card: look at a robot and press to ask it; on the console, Inject → Report (presets or any text) comes back as a card from Life, Science or Rules.
+- Expected timings from the automated check: inside at about 44 s, the card at about 111 s, explore at about 177 s.
 
 ## 4. If something breaks
 | Symptom | Do |
 |---|---|
-| An agent is slow or says odd things | Console → **SAFE MODE** (instant; all agents on rules). Mode group → auto to return. |
-| Phone loses the server | The headset plays the recorded run, labelled REPLAY; the spectator shows REPLAY too. Reconnects on its own. |
-| Spectator not following the head | Quit and relaunch `scripts/build-spectator.sh`; it reconnects to the headset's pose stream. |
-| Phone hot | It is Release at 60 fps; take it out of the viewer between judges. |
-| Story stuck before the decision | Console → Director → Next (or Reset + Autoplay; 40 s to be back at the storm). |
-| Dust inside the room | Fixed (f5fb69b); if seen, it's an old build: reinstall. |
+| An agent is slow or says odd things | Console **SAFE MODE** (instant, every agent on rules). Mode group → auto to return. |
+| Show stuck or judge lost | Console **Reset**, then **Start show**. Or **Autoplay show** to get to the end. |
+| Phone loses the server | The headset plays a recorded run labelled REPLAY; the spectator shows REPLAY too. It reconnects on its own. |
+| Spectator not following the head | Quit and relaunch `scripts/build-spectator.sh`. |
+| Headset won't launch | The phone must be unlocked for `devicectl process launch`. |
+| Phone hot | Take it out of the viewer between judges. |
+| Everything fails | Play the recording in `docs/demo/`. |
 
 ## 5. Between judges
-Console → **Reset** (fresh seed or the demo seed), phone stays in the viewer. The agents' first decisions after a reset come from the cloud in 2-8 s each.
+Console **Reset**; the phone stays in the viewer.
 
 ## 6. What is real, if asked
-Terrain: HiRISE DEM of Jezero; sun: Mars24; the scientist's close-up: Perseverance WATSON "Kenmore", sol 1526 (PIA26576); the LOCATION screen: PIA23976; power curve: Opportunity 2018 storm (JPL). Suppliers, prices, budget, crew names: SIMULATED/fictional. The agents: a model proposes, deterministic controls decide, rules are the floor; 30-seed eval 30/30 on every promised outcome; 4% of decisions fell back to rules.
+Real: terrain (HiRISE DEM of Jezero), sun (Mars24), storm power curve (Opportunity 2018), Earth-Mars light time, the Perseverance stereo pair (sol 1529; NASA/JPL-Caltech/ASU), the Van Zyl Overlook panorama (sols 53-64; NASA/JPL-Caltech/ASU/MSSS; rover-deck gaps filled and labelled SIMULATED), the LOCATION screen map (PIA23976). SIMULATED: suppliers, prices ($400/kg freight, ~$38k per battery module, the 3x scam quote, ~$1.4M saved), budgets and limits (Rules $125k, commander $600k, Earth $25M). Events and staging are scripted; the agents' actions and exact words are live.
+
+Evals if asked: the 30-seed LLM story eval predates the crew redesign. Current: rules scorecard on 200 seeds, recall 91.7%, 0 payments to fraud accounts, 0 integrity failures; run `scripts/show-check.ts` for the live-show check (first run: 23/23 lines in the rules, 9/9 promised outcomes). Run it before submission.
