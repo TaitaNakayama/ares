@@ -736,7 +736,8 @@ export class Show {
         title: this.title,
         cue: this.cue,
         closeupOpen: this.closeupOpen,
-        reality: this.act === "real" ? { offer: true, on: this.realityOn, enter: true, caption: "This is real Mars.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
+        // After the opening the field stays, off: the headset closes the panorama only on an explicit `on: false`.
+        reality: this.act === "real" ? { offer: true, on: this.realityOn, enter: true, caption: "This is real Mars.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : { offer: false, on: false },
       },
       world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust, quote: this.quoteFields() },
       decision: this.decision && (this.act === "decision" || (this.act === "consequence" && Date.now() - this.decisionChosenAt < DECISION_LINGER_MS)) ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy, tradeoffTarget }) => ({ id, label, icon, speaker, proposedBy, cost: tradeoffTarget.replace(/\.$/, "") })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
