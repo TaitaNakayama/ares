@@ -413,8 +413,10 @@ final class DecisionCards {
   var isHit: Bool { isActive && hitIndex != nil && chosenIndex == nil }
 
   /// The button: chooses the card under the reticle. Returns (decision id, option id).
-  func tap() -> (String, String)? {
-    guard isActive, chosenIndex == nil, let h = hitIndex, h < options.count, !decisionId.isEmpty else { return nil }
+  /// A press counts only after a short look at the option (the dwell that highlights it): a reflex press, or a touched
+  /// screen, can't choose the middle card by accident.
+  func tap(now: TimeInterval) -> (String, String)? {
+    guard isActive, chosenIndex == nil, let h = hitIndex, h < options.count, !decisionId.isEmpty, now - hitSince >= Self.dwell else { return nil }
     chosenIndex = h
     gazedIndex = nil
     refreshMarks()

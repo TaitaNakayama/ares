@@ -171,7 +171,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
       pose.setConnected(m["connected"] as? Bool ?? false)
     case "narration":
       // Older servers: every agent line. The show's `speaking` replaces this (one line at a time).
-      guard mode != .replay, link.snapshot().0?.crew == nil, let n = m["narration"] as? [String: Any] else { return }
+      // Under the show (any `scene.act`) the only words are the show's `speaking`; the agents' internal lines must not appear.
+      guard mode != .replay, let st = link.snapshot().0, st.crew == nil, st.scene?.act == nil, let n = m["narration"] as? [String: Any] else { return }
       pushLine(n)
     case "vr_choice":
       if let label = m["label"] as? String { chosen = (label, CACurrentMediaTime()) }
@@ -259,7 +260,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     let (st, _) = link.snapshot()
     let showState = st?.crew != nil || st?.speaking != nil
     // In the recording there's no narration stream: take each robot's newest line from the state.
-    if !showState && (mode == .replay || !link.isConnectedToServer) {
+    if !showState && st?.scene?.act == nil && (mode == .replay || !link.isConnectedToServer) {
       for (role, r) in st?.robots ?? [:] {
         guard let seq = r.seq else { continue }
         pushLine(["seq": seq, "role": role, "name": r.name ?? role, "text": r.text ?? r.short ?? "", "short": r.short as Any, "outcome": r.outcome ?? "said"])

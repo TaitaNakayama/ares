@@ -35,8 +35,8 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 | 0:00 | Black. Title "JEZERO CRATER, MARS · SOL 214", and under it (round 3) "Any answer from Earth takes 25 minutes. The crew is on its own." (the stake, before anything happens; the number is the real round-trip light time). Wind. | | |
 | 0:05 | Fade in on the real Jezero terrain. Ahead: the base. Left: the cargo lander. Right: the solar field and the ice drill. | | |
 | 0:05 | Engineer floats up beside the judge. | engineer → judge | "Welcome, Commander. The crew has the base." [7 / 0] |
-| 0:10 | Science grinds a rock with its arm, dust puffing. **Cue: Science** (glows; tap = the real Perseverance stereo image in 3D for ~5 s with its caption, then back; the next line waits while it's open). | science → judge | "Grinding into ancient delta rock. Want a closer look?" [9 / 0] |
-| 0:20 | Supply at the lander scans crates (hologram 34/36). Beat 1 runs: delivery 34 of 36, invoice bills 36. | supply → judge | "Two crates missing. I won't pay for those." [8 / 1] |
+| 0:10 | Science grinds a rock with its arm, dust puffing. (Round 4: no close-up offer; in Acts 1-3 a press does nothing except on the door marker and the decision card.) | science → judge | "Grinding into ancient delta rock. Samples for Earth." [8 / 0] |
+| 0:20 | Supply at the lander scans crates. Beat 1 runs in the engine: delivery 34 of 36, invoice bills 36, Supply pays for 34 (round 4: not spoken; the console and the Money screen show it; one money story on the main line). | | |
 | 0:27 | Wind rises. Engineer turns to the crater rim; a dust wall rises over it. | engineer → rim | "Dust storm incoming." [3 / 0] |
 | 0:31 | Engineer turns back. | engineer → judge | "Commander, get inside. Now." [4 / 0] |
 | 0:34 | **Cue: the door** (a marker glows). The judge gazes and taps; a steady ~4 s walk to the door; the door opens with a hiss. Auto-enter after 20 s if nobody taps. | | |
@@ -47,8 +47,7 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 |---|---|---|---|
 | 0:40 | The door seals. Warm light, soft hum, plants under grow lights, glowing screens, the storm through the window. The two agents not met yet are mid-task and glance up. | | |
 | 0:42 | Life at the oxygen machine by the plants. | life → judge | "Welcome back, Commander. Air's fresh." [5 / 0] |
-| 0:46 | Supply by the crates, the crates come back. | supply → rules | "We only paid for the crates that came." [8 / 0] |
-| 0:47 | Rules at the main console introduces its job (round 3: the round-2 judge never learned what Rules is for). | rules → judge | "I check every payment before money leaves." [7 / 0] |
+| 0:46 | Rules at the main console introduces its job (round 3: the round-2 judge never learned what Rules is for). | rules → judge | "I check every payment before money leaves." [7 / 0] |
 | ~0:50 | The storm hits: window dark brown, panels outside fade, the Power screen drops into red, a low alarm. The need for batteries is raised. | life → engineer | "Power's dropping. The oxygen makers need it." [7 / 0] |
 | | One cause, one ask (round 3: replaces two lines of talk with no visible effect). | engineer → supply | "We can't run everything. Supply, find batteries. Fast." [8 / 0] |
 | | Quotes arrive (Supply records them). From here the Quote screen shows the flagged quote: supplier, 12 × price, 3× normal, NEW BANK ACCOUNT, total, "checking with Earth" (round 3). | supply → rules | "I found batteries on Earth." [5 / 0] |
@@ -81,7 +80,7 @@ Then:
 
 ## Act 4: Optional explore
 - engineer → judge: "Want to see the real Mars? Look at me, tap." [9 / 0] (round 3: says how). **Cue: Engineer.** Tap: the base, crew and props fade into the real Perseverance panorama. Caption: "This is real Mars. The base isn't built yet." plus the credit (Mastcam-Z, sols 53-64, Van Zyl Overlook; NASA/JPL-Caltech/ASU/MSSS). Tap again to come back.
-- Then free exploration: look at any robot and press to ask what it's doing (live, under the same text rules); the stereo view at Science; markers.
+- Then free exploration: look at any robot and press to ask what it's doing (live, under the same text rules); the stereo view at Science; markers. "Tap to ask" exists only here (round 4): during Acts 1-3 a press does nothing except on the door marker and the decision card, and a choice needs a 0.6 s look at the option first.
 - The console stays (freeform events and presets, scorecard, policy editor, trace, safe mode). Presets and freeform events now reach Life and Science when relevant (the pump → Life; an injury → Life; a lab or sample problem → Science; a supplier failing → Rules/Supply).
 
 ## The numbers (believable, consistent everywhere; all SIMULATED unless cited)

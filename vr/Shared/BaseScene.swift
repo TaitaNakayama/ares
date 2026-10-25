@@ -262,7 +262,7 @@ final class BaseScene {
       lastDecisionHeard = link.lastDecision
     }
     decisionPrimed = true
-    crew.update(now: time, eye: origin, fwd: fwd, link: link, hovered: hoveredRobot, needsCommander: needs)
+    crew.update(now: time, eye: origin, fwd: fwd, link: link, hovered: inStory ? nil : hoveredRobot, needsCommander: needs) // "tap to ask" is Act 4
     updateArrow(worldFromHead: worldFromHead)
     screens.update(latest, now: time, linkText: link.publicStatusText)
     updateDebug(link: link, fps: fps)
@@ -340,6 +340,12 @@ final class BaseScene {
     refreshCards(latest)
   }
 
+  /// The show's story acts: everything before Act 4 (`explore`); an old server without the show counts as Act 4.
+  var inStory: Bool {
+    guard let act = latest?.scene?.act else { return false }
+    return act != "explore"
+  }
+
   /// The Cardboard button.
   private var lastTap: TimeInterval = -10
 
@@ -348,9 +354,21 @@ final class BaseScene {
     guard now - lastTap > 0.35 else { return }
     lastTap = now
     taps += 1
+    // During the story (Acts 1-3) a press does nothing except on the door marker and the decision card; asking the crew,
+    // the close-up and the reality check are Act 4.
+    if inStory {
+      if let (esc, opt) = decisionCards.tap(now: now) {
+        lastTapText = "chose: \(opt)"
+        onDecide?(esc, opt)
+        return
+      }
+      if let used = tapOutside(doorOnly: true) { lastTapText = used; return }
+      lastTapText = "tap (story)"
+      return
+    }
     if let used = crew.handleTap(robot: hoveredRobot, now: now) { lastTapText = used; Sound.shared.play("select", volume: 0.7); return }
     if RealityCheck.shared.wantOn { RealityCheck.shared.set(false); lastTapText = "reality check off"; return } // any tap brings you back
-    if let (esc, opt) = decisionCards.tap() {
+    if let (esc, opt) = decisionCards.tap(now: now) {
       lastTapText = "chose: \(opt)"
       onDecide?(esc, opt)
       return
@@ -378,8 +396,15 @@ final class BaseScene {
   }
 
   /// Button presses that belong to part 1: closing the close-up, the scientist (no vr_ask), the pressure door.
-  private func tapOutside() -> String? {
+  private func tapOutside(doorOnly: Bool = false) -> String? {
     guard director.isOutside else { return nil }
+    if doorOnly {
+      guard hoveredSpecial == "door" else { return nil }
+      Sound.shared.play("select", volume: 0.9)
+      director.beginEnter(now: now, local: true)
+      onEnter?()
+      return "entering"
+    }
     if director.closeUp.isOpen {
       // Stereo page -> WATSON page -> closed.
       let turned = director.closeUp.advance()

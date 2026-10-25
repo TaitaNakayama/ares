@@ -187,8 +187,7 @@ export class Show {
     this.at(6500, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars. The crew keeps the base alive: power, air, water.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
     this.at(9500, () =>
       this.line({
-        speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm. Ask if they want a closer look.", target: "Grinding into ancient delta rock. Want a closer look?",
-        onStart: () => { this.set({ cue: "science" }); this.at(9000, () => { if (this.cue === "science") this.set({ cue: null }); }); },
+        speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm, collecting samples for Earth.", target: "Grinding into ancient delta rock. Samples for Earth.",
       }),
     );
     this.at(13_500, () => this.orch.scheduleAll(this.world.beatDelivery(this.orch.engine)));
@@ -219,10 +218,9 @@ export class Show {
       this.set({ act: "inside" });
       // Before the storm hits, the crew talks about a calm base (the power drop is the next beat, not this one).
       this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", facts: "Oxygen 99%. Air quality good.", target: "Welcome back, Commander. Air's fresh." }));
-      // The crates come back: Supply tells Rules it paid only for what arrived, and Rules signs off a quiet day.
-      this.at(3000, () => this.line({ speaker: "supply", actor: "money", to: "rules", intent: "Tell Rules you paid only for the crates that actually arrived.", facts: "The filter invoice was paid for the delivered crates only.", target: "We only paid for the crates that came." }));
-      // Rules says what it is for (the judge never learned it otherwise).
-      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Introduce yourself to the commander: you check every payment before any money leaves the base.", facts: "Rules approves every payment and checks every supplier. Nothing is flagged today.", target: "I check every payment before money leaves." }));
+      // Rules says what it is for (the judge never learned it otherwise). The short delivery outside is not spoken:
+      // one money story (the scam); the engine still pays only for what arrived and the console shows it.
+      this.at(3000, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Introduce yourself to the commander: you check every payment before any money leaves the base.", facts: "Rules approves every payment and checks every supplier. Nothing is flagged today.", target: "I check every payment before money leaves." }));
       this.at(11_000, () => this.crisis());
     });
     return "entering the base";
@@ -259,10 +257,8 @@ export class Show {
         const r = d.receipt as { lines: { sku: string; qtyReceived: number; qtyRejected: number }[] } | undefined;
         const ordered = po?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
         const got = r?.lines.reduce((s, l) => s + l.qtyReceived - l.qtyRejected, 0) ?? 0;
-        if (ordered && got < ordered) {
-          this.crewSet("supply", { task: "lander" });
-          this.line({ speaker: "supply", actor: "cargo", to: "judge", intent: "Some crates from the cargo lander are missing, and you won't pay for those.", facts: `Delivered ${got} of ${ordered}, ${ordered - got} missing. The invoice bills ${ordered}.`, target: `${spell(ordered - got)} crates missing. I won't pay for those.` });
-        }
+        // Not spoken (round 3: the missing crates confused the main story); Supply just works at the lander.
+        if (ordered && got < ordered) this.crewSet("supply", { task: "lander" });
         break;
       }
       case "requisition_created": {
