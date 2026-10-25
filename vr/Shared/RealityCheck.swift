@@ -18,6 +18,8 @@ import UIKit
 final class RealityCheck {
   static let shared = RealityCheck()
   static func toggle() { shared.toggle() }
+  /// Set by `Crew` while the story is in the optional explore act (`scene.act == "explore"`): the reality check may open indoors too.
+  nonisolated(unsafe) static var insideAllowed = false
 
   static let caption = "This is what Perseverance actually saw here. Mastcam-Z, sols 53-64 (2021), Van Zyl Overlook, Jezero crater floor. Credit NASA/JPL-Caltech/ASU/MSSS. Direction not aligned with the base. Gaps where the rover stood are filled with simulated ground."
   static let panoName = "pers-pano-vanzyl-8192-filled"
@@ -47,6 +49,7 @@ final class RealityCheck {
   /// True while a stereo close-up or story state would make it wrong to show (outside only, not at the storm door).
   var isAllowed: Bool {
     guard let d = world?.director else { return false }
+    if Self.insideAllowed { return !d.isEntering } // Act 4: the Engineer offers it from inside the base
     return d.isOutside && d.station != "door" && !d.isEntering
   }
 
