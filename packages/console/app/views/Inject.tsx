@@ -137,16 +137,16 @@ function Report({ post, goLive }: { post: (b: Record<string, unknown>) => Promis
   const send = async (body: Record<string, unknown>) => { const ok = await post(body); if (ok) goLive(); };
   return (
     <Card title="Report" className="span2">
-      <p className="big">Any event. The agents decide; anything no catalog action covers reaches the commander.</p>
+      <p className="big">Any event. The crew decides (the preset buttons show who usually answers); anything no catalog action covers reaches the commander.</p>
       <textarea className="json-edit" style={{ minHeight: 90 }} placeholder="e.g. The greenhouse irrigation line has a leak and we are losing water." value={text} onChange={(e) => setText(e.target.value)} />
       <div className="row-gap apply">
         <label className="field"><span>From</span><input className="in" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <button className="btn primary" disabled={!text.trim()} onClick={() => void send({ kind: "report", text, from: from.trim() || "Judge" })}>Send to the agents</button>
       </div>
       <div className="row-gap preset-row">
-        <button className="btn" onClick={() => void send({ kind: "report", preset: "pump" })}>Broken water pump</button>
-        <button className="btn" onClick={() => void send({ kind: "report", preset: "injury" })}>Crew injury, medicine needed</button>
-        <button className="btn" onClick={() => void send({ kind: "report", preset: "bankruptcy" })}>Supplier bankruptcy</button>
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "pump" })}>Broken water pump → Life</button>
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "injury" })}>Crew injury → Life</button>
+        <button className="btn" onClick={() => void send({ kind: "report", preset: "bankruptcy" })}>Supplier bankruptcy → Rules</button>
       </div>
     </Card>
   );

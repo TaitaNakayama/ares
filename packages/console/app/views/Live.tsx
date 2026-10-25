@@ -23,11 +23,13 @@ export function Live({ state, vr, narration, thinking }: { state: AppState; vr: 
       </Card>
       <Card title="What the robots are saying" right={<span className="dim">{narration.length} messages</span>} className="feed-card">
         <div className="feed" ref={ref}>
-          {narration.length === 0 && <p className="dim">Nothing yet. Press "Next beat".</p>}
+          {narration.length === 0 && <p className="dim">Nothing yet. Press "Start show".</p>}
           {narration.map((n) => (
             <article key={n.seq} className={`msg-row ${n.outcome}`}>
               <div className="who">
-                <RoleChip role={n.role} name={n.name} showRole />
+                <RoleChip role={n.role} actorId={n.actorId} name={n.name} showRole />
+                {n.voice && <span className="said-aloud" title="Said aloud in the headset" aria-label="said aloud"><Speaker /></span>}
+                {n.voice && n.via && <span className={`badge src ${n.via}`}>{n.via}</span>}
                 <span className="mood">{n.mood}</span>
                 <Outcome o={n.outcome} />
               </div>
@@ -56,5 +58,13 @@ function Tile({ k, v, s, tone = "", wide }: { k: string; v: string; s: string; t
       <span className="v num">{v}</span>
       <span className="s">{s}</span>
     </div>
+  );
+}
+
+function Speaker() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H2v6h4l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a10 10 0 0 1 0 14" />
+    </svg>
   );
 }

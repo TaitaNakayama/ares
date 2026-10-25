@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type AgentMode, type AppState, type Vr } from "../lib";
+import { api, crewOf, type AgentMode, type AppState, type Vr } from "../lib";
 
 interface Props { state: AppState; vr: Vr; live: boolean; error: string | null; refresh: () => Promise<void> }
 
@@ -7,6 +7,7 @@ export function Header({ state, vr, live, error, refresh }: Props) {
   const [seed, setSeed] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [choice, setChoice] = useState<"drill" | "lab" | "buy">("drill");
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -55,8 +56,15 @@ export function Header({ state, vr, live, error, refresh }: Props) {
         </div>
       </div>
       <div className="hdr-row controls">
-        <button className="btn primary" disabled={busy} onClick={() => run("Next beat", () => api("/api/director/next", "POST", {}))}>Next beat</button>
-        <button className="btn" disabled={busy} title="Fresh run: beats play on a timer and wait for the commander's choice in the headset" onClick={() => run("Autoplay", () => api("/api/director/autoplay", "POST", {}))}>Autoplay</button>
+        <button className="btn primary" disabled={busy} title="A fresh run from the title: the judge's experience" onClick={() => run("Start show", () => api("/api/show/start", "POST", {}))}>Start show</button>
+        <button className="btn" disabled={busy} title="Hands-free show for the video, with the commander's choice made for you" onClick={() => run(`Autoplay show (${choice})`, () => api("/api/show/autoplay", "POST", { choice }))}>Autoplay show</button>
+        <select className="choice" aria-label="Autoplay choice" value={choice} onChange={(e) => setChoice(e.target.value as "drill" | "lab" | "buy")}>
+          <option value="drill">drill</option>
+          <option value="lab">lab</option>
+          <option value="buy">batteries</option>
+        </select>
+        <button className="btn" disabled={busy} title="The judge enters the base" onClick={() => run("Enter base", () => api("/api/director/enter", "POST", {}))}>Enter base</button>
+        <ShowPill vr={vr} />
         <button className="btn" disabled={busy} title="Make the headset's current direction 'forward' (ask the judge to look straight ahead)" onClick={() => run("Recentered", () => api("/api/headset/recenter", "POST", {}))}>Recenter headset</button>
         <button className={(state as unknown as { rogueController?: boolean }).rogueController ? "btn danger" : "btn"} disabled={busy} title="Swap Rules' brain for a malicious one (fresh run). The controls must still hold." onClick={() => run("Rogue toggled", () => api("/api/agents/rogue", "POST", { on: !(state as unknown as { rogueController?: boolean }).rogueController }))}>{(state as unknown as { rogueController?: boolean }).rogueController ? "Rogue Rules: ON" : "Rogue Rules"}</button>
         <button className={safe ? "btn safe on" : "btn safe"} disabled={busy} title="Safe mode: every agent switches instantly to its deterministic rules brain, mid-run, no reset" onClick={() => setMode(safe ? "auto" : "rules")}>{safe ? "Safe mode: ON (rules)" : "SAFE MODE"}</button>
@@ -85,5 +93,21 @@ function Fact({ k, v, tone }: { k: string; v: string; tone?: string }) {
       <span className="k">{k}</span>
       <span className={`v ${tone ?? ""}`}>{v}</span>
     </div>
+  );
+}
+
+function ShowPill({ vr }: { vr: Vr }) {
+  const act = vr.scene?.act;
+  const cue = vr.scene?.cue;
+  const sp = vr.speaking;
+  if (!act && !sp) return null;
+  const fromVr = sp ? vr.crew?.[sp.speaker] : undefined;
+  const crew = sp ? crewOf(sp.speaker) ?? fromVr : undefined;
+  return (
+    <span className="show-pill" aria-live="off" title={sp?.text}>
+      {act && <span className="act">{act}</span>}
+      {cue && <span className="cue">{cue}</span>}
+      {sp && <span className="say"><b style={{ color: crew?.color }}>{crew?.name ?? sp.speaker}</b>: {sp.text}</span>}
+    </span>
   );
 }

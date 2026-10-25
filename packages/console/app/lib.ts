@@ -28,6 +28,33 @@ export const ROLE_NAMES: Record<string, string> = {
   system: "System",
 };
 
+export interface Crew { key: string; name: string; sub?: string; color: string }
+const CREW_BY_ACTOR: Record<string, Crew> = {
+  engineer: { key: "engineer", name: "Engineer", color: "#4DA3FF" },
+  life: { key: "life", name: "Life", color: "#F2F4F7" },
+  science: { key: "science", name: "Science", color: "#3BD16F" },
+  cargo: { key: "supply", name: "Supply", sub: "Receiving", color: "#FF9A3C" },
+  bills: { key: "supply", name: "Supply", sub: "Bills", color: "#FF9A3C" },
+  money: { key: "supply", name: "Supply", sub: "Payments", color: "#FF9A3C" },
+  supply: { key: "supply", name: "Supply", color: "#FF9A3C" },
+  rules: { key: "rules", name: "Rules", color: "#A97BFF" },
+  commander: { key: "commander", name: "Commander", color: "#FFFFFF" },
+  cfo: { key: "cfo", name: "Earth CFO", color: "#5B9BFF" },
+};
+const CREW_BY_ROLE: Record<string, Crew> = {
+  requester: CREW_BY_ACTOR.engineer!,
+  receiver: CREW_BY_ACTOR.cargo!,
+  ap: CREW_BY_ACTOR.bills!,
+  treasury: CREW_BY_ACTOR.money!,
+  controller: CREW_BY_ACTOR.rules!,
+  local_authority: CREW_BY_ACTOR.commander!,
+  remote_authority: CREW_BY_ACTOR.cfo!,
+};
+/** The crew member for an engine actor id (preferred) or role. */
+export function crewOf(actorId?: string, role?: string): Crew | undefined {
+  return (actorId && CREW_BY_ACTOR[actorId]) || (role && CREW_BY_ROLE[role]) || undefined;
+}
+
 export const ROLE_TITLES: Record<string, string> = {
   requester: "Requester",
   receiver: "Receiver",
@@ -91,12 +118,15 @@ export interface Snapshot {
   trialBalance: { account: string; name: string; balance: number }[]; requisitions: { id: string; sku: string; qty: number; status: string }[];
 }
 export interface AuditRec { seq: number; at: number; kind: string; actorId: string; summary: string; data: unknown; prevHash: string; hash: string }
-export interface Narration { seq: number; at: number; role: string; name: string; text: string; mood: string; outcome: "said" | "allow" | "deny" | "hold" | "escalate" }
+export interface Narration { seq: number; at: number; actorId?: string; voice?: boolean; via?: "llm" | "rules"; role: string; name: string; text: string; mood: string; outcome: "said" | "allow" | "deny" | "hold" | "escalate" }
 export interface Vr {
   seed: string; policyVersion: number; time: string; sol: number; tau: number; beat: number; timelapse: boolean;
   power: { socPct: number; solarKWhPerSol: number; loadKWhPerSol: number; solsLeft: number | null };
   money: { cash: number; cashText: string; runwayDays: number; committedText: string; savedText: string };
   waiting: { id: string }[];
+  scene?: { act?: string; cue?: string | null; [k: string]: unknown };
+  speaking?: { seq: number; speaker: string; text: string; via?: string; to?: string } | null;
+  crew?: Record<string, { name: string; color: string }>;
   earth: { id: string; vendor?: string; replyEtaText: string; replyInMin: number }[];
 }
 export type AgentMode = "auto" | "local" | "cloud" | "rules";

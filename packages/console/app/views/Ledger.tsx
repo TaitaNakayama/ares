@@ -62,7 +62,7 @@ function Entry({ e, actor, role, names, selected, onClick }: { e: JournalEntry; 
       </div>
       <div className="entry-f">
         <span>{simTime(e.at)}</span>
-        {role ? <RoleChip role={role} name={actor} /> : <span>{actor}</span>}
+        {role ? <RoleChip role={role} actorId={e.actorId} name={actor} /> : <span>{actor}</span>}
         {e.approvers.length > 0 && <span className="dim">approved by {e.approvers.map((a) => names.get(a) ?? ROLE_NAMES[a] ?? a).join(", ")}</span>}
       </div>
     </button>
