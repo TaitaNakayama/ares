@@ -60,11 +60,11 @@ enum CrewMarks {
     case "life": return Inside(deg: -110, r: 2.1, y: 1.25, task: "plants")         // hydroponics + the oxygen machine
     case "science": return Inside(deg: 110, r: 2.1, y: 1.3, task: "bench")         // the lab bench
     case "supply": return Inside(deg: 40, r: 2.25, y: 1.15, task: "crates")        // the crates
-    default: return Inside(deg: 0, r: 2.6, y: 2.2, task: "console")                // the main console, up above the decision card
+    default: return Inside(deg: 0, r: 2.6, y: 1.95, task: "console")                // the main console, up above the decision card
     }
   }
   /// Rules before the question: close, left and above the card.
-  static let approach = Inside(deg: -14, r: 1.6, y: 2.25, task: "judge")
+  static let approach = Inside(deg: -14, r: 1.7, y: 2.1, task: "judge")
 
   struct Mark { var pos: SIMD3<Float>; var task: String; var look: SIMD3<Float>? }
 
@@ -193,7 +193,8 @@ final class Crew {
     // The rock: a few squashed spheres of dark regolith-brown stone.
     let stone = SCNMaterial()
     stone.lightingModel = .blinn
-    stone.diffuse.contents = PlatformColor(red: 0.36, green: 0.27, blue: 0.21, alpha: 1)
+    stone.diffuse.contents = PlatformColor(red: 0.62, green: 0.50, blue: 0.40, alpha: 1)
+    stone.emission.contents = PlatformColor(red: 0.16, green: 0.12, blue: 0.09, alpha: 1)
     stone.specular.contents = PlatformColor(white: 0.08, alpha: 1)
     for (x, y, z, sx, sy, sz) in [(Float(0), Float(0.28), Float(0), Float(0.62), Float(0.34), Float(0.5)), (0.4, 0.14, 0.12, 0.3, 0.17, 0.26), (-0.36, 0.12, -0.1, 0.26, 0.15, 0.24), (0.05, 0.16, -0.38, 0.28, 0.17, 0.22)] {
       let s = SCNSphere(radius: 1)
@@ -364,6 +365,7 @@ final class Crew {
     // Promote the next queued line when the current one has had its time.
     if let c = current, let n = queue.first, now >= c.shownAt + c.hold { queue.removeFirst(); show(n, now: now) }
     let speakingLine: Line? = current.flatMap { now < $0.shownAt + $0.hold + 0.8 ? $0 : nil }
+    let lookLine: Line? = current.flatMap { now < $0.shownAt + $0.hold + 3 ? $0 : nil } // turned toward the listener a beat after it speaks
     let approaching = state.values.contains { $0.approach == true }
     let thinkingRoles = Set(link.thinkingRoles.map { CrewIDs.id(forRole: $0) })
     let ground: (Float, Float) -> Float = { [outside] x, z in outside.groundY(x, z) }
@@ -450,6 +452,11 @@ final class Crew {
         let a = bot.alpha + (want > bot.alpha ? 1 : -1) * dt * 2.5
         bot.alpha = want > bot.alpha ? min(want, a) : max(want, a)
       }
+      // A jump of many metres (the other set, a late state): never glide it across the map in view; fade it in at the new post.
+      if simd_distance(bot.pos, tpos) > 12 {
+        bot.alpha = 0
+        bot.snap(to: part == "outside" && id == "engineer" ? tpos - SIMD3(0, 1.3, 0) : tpos)
+      }
       wasVisible[id] = shows
       bot.thinking = (st?.thinking ?? false) || thinkingRoles.contains(id)
       switch st?.mood ?? "calm" {
@@ -477,7 +484,7 @@ final class Crew {
         }
       }
       var lp: SIMD3<Float>?
-      if let l = speakingLine {
+      if let l = lookLine {
         if l.speaker == id { lp = spot(l.to) ?? eye }
         else if let s = bots[l.speaker], s.isVisible { lp = s.pos }
       }
@@ -563,18 +570,22 @@ final class Crew {
       }
       bubbleOffset = .zero
     } else {
-      let base = p + right * side * (w / 2 + 0.28) - radial * 0.15
-      var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity
-      search: for dx in [Float(0), 0.35, 0.7] {
-        for dy in [Float(0.2), 0.5, 0.8, -0.55, -0.85] {
-          let off = right * side * dx + SIMD3(0, dy, 0)
-          let cand = Crew.clampInside(base + off, halfW: w / 2, halfH: h / 2)
-          let area = ScreenRects.overlap(center: cand, w: w, h: h, user: eye)
-          if area < bestArea { bestArea = area; best = SIMD3(dx, dy, 0) }
-          if area == 0 { break search }
+      var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity, bestSide = side
+      let others = bots.values.filter { $0 !== bot && $0.isVisible }
+      search: for sd in [side, -side] {
+        let sbase = p + right * sd * (w / 2 + 0.28) - radial * 0.15
+        for dx in [Float(0), 0.35, 0.7] {
+          for dy in [Float(0.2), 0.5, 0.8, -0.55, -0.85] {
+            let off = right * sd * dx + SIMD3(0, dy, 0)
+            let cand = Crew.clampInside(sbase + off, halfW: w / 2, halfH: h / 2)
+            let area = ScreenRects.overlap(center: cand, w: w, h: h, user: eye) + 3 * Crew.botOverlap(center: cand, w: w, h: h, user: eye, others: others) + (sd == side ? 0 : 0.002)
+            if area < bestArea { bestArea = area; best = SIMD3(dx, dy, 0); bestSide = sd }
+            if area == 0 { break search }
+          }
         }
       }
-      let target = right * side * best.x + SIMD3(0, best.y, 0)
+      let base = p + right * bestSide * (w / 2 + 0.28) - radial * 0.15
+      let target = right * bestSide * best.x + SIMD3(0, best.y, 0)
       bubbleOffset += (target - bubbleOffset) * 0.12
       centre = Crew.clampInside(base + bubbleOffset, halfW: w / 2, halfH: h / 2)
     }
@@ -588,6 +599,24 @@ final class Crew {
       bubbleShownKey = key
       bubble.set(text: c.text, name: bot.name, color: bot.color, deny: false, tailLeft: tailLeft, key: "crew|\(c.seq)|\(c.speaker)", icon: c.speaker)
     }
+  }
+
+  /// Angular overlap (radians squared) of a bubble with the other robots' bodies, as seen from `user`.
+  static func botOverlap(center: SIMD3<Float>, w: Float, h: Float, user: SIMD3<Float>, others: [Robot]) -> Float {
+    let d = center - user
+    let refAz = atan2(d.x, -d.z)
+    let dir = SIMD3<Float>(d.x, 0, d.z)
+    let n = simd_length(dir) > 0.01 ? simd_normalize(dir) : SIMD3<Float>(0, 0, -1)
+    let right = SIMD3<Float>(-n.z, 0, n.x)
+    let a = ScreenRects.box(center: center, right: right, w: w, h: h, user: user, refAz: refAz)
+    var total: Float = 0
+    for o in others {
+      let b = ScreenRects.box(center: o.pos, right: right, w: 0.7, h: 1.0, user: user, refAz: refAz)
+      let ox = min(a.az1, b.az1) - max(a.az0, b.az0)
+      let oy = min(a.el1, b.el1) - max(a.el0, b.el0)
+      if ox > 0, oy > 0 { total += ox * oy }
+    }
+    return total
   }
 
   /// Inside the round room: below the ceiling, off the floor, away from the wall.

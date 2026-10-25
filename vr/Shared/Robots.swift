@@ -305,7 +305,7 @@ final class Robot {
     let z: Float
     switch role {
     case "supply": z = 0.165
-    case "life": z = 0.175
+    case "life": z = 0.205
     case "science": z = 0.205
     case "engineer": z = 0.165
     default: z = 0.18
