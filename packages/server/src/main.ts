@@ -444,6 +444,12 @@ async function directorNext(): Promise<string> {
 
 /** The commander decides (headset, console, or the show's autoplay): the engine checks it, then the show plays the consequence. */
 async function decideAsCommander(escalationId: string, optionId: string, by: string): Promise<void> {
+  const s0 = session;
+  if (!s0.show.acceptsDecision(escalationId)) {
+    console.log(`[decide] ${by} ${optionId} on ${escalationId}: ignored (already decided or no card)`);
+    return;
+  }
+  console.log(`[decide] ${by} chose ${optionId} on ${escalationId}`);
   const s = session;
   // The show switches to the consequence first: the crew member may act on the decision before submit returns.
   s.show.onDecided(escalationId, optionId);

@@ -419,6 +419,14 @@ export class Show {
     this.host.notify();
   }
 
+  /** Whether a decision for `escalationId` is still open in the show: one choice per card (the engine keeps a lever
+   * escalation open so a purchase can follow, but the show's card is decided once; a second press, or the autoplay
+   * after a judge's press, must not act). */
+  acceptsDecision(escalationId: string): boolean {
+    if (!this.active) return true;
+    return !!this.decision && this.decision.id === escalationId && !this.decision.chosen;
+  }
+
   /** The commander decided (headset, console or autoplay). */
   onDecided(escalationId: string, optionId: string): void {
     if (!this.decision || this.decision.id !== escalationId || this.decision.chosen) return;
