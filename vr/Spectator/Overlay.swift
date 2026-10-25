@@ -7,14 +7,18 @@ final class OverlayView: NSView {
   let dot = GazeDotView(frame: NSRect(x: 0, y: 0, width: 34, height: 34))
   let subtitles = SubtitleView()
   let card = DecisionCardView()
+  /// The show's three-option decision (Act 3); `card` above stays for older states with a `waiting` escalation only.
+  let showCard = ShowDecisionView()
+  let cue = CueHintView()
   let badges = BadgeView()
   let thinking = ThinkingView()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    for v in [badges, card, subtitles, thinking, dot] as [NSView] { addSubview(v) }
+    for v in [badges, card, showCard, cue, subtitles, thinking, dot] as [NSView] { addSubview(v) }
     card.alphaValue = 0
+    showCard.alphaValue = 0
     dot.isHidden = true
   }
 
@@ -30,9 +34,12 @@ final class OverlayView: NSView {
     thinking.frame = NSRect(x: 0, y: badges.frame.maxY + 6, width: b.width, height: max(34, b.height * 0.05))
     let cardH = b.height * 0.44
     card.frame = NSRect(x: b.width * 0.06, y: b.height - cardH - b.height * 0.03, width: b.width * 0.88, height: cardH)
+    showCard.frame = NSRect(x: b.width * 0.06, y: b.height - cardH * 1.08 - b.height * 0.03, width: b.width * 0.88, height: cardH * 1.08)
+    cue.frame = NSRect(x: 0, y: thinking.frame.maxY + 4, width: b.width, height: max(30, b.height * 0.045))
     // Subtitles sit low; while a decision is up they move above it.
     let subH = b.height * 0.25
-    let subY = card.isUp ? card.frame.minY - subH - 8 : b.height - subH - b.height * 0.03
+    let upCard: NSView? = showCard.isUp ? showCard : (card.isUp ? card : nil)
+    let subY = upCard.map { $0.frame.minY - subH - 8 } ?? (b.height - subH - b.height * 0.03)
     subtitles.frame = NSRect(x: b.width * 0.05, y: subY, width: b.width * 0.9, height: subH)
   }
 
@@ -69,6 +76,9 @@ struct Subtitle {
   let name: String
   let text: String
   let refused: Bool
+  /// The show's crew: colour (from `crew[id].color`) and an SF Symbol for the role icon.
+  var tint: NSColor? = nil
+  var symbol: String? = nil
   var shownAt: TimeInterval = 0
   var duration: TimeInterval = 4
 }
@@ -127,7 +137,7 @@ final class SubtitleView: NSView {
     var blocks: [(Subtitle, NSAttributedString, NSAttributedString, CGFloat)] = []
     let width = bounds.width - 56
     for s in items {
-      let color = SpectatorPalette.role(s.role)
+      let color = s.tint ?? SpectatorPalette.role(s.role)
       let name = NSMutableAttributedString(string: s.name.uppercased(), attributes: [.font: NSFont.systemFont(ofSize: nameSize, weight: .heavy), .foregroundColor: color, .kern: 1.2])
       if s.refused { name.append(NSAttributedString(string: "   REFUSED BY POLICY", attributes: [.font: NSFont.systemFont(ofSize: nameSize, weight: .heavy), .foregroundColor: SpectatorPalette.red])) }
       let para = NSMutableParagraphStyle()
@@ -144,12 +154,84 @@ final class SubtitleView: NSView {
       let box = NSRect(x: 0, y: y, width: bounds.width, height: h)
       NSColor(white: 0.02, alpha: 0.78).setFill()
       NSBezierPath(roundedRect: box, xRadius: 14, yRadius: 14).fill()
-      SpectatorPalette.role(s.role).setFill()
+      let accent = s.tint ?? SpectatorPalette.role(s.role)
+      accent.setFill()
       NSBezierPath(roundedRect: NSRect(x: box.minX, y: box.minY, width: 10, height: box.height), xRadius: 5, yRadius: 5).fill()
-      name.draw(at: NSPoint(x: box.minX + 28, y: box.minY + 10))
+      var nameX = box.minX + 28
+      if let sym = s.symbol, let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: nameSize * 1.1, weight: .heavy)) {
+        let tinted = NSImage(size: img.size, flipped: false) { r in img.draw(in: r); accent.set(); r.fill(using: .sourceAtop); return true }
+        let side = nameSize * 1.25
+        tinted.draw(in: NSRect(x: nameX, y: box.minY + 8, width: side * img.size.width / max(1, img.size.height), height: side), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        nameX += side * img.size.width / max(1, img.size.height) + 12
+      }
+      name.draw(at: NSPoint(x: nameX, y: box.minY + 10))
       body.draw(with: NSRect(x: box.minX + 28, y: box.minY + 12 + nameSize * 1.35, width: width, height: bodyH), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
       y -= 10
     }
+  }
+}
+
+// MARK: - One line at a time (the show's `speaking`)
+
+/// Subtitles from `speaking` only: ONE line at a time, in the speaker's colour with name and icon, held at least
+/// 2.5 s + 0.4 s per word and until the next line replaces it (it fades 10 s after the server's hold if nothing follows).
+final class SpeakingTracker {
+  private(set) var current: Subtitle?
+  private var seq = -1
+  private var shownAt: TimeInterval = 0
+  private var minHold: TimeInterval = 0
+  private var holdMs: Double = 0
+
+  static let symbols = ["wrench": "wrench.fill", "droplet": "drop.fill", "heart": "heart.fill", "microscope": "microscope", "box": "shippingbox.fill", "shield": "shield.fill"]
+
+  func clear() { current = nil; seq = -1 }
+
+  /// Returns true when what is on screen changed.
+  func update(_ sp: VRState.Speaking?, crew: [String: VRState.Crew]?, now: TimeInterval) -> Bool {
+    let before = current?.seq
+    if let sp, let n = sp.seq, let text = sp.text, !text.isEmpty, n != seq {
+      seq = n
+      let id = sp.speaker ?? ""
+      let c = crew?[id]
+      let tint = ShowColors.hex(c?.color) ?? ShowColors.crew(id)
+      current = Subtitle(seq: n, role: id, name: c?.name ?? ShowColors.name(id), text: text, refused: false, tint: tint, symbol: Self.symbols[c?.icon ?? ""])
+      shownAt = now
+      minHold = 2.5 + 0.4 * Double(text.split(separator: " ").count)
+      holdMs = Double(sp.holdMs ?? 0)
+    } else if current != nil {
+      let age = now - shownAt
+      if sp == nil && age >= minHold { current = nil }
+      else if age > max(minHold, holdMs / 1000) + 10 { current = nil }
+    }
+    return current?.seq != before
+  }
+}
+
+// MARK: - The cue ("look at ...")
+
+/// A subtle hint pill under the badges naming the one glowing thing the judge is meant to look at.
+final class CueHintView: NSView {
+  var cue: String? { didSet { if cue != oldValue { needsDisplay = true } } }
+  override var isFlipped: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    let what: String
+    switch cue {
+    case "science": what = "Science"
+    case "engineer": what = "Engineer"
+    case "door": what = "the door"
+    case "card": what = "the card"
+    default: return
+    }
+    let size = max(13, bounds.height * 0.44)
+    let text = NSMutableAttributedString(string: "LOOK AT  ", attributes: [.font: NSFont.systemFont(ofSize: size * 0.8, weight: .bold), .foregroundColor: NSColor(white: 0.75, alpha: 1), .kern: 1.5])
+    let color: NSColor = (cue == "science" || cue == "engineer") ? ShowColors.crew(cue) : SpectatorPalette.amber
+    text.append(NSAttributedString(string: what, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .heavy), .foregroundColor: color]))
+    let ts = text.size()
+    let box = NSRect(x: (bounds.width - ts.width) / 2 - 16, y: 0, width: ts.width + 32, height: bounds.height)
+    NSColor(white: 0.02, alpha: 0.5).setFill()
+    NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
+    text.draw(at: NSPoint(x: box.minX + 16, y: (bounds.height - ts.height) / 2))
   }
 }
 
@@ -268,6 +350,97 @@ final class DecisionCardView: NSView {
         let tag = isChosen ? "CHOSEN" : "LOOKING"
         let t = NSAttributedString(string: tag, attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.6, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : SpectatorPalette.amber, .kern: 1.5])
         t.draw(at: NSPoint(x: r.maxX - t.size().width - 20, y: r.maxY - t.size().height - 14))
+      }
+    }
+  }
+}
+
+// MARK: - The show's decision (three options)
+
+/// The enlarged decision card for the table: three options with their icons and speakers, the one the judge is gazing at
+/// highlighted (amber) and the chosen one in green.
+final class ShowDecisionView: NSView {
+  struct Opt: Equatable { let id: String; let label: String; let icon: String; let speaker: String; let tint: NSColor }
+  private(set) var isUp = false
+  private var options: [Opt] = []
+  private var gazed: String?
+  private var chosen: String?
+  private var chosenLabel: String?
+  private var hideTimer: TimeInterval?
+  override var isFlipped: Bool { true }
+
+  /// `localChosen`: the label the judge chose just now (the `vr_choice` message), shown even before the server clears the card.
+  /// Returns true when the layout must change (the card appeared or went away).
+  func update(_ d: VRState.Decision?, crew: [String: VRState.Crew]?, gazedFallback: Int?, localChosen: (label: String, at: TimeInterval)?, now: TimeInterval) -> Bool {
+    let opts: [Opt] = (d?.options ?? []).prefix(3).map { o in
+      let sp = o.speaker ?? ""
+      return Opt(id: o.id, label: o.label ?? o.id, icon: o.icon ?? "", speaker: sp, tint: ShowColors.hex(crew?[sp]?.color) ?? ShowColors.crew(sp))
+    }
+    var dirty = false
+    if !opts.isEmpty, opts != options { options = opts; dirty = true }
+    var g = d?.gazed
+    if g == nil, let i = gazedFallback, i < opts.count { g = opts[i].id }
+    if g != gazed { gazed = g; dirty = true }
+    var ch = d?.chosen
+    if ch == nil, let lc = localChosen, now - lc.at < 4, let o = options.first(where: { $0.label == lc.label }) { ch = o.id }
+    if ch != chosen { chosen = ch; dirty = true }
+    if dirty { needsDisplay = true }
+    let up = !opts.isEmpty || (ch != nil && !options.isEmpty)
+    guard up != isUp else { return false }
+    isUp = up
+    NSAnimationContext.runAnimationGroup { ctx in
+      ctx.duration = up ? 0.35 : 0.5
+      animator().alphaValue = up ? 1 : 0
+    }
+    if !up { options = []; chosen = nil; gazed = nil }
+    return true
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard !options.isEmpty, let cg = NSGraphicsContext.current?.cgContext else { return }
+    let b = bounds
+    NSColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 0.9).setFill()
+    NSBezierPath(roundedRect: b, xRadius: 22, yRadius: 22).fill()
+    let headSize = max(16, b.height * 0.06)
+    let chosenOpt = options.first { $0.id == chosen }
+    let head = chosenOpt.map { "COMMANDER CHOSE: \($0.label.uppercased())" } ?? "WHAT DO WE GIVE UP?"
+    NSAttributedString(string: head, attributes: [.font: NSFont.systemFont(ofSize: headSize, weight: .heavy), .foregroundColor: chosenOpt != nil ? SpectatorPalette.green : SpectatorPalette.violet, .kern: 1.5])
+      .draw(at: NSPoint(x: 32, y: 20))
+    let top = 20 + headSize * 1.5 + 6
+    let gap: CGFloat = 20
+    let n = CGFloat(options.count)
+    let cw = (b.width - 64 - gap * (n - 1)) / n
+    let ch = b.height - top - 24
+    for (i, o) in options.enumerated() {
+      let r = NSRect(x: 32 + CGFloat(i) * (cw + gap), y: top, width: cw, height: ch)
+      let isChosen = chosen == o.id
+      let isGazed = gazed == o.id && chosen == nil
+      let dim = chosen != nil && !isChosen
+      (isChosen ? NSColor(red: 0.07, green: 0.20, blue: 0.11, alpha: 1) : isGazed ? NSColor(red: 0.20, green: 0.15, blue: 0.06, alpha: 1) : NSColor(red: 0.08, green: 0.09, blue: 0.12, alpha: dim ? 0.5 : 1)).setFill()
+      let box = NSBezierPath(roundedRect: r, xRadius: 16, yRadius: 16)
+      box.fill()
+      (isChosen ? SpectatorPalette.green : isGazed ? SpectatorPalette.amber : o.tint.withAlphaComponent(dim ? 0.25 : 0.8)).setStroke()
+      box.lineWidth = isChosen || isGazed ? 7 : 3
+      box.stroke()
+      o.tint.withAlphaComponent(dim ? 0.3 : 1).setFill()
+      NSBezierPath(roundedRect: NSRect(x: r.minX + 14, y: r.minY, width: r.width - 28, height: 8), xRadius: 4, yRadius: 4).fill()
+      let iconSize = min(ch * 0.40, cw * 0.55)
+      DecisionCards.drawIcon(cg, kind: o.icon, center: CGPoint(x: r.midX, y: r.minY + 24 + iconSize / 2), size: iconSize, color: o.tint.withAlphaComponent(dim ? 0.35 : 1))
+      let labelSize = max(15, min(ch * 0.115, cw * 0.11))
+      let para = NSMutableParagraphStyle()
+      para.alignment = .center
+      para.lineBreakMode = .byWordWrapping
+      let labelTop = r.minY + 24 + iconSize + 14
+      NSAttributedString(string: o.label, attributes: [.font: NSFont.systemFont(ofSize: labelSize, weight: .heavy), .foregroundColor: NSColor(white: dim ? 0.5 : 0.97, alpha: 1), .paragraphStyle: para])
+        .draw(with: NSRect(x: r.minX + 14, y: labelTop, width: r.width - 28, height: labelSize * 2.7), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+      let sp = ShowColors.name(o.speaker).uppercased()
+      if !sp.isEmpty {
+        NSAttributedString(string: "\(sp) WILL SAY", attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.5, weight: .heavy), .foregroundColor: o.tint.withAlphaComponent(dim ? 0.4 : 1), .kern: 1])
+          .draw(at: NSPoint(x: r.minX + 16, y: r.maxY - labelSize * 0.9))
+      }
+      if isGazed || isChosen {
+        let t = NSAttributedString(string: isChosen ? "CHOSEN" : "LOOKING", attributes: [.font: NSFont.systemFont(ofSize: labelSize * 0.55, weight: .heavy), .foregroundColor: isChosen ? SpectatorPalette.green : SpectatorPalette.amber, .kern: 1.5])
+        t.draw(at: NSPoint(x: r.maxX - t.size().width - 16, y: r.maxY - labelSize * 0.9))
       }
     }
   }

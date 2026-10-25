@@ -13,6 +13,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var link: Link!
   private let pose = HeadPose()
   private let subtitles = SubtitleQueue()
+  /// The show's one-line-at-a-time subtitles (from `speaking`).
+  private let speaking = SpeakingTracker()
   private var timer: Timer?
   private let start = CACurrentMediaTime()
   private var lastTick = CACurrentMediaTime()
@@ -74,6 +76,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     root.layer?.backgroundColor = NSColor.black.cgColor
     let v = SpectatorSCNView(frame: root.bounds, options: nil)
     v.autoresizingMask = [.width, .height]
+    v.maxPixelWidth = Self.maxPixelWidth
     v.scene = world.scene
     v.pointOfView = cam
     v.rendersContinuously = true
@@ -89,6 +92,15 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     root.addSubview(v)
     root.addSubview(overlay)
     view = root
+  }
+
+  /// Full screen on a Retina Mac is 3840 x 2410 pixels: too many for this scene at 60 fps (it ran at ~25 outdoors). The drawable is
+  /// capped to about this many pixels across; the overlay (text) stays sharp because it is drawn at the full backing scale.
+  static let maxPixelWidth: CGFloat = 2304
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    scnView?.capResolution()
   }
 
   override func viewDidLoad() {
@@ -141,12 +153,14 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     case "headset":
       pose.setConnected(m["connected"] as? Bool ?? false)
     case "narration":
-      guard mode != .replay, let n = m["narration"] as? [String: Any] else { return }
+      // Older servers: every agent line. The show's `speaking` replaces this (one line at a time).
+      guard mode != .replay, link.snapshot().0?.crew == nil, let n = m["narration"] as? [String: Any] else { return }
       pushLine(n)
     case "vr_choice":
       if let label = m["label"] as? String { chosen = (label, CACurrentMediaTime()) }
     case "reset":
       subtitles.clear()
+      speaking.clear()
       chosen = nil
     case "spectator_capture":
       capture()
@@ -179,7 +193,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     #endif
     if newMode != mode || replay != lastReplay {
       // Switching between the live run and the recording: old lines belong to the other story.
-      if replay != lastReplay { subtitles.clear(); chosen = nil }
+      if replay != lastReplay { subtitles.clear(); speaking.clear(); chosen = nil }
       mode = newMode
       lastReplay = replay
       link.setReplay(replay)
@@ -223,20 +237,26 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     camLock.unlock()
 
     let (st, _) = link.snapshot()
+    let showState = st?.crew != nil || st?.speaking != nil
     // In the recording there's no narration stream: take each robot's newest line from the state.
-    if mode == .replay || !link.isConnectedToServer {
+    if !showState && (mode == .replay || !link.isConnectedToServer) {
       for (role, r) in st?.robots ?? [:] {
         guard let seq = r.seq else { continue }
         pushLine(["seq": seq, "role": role, "name": r.name ?? role, "text": r.text ?? r.short ?? "", "short": r.short as Any, "outcome": r.outcome ?? "said"])
       }
     }
     overlay.thinking.roles = RobotCrew.layout.map(\.role).filter { link.thinkingRoles.contains($0) }
-    if subtitles.tick(now: now) { overlay.subtitles.items = subtitles.visible }
+    if showState {
+      if speaking.update(st?.speaking, crew: st?.crew, now: now) { overlay.subtitles.items = speaking.current.map { [$0] } ?? [] }
+    } else if subtitles.tick(now: now) { overlay.subtitles.items = subtitles.visible }
+    overlay.cue.cue = st?.scene?.cue
 
-    let waiting = st?.waiting?.first
+    let showDecision = st?.decision?.options?.isEmpty == false
+    let waiting = showDecision ? nil : st?.waiting?.first
     let opts = (waiting?.options ?? []).prefix(4).map { DecisionCardView.Option(id: $0.id, label: $0.label, detail: $0.detail ?? "", proposedBy: $0.proposedBy) }
     let gazed = mode == .live ? sample.gaze : nil
     if overlay.card.update(waitingReason: waiting?.reason, options: Array(opts), gazed: gazed, chosen: chosen, now: now) { overlay.needsLayout = true }
+    if overlay.showCard.update(st?.decision, crew: st?.crew, gazedFallback: gazed ?? world.gazedCard, localChosen: chosen, now: now) { overlay.needsLayout = true }
 
     overlay.badges.mode = mode
     if let b = st?.storyBeat { overlay.badges.beat = (b, st?.storyBeats ?? 7) } else { overlay.badges.beat = nil }
@@ -330,7 +350,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     camLock.lock()
     let f = fps, fov = camFovX
     camLock.unlock()
-    let body: [String: Any] = ["fps": f, "mode": "\(mode)", "fovX": fov, "link": link.statusText, "size": [Int(view.bounds.width), Int(view.bounds.height)], "subtitles": subtitles.visible.map(\.text), "card": overlay.card.isUp]
+    let px = (scnView.layer?.contentsScale ?? 1) * view.bounds.width
+    let body: [String: Any] = ["fps": f, "mode": "\(mode)", "fovX": fov, "link": link.statusText, "size": [Int(view.bounds.width), Int(view.bounds.height)], "renderWidthPx": Int(px), "layer": String(describing: type(of: scnView.layer as Any)), "drawable": ((scnView.layer as? CAMetalLayer).map { Int($0.drawableSize.width) } ?? -1), "subtitles": (speaking.current.map { [$0.text] } ?? subtitles.visible.map(\.text)), "subtitleWho": speaking.current?.role ?? "", "card": overlay.card.isUp || overlay.showCard.isUp, "cue": overlay.cue.cue ?? ""]
     guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
     var req = URLRequest(url: Self.statsURL)
     req.httpMethod = "POST"
@@ -377,6 +398,24 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
 
 /// The 3D view. In debug builds only, dragging rotates the camera (when no headset is connected).
 final class SpectatorSCNView: SCNView {
+  /// AppKit resets the layer's contentsScale to the display's backing scale; this puts the cap back (see `SpectatorController.maxPixelWidth`).
+  var maxPixelWidth: CGFloat = 0
+  func capResolution() {
+    guard maxPixelWidth > 0, bounds.width > 0, let layer else { return }
+    let backing = window?.backingScaleFactor ?? 2
+    // Full screen on a Retina Mac is 3840 px across: 2x MSAA there (4x costs a third of the frame time for edges nobody sees at that density).
+    let aa: SCNAntialiasingMode = bounds.width * backing > maxPixelWidth * 1.25 ? .multisampling2X : .multisampling4X
+    if antialiasingMode != aa { antialiasingMode = aa }
+    let scale = max(1, min(backing, maxPixelWidth / bounds.width))
+    if abs(layer.contentsScale - scale) > 0.01 {
+      layer.contentsScale = scale
+      (layer as? CAMetalLayer)?.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+    }
+  }
+  override func layout() { super.layout(); capResolution() }
+  override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); capResolution() }
+  override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); capResolution() }
+
   #if DEBUG
   var onDrag: ((CGFloat, CGFloat) -> Void)?
   var onClick: (() -> Void)?
