@@ -41,7 +41,7 @@ export interface OrchestratorOptions {
   /** Hard cap on cascaded events per run, in case of a feedback loop. */
   maxSteps?: number;
   /** Which agent role a free-text report goes to. Default: keyword routing. */
-  routeReport?: (text: string) => Promise<AgentRole> | AgentRole;
+  routeReport?: (text: string) => Promise<string> | string;
 }
 
 /**
@@ -58,7 +58,7 @@ export class Orchestrator {
   private readonly fmtTime: (t: Time) => string;
   private paceMs: number;
   private readonly maxSteps: number;
-  private readonly routeReport: (text: string) => Promise<AgentRole> | AgentRole;
+  private readonly routeReport: (text: string) => Promise<string> | string;
   private timeline: { at: Time; seq: number; event: WorldEvent }[] = [];
   private queue: EngineEvent[] = [];
   private listeners: ((m: OrchestratorMessage) => void)[] = [];
@@ -75,7 +75,7 @@ export class Orchestrator {
     this.fmtTime = opts.fmtTime ?? ((t) => new Date(t).toISOString());
     this.paceMs = opts.paceMs ?? 0;
     this.maxSteps = opts.maxSteps ?? 50_000;
-    this.routeReport = opts.routeReport ?? keywordRoute;
+    this.routeReport = opts.routeReport ?? ((t: string) => keywordRoute(t));
     const setup = this.world.setup();
     this.meta = setup.meta;
     this.engine = new Engine({ ...setup.config, requireCredentials: true });

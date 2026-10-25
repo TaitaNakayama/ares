@@ -4,7 +4,7 @@ import { networkInterfaces } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ApWithReader, ControllerRules, DirectiveRules, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
+import { ApWithReader, ControllerRules, DirectiveRules, keywordRoute, EscalationDrafter, LlmBrain, llmRoute, ModelRouter, OllamaProvider, OpenAIProvider, Orchestrator, ReceiverRules, ReportRules, RequesterRules, RogueBrain, TreasuryRules, type AgentMode, type Brain, type LlmProvider, type Narration, type OrchestratorMessage } from "@ares/agents";
 import { formatCents, RULE_LABELS, type AgentRole, type Escalation, type Policy } from "@ares/engine";
 import { runEval } from "@ares/eval";
 import { CREW, MarsWorld, SCIENCE_REF } from "@ares/world-mars";
@@ -78,7 +78,7 @@ const brains = (): Brain[] => {
   for (const id of ["life", "science"] as const) {
     const p = `${CREW[id].name} (${id === "life" ? "white, droplet" : "green, microscope"}): ${CREW[id].job}. You act on the base with your own tools and can request purchases.`;
     if (LLM && LLM_ROLES.includes(id)) list.push(new LlmBrain({ role: "requester", actorId: id, persona: p, rules: new DirectiveRules("requester", id), router }));
-    else list.push(new DirectiveRules("requester", id));
+    else list.push(new DirectiveRules("requester", id), new ReportRules("requester", id));
   }
   list.push(new EscalationDrafter(LLM));
   return list;
@@ -114,7 +114,7 @@ class Session {
     this.paceMs = paceMs;
     // A policy edited in the console carries over to every new run until restored.
     this.world = new MarsWorld({ seed, mode: "demo", policy: policyOverride });
-    this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0, routeReport: LLM ? llmRoute(router) : undefined });
+    this.orch = new Orchestrator({ world: this.world, brains: brains(), fmtTime: this.world.fmtTime, paceMs: 0, routeReport: LLM ? llmRoute(router, 6000, true) : (t: string) => keywordRoute(t, true) });
     this.simNow = this.world.start - 32 * 86_400_000;
     const self = this;
     this.show = new Show({
