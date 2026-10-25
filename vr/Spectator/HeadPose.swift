@@ -50,11 +50,19 @@ final class HeadPose: @unchecked Sendable {
     return sample
   }
 
-  /// Live = the server says a headset is connected and its pose is fresh.
+  var isConnected: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return connected
+  }
+
+  /// Live = a headset has streamed its pose recently. A short gap (the phone reconnecting, a stalled frame) holds the last pose
+  /// instead of handing the camera to the director, which would swing to the speaker: 4 s while the server still reports the
+  /// headset, 2.5 s once it says it's gone (a reconnect closes the old socket before the new one opens).
   func isLive(now: TimeInterval = CACurrentMediaTime()) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    return connected && now - sample.at < 1.0
+    return now - sample.at < (connected ? 4.0 : 2.5)
   }
 }
 

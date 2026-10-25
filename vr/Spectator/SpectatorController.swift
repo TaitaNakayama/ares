@@ -29,6 +29,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var directorOn = false
   private var directorAim: (heading: Float, pitch: Float)?
   private var subtitlesCleared = false
+  // Diagnostics for /api/spectator/stats (checked by scripts/spectator-check.ts): mode flips and the stalest pose seen since the last report.
+  private var modeFlips = 0
+  private var maxPoseAge: Double = 0
 
   // Camera state shared with SceneKit's render thread.
   private let camLock = NSLock()
@@ -150,7 +153,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     RealityCheck.shared.onTextureReady = { [weak self] n in self?.scnView.prepare([n], completionHandler: nil) }
     timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
     RunLoop.main.add(timer!, forMode: .common)
-    Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.postStats() }
+    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.postStats() }
   }
 
   // MARK: messages from the server
@@ -200,6 +203,8 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     let newMode: BadgeView.Mode = live ? .live : (directorArg ? .director : .replay)
     let replay = !live && (!directorArg || !link.isConnectedToServer)
     #endif
+    if pose.isConnected { maxPoseAge = max(maxPoseAge, now - pose.latest().at) }
+    if newMode != mode { modeFlips += 1 }
     if newMode != mode || replay != lastReplay {
       // Switching between the live run and the recording: old lines belong to the other story.
       if replay != lastReplay { subtitles.clear(); speaking.clear(); chosen = nil }
@@ -274,7 +279,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
     let waiting = showDecision ? nil : st?.waiting?.first
     let opts = (waiting?.options ?? []).prefix(4).map { DecisionCardView.Option(id: $0.id, label: $0.label, detail: $0.detail ?? "", proposedBy: $0.proposedBy) }
     let gazed = mode == .live ? sample.gaze : nil
-    if overlay.card.update(waitingReason: waiting?.reason, options: Array(opts), gazed: gazed, chosen: chosen, now: now) { overlay.needsLayout = true }
+    // The older card (escalations without the show) also flashes "COMMANDER CHOSE" on `vr_choice`; under the show the show card
+    // says that itself, and the choice is announced after the engine has carried it out, so it would pop up a second time.
+    if overlay.card.update(waitingReason: waiting?.reason, options: Array(opts), gazed: gazed, chosen: showState ? nil : chosen, now: now) { overlay.needsLayout = true }
     if overlay.showCard.update(st?.decision, crew: st?.crew, gazedFallback: gazed ?? world.gazedCard, localChosen: chosen, now: now) { overlay.needsLayout = true }
 
     overlay.badges.mode = mode
@@ -433,10 +440,19 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
 
   private func postStats() {
     camLock.lock()
-    let f = fps, fov = camFovX
+    let f = fps, fov = camFovX, camQ = renderedQ
     camLock.unlock()
+    func yawPitch(_ q: simd_quatf) -> [Double] {
+      let v = q.act(SIMD3<Float>(0, 0, -1))
+      return [Double(atan2(v.x, -v.z) * 180 / .pi), Double(asin(max(-1, min(1, v.y))) * 180 / .pi)]
+    }
+    let cd = world.crew.takeDiagnostics()
+    let diag: [String: Any] = ["cam": yawPitch(camQ), "pose": yawPitch(pose.latest().q), "modeFlips": modeFlips, "maxPoseAgeMs": Int(maxPoseAge * 1000), "headsetConnected": pose.isConnected,
+                               "title": link.snapshot().0?.scene?.title?.style ?? "", "bubbleMaxStep": cd.bubbleMaxStep, "bubbleJumps": cd.bubbleJumps, "tagSwitches": cd.tagSwitches]
+    modeFlips = 0
+    maxPoseAge = 0
     let px = (scnView.layer?.contentsScale ?? 1) * view.bounds.width
-    let body: [String: Any] = ["fps": f, "mode": "\(mode)", "fovX": fov, "link": link.statusText, "size": [Int(view.bounds.width), Int(view.bounds.height)], "renderWidthPx": Int(px), "layer": String(describing: type(of: scnView.layer as Any)), "drawable": ((scnView.layer as? CAMetalLayer).map { Int($0.drawableSize.width) } ?? -1), "subtitles": (speaking.current.map { [$0.text] } ?? subtitles.visible.map(\.text)), "subtitleWho": speaking.current?.role ?? "", "card": overlay.card.isUp || overlay.showCard.isUp, "cue": overlay.cue.cue ?? ""]
+    let body: [String: Any] = ["fps": f, "mode": "\(mode)", "fovX": fov, "link": link.statusText, "size": [Int(view.bounds.width), Int(view.bounds.height)], "renderWidthPx": Int(px), "layer": String(describing: type(of: scnView.layer as Any)), "drawable": ((scnView.layer as? CAMetalLayer).map { Int($0.drawableSize.width) } ?? -1), "subtitles": overlay.subtitles.items.map(\.text), "subtitleWho": speaking.current?.role ?? "", "card": overlay.card.isUp || overlay.showCard.isUp, "cue": overlay.cue.cue ?? "", "diag": diag]
     guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
     var req = URLRequest(url: Self.statsURL)
     req.httpMethod = "POST"

@@ -145,6 +145,26 @@ final class Crew {
   private var queue: [Line] = []
   let bubble = SpeechBubble()
   private var bubbleShownKey = ""
+  /// Where this line's bubble sits, relative to its speaker: chosen once when the line starts (and again only if the speaker
+  /// moves), so it never slides with the judge's head or hops between candidate spots while the robot works.
+  // Diagnostics (the spectator reports them): the largest bubble move in one frame within a line, how many frames moved more
+  // than 8 cm (a visible hop), and nametag height changes, since the last report.
+  private var diagBubbleMaxStep: Float = 0
+  private var diagBubbleJumps = 0
+  private var lastBubbleCentre: SIMD3<Float>?
+  private var lastBubbleSeq = -1
+  func takeDiagnostics() -> (bubbleMaxStep: Double, bubbleJumps: Int, tagSwitches: [String: Int]) {
+    var tags: [String: Int] = [:]
+    for (id, b) in bots { let n = b.takeTagSwitches(); if n > 0 { tags[id] = n } }
+    let r = (Double(diagBubbleMaxStep), diagBubbleJumps, tags)
+    diagBubbleMaxStep = 0
+    diagBubbleJumps = 0
+    return r
+  }
+  private var placedSeq = -1
+  private var placedFrom = SIMD3<Float>(repeating: 0)
+  private var placedRel = SIMD3<Float>(repeating: 0)
+  private var shownRel = SIMD3<Float>(repeating: 0)
   private var bubbleOffset = SIMD3<Float>(0, 0.2, 0)
   /// A window or end title is up: tags and the bubble fade to nothing (set by BaseScene from the show).
   var labelsHidden = false
@@ -286,7 +306,8 @@ final class Crew {
       if !primed { primed = true; lastSeq = speaking?.seq ?? -1; speaking = nil } // an old tape's last line is not news
     }
     // A window or end card stands alone: the last bubble steps aside.
-    if let style = st.scene?.title?.style, style == "end" || style == "window" { current = nil; queue.removeAll() }
+    // A title card stands alone; the black opening title also means a new show, so the last show's bubble must not linger.
+    if let style = st.scene?.title?.style, style == "end" || style == "window" || style == "black" { current = nil; queue.removeAll() }
     ingest(speaking, now: now)
   }
 
@@ -582,10 +603,14 @@ final class Crew {
       let flat = SIMD3(eye.x, 0, eye.z)
       centre = flat + dir * 1.95 + SIMD3(0, df.eyeY + 0.74 + 0.12 + 0.06 + h / 2, 0)
       bubbleOffset = .zero
+    } else if outside, placedSeq == c.seq, simd_distance(placedFrom, p) < 1.5 {
+      // Placed when the line started: it stays there (relative to the speaker) instead of chasing the head.
+      centre = p + placedRel
+      bubbleOffset = .zero
     } else if outside {
       let base = p + right * side * (w / 2 + 0.3 * k) + SIMD3(0, 0.75 * k, 0) - radial * 0.2 * k
       centre = base
-      // Keep it in the view: the head's horizontal field is about +-38 degrees; stay inside it, with the bubble's own half-width.
+      // At the line's start, keep it in the view: the head's horizontal field is about +-38 degrees; stay inside it, with the bubble's own half-width.
       let fh = SIMD3(fwd.x, 0, fwd.z)
       if simd_length(fh) > 0.1 {
         let f = simd_normalize(fh)
@@ -601,16 +626,25 @@ final class Crew {
         centre = eye + SIMD3(v.x, tan(el) * hd, v.z)
       }
       bubbleOffset = .zero
+      placedSeq = c.seq
+      placedFrom = p
+      placedRel = centre - p
+    } else if placedSeq == c.seq, simd_distance(placedFrom, p) < 0.5 {
+      // Inside: placed when the line started, beside its speaker; it follows the robot, not the judge's head.
+      shownRel += (placedRel - shownRel) * 0.15
+      centre = Crew.clampInside(p + shownRel, halfW: w / 2, halfH: h / 2)
     } else {
-      var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity, bestSide = side
+      // A re-placement of the same line (its speaker moved) keeps the side it was on unless that side is clearly worse.
+      let keepSide: Float = placedSeq == c.seq ? (simd_dot(placedRel, right) >= 0 ? 1 : -1) : side
+      var best = SIMD3<Float>(0, 0.2, 0), bestArea = Float.infinity, bestSide = keepSide
       let others = bots.values.filter { $0 !== bot && $0.isVisible }
-      search: for sd in [side, -side] {
+      search: for sd in [keepSide, -keepSide] {
         let sbase = p + right * sd * (w / 2 + 0.28) - radial * 0.15
         for dx in [Float(0), 0.35, 0.7] {
           for dy in [Float(0.2), 0.5, 0.8, -0.55, -0.85] {
             let off = right * sd * dx + SIMD3(0, dy, 0)
             let cand = Crew.clampInside(sbase + off, halfW: w / 2, halfH: h / 2)
-            let area = ScreenRects.overlap(center: cand, w: w, h: h, user: eye) + 3 * Crew.botOverlap(center: cand, w: w, h: h, user: eye, others: others) + (sd == side ? 0 : 0.002)
+            let area = ScreenRects.overlap(center: cand, w: w, h: h, user: eye) + 3 * Crew.botOverlap(center: cand, w: w, h: h, user: eye, others: others) + (sd == keepSide ? 0 : (placedSeq == c.seq ? 0.02 : 0.002))
             if area < bestArea { bestArea = area; best = SIMD3(dx, dy, 0); bestSide = sd }
             if area == 0 { break search }
           }
@@ -618,10 +652,25 @@ final class Crew {
       }
       let base = p + right * bestSide * (w / 2 + 0.28) - radial * 0.15
       let target = right * bestSide * best.x + SIMD3(0, best.y, 0)
-      bubbleOffset += (target - bubbleOffset) * 0.12
-      centre = Crew.clampInside(base + bubbleOffset, halfW: w / 2, halfH: h / 2)
-      centre = Crew.keepInView(centre, w: w, h: h, eye: eye, fwd: fwd)
+      centre = Crew.clampInside(base + target, halfW: w / 2, halfH: h / 2)
+      // A new line appears at its spot; the same line re-placed (its speaker moved) glides there.
+      let rel = centre - p
+      if placedSeq != c.seq { shownRel = rel }
+      placedSeq = c.seq
+      placedFrom = p
+      placedRel = rel
+      centre = Crew.clampInside(p + shownRel, halfW: w / 2, halfH: h / 2)
     }
+    // The same line moving to a new spot (the card came up, the speaker moved off, a re-placement) glides there over about a
+    // quarter of a second; only a new line appears in place.
+    if let last = lastBubbleCentre, lastBubbleSeq == c.seq {
+      centre = last + (centre - last) * (1 - exp(-dt / 0.25))
+      let step = simd_distance(last, centre)
+      diagBubbleMaxStep = max(diagBubbleMaxStep, step)
+      if step > 0.08 { diagBubbleJumps += 1 }
+    }
+    lastBubbleCentre = centre
+    lastBubbleSeq = c.seq
     bubble.node.simdPosition = centre
     bubble.node.simdScale = SIMD3(repeating: k)
     let tu = eye - centre

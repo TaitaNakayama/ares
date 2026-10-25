@@ -189,6 +189,8 @@ const spectatorClients = new WeakSet<WebSocket>();
 /** Token-authenticated headsets; only the newest one's head pose is relayed to spectators. */
 const headsets = new Set<WebSocket>();
 let activeHeadset: WebSocket | undefined;
+/** Pose relay diagnostics (GET /api/debug/pose): what the spectator's LIVE camera depends on. */
+const poseStats = { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, headsetSockets: 0, connects: 0, closes: 0, since: Date.now() };
 let vrStats: Record<string, unknown> = {};
 let spectatorStats: Record<string, unknown> = {};
 let recDir: string | undefined;
@@ -615,6 +617,15 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/state" && req.method === "GET") return send(res, 200, fullState());
     if (path === "/api/vr" && req.method === "GET") return send(res, 200, vrState());
     if (path === "/api/vr/stats" && req.method === "GET") return send(res, 200, vrStats);
+    if (path === "/api/debug/pose" && req.method === "GET") return send(res, 200, { ...poseStats, openHeadsetSockets: [...headsets].filter((h) => h.readyState === 1).length, msSinceRelay: poseStats.lastRelayAt ? Date.now() - poseStats.lastRelayAt : null });
+    // Test hook: cut the active headset's socket (as a pulled cable or a Wi-Fi blip would) and time the reconnect.
+    if (path === "/api/debug/drop-headset" && req.method === "POST") {
+      const h = activeHeadset;
+      if (!h) return send(res, 409, { error: "no headset" });
+      h.terminate();
+      return send(res, 200, { ok: true, droppedAt: Date.now() });
+    }
+    if (path === "/api/debug/pose" && req.method === "DELETE") { Object.assign(poseStats, { received: 0, relayed: 0, droppedNotActive: 0, droppedInvalid: 0, lastRelayAt: 0, maxGapMs: 0, gapsOver1s: 0, connects: 0, closes: 0, since: Date.now() }); return send(res, 200, { ok: true }); }
     if (path.startsWith("/api/trace/")) {
       const t = session.orch.engine.trace(decodeURIComponent(path.slice("/api/trace/".length)));
       return t ? send(res, 200, t) : send(res, 404, { error: "no such entry" });
@@ -840,9 +851,11 @@ wss.on("connection", (ws, req) => {
   if (headset) {
     headsets.add(ws);
     activeHeadset = ws;
+    poseStats.connects++;
+    poseStats.headsetSockets = headsets.size;
     broadcast(headsetStatus());
   }
-  console.log(`[ws] ${client} connected from ${req.socket.remoteAddress} (${clients.size} clients)`);
+  console.log(`[ws] ${new Date().toISOString().slice(11, 19)} ${client} connected from ${req.socket.remoteAddress} (${clients.size} clients)`);
   const lean = client === "vr" || spectator;
   ws.send(JSON.stringify({ type: "hello", client, seed: session.seed, meta: session.orch.meta, state: lean ? undefined : fullState(), vr: vrState(), ...(spectator ? { headset: headsetStatus().connected } : {}) }));
   ws.on("message", async (raw) => {
@@ -852,7 +865,20 @@ wss.on("connection", (ws, req) => {
       if (m.type === "ping") ws.send(JSON.stringify({ type: "pong", t: Date.now() }));
       // Only the authenticated headset steers the spectator's camera; nothing on the Mac can.
       if (m.type === "vr_pose") {
-        if (ws === activeHeadset && validPose(m as Record<string, unknown>)) toSpectators(text);
+        poseStats.received++;
+        if (ws !== activeHeadset) poseStats.droppedNotActive++;
+        else if (!validPose(m as Record<string, unknown>)) poseStats.droppedInvalid++;
+        else {
+          const now = Date.now();
+          if (poseStats.lastRelayAt) {
+            const gap = now - poseStats.lastRelayAt;
+            poseStats.maxGapMs = Math.max(poseStats.maxGapMs, gap);
+            if (gap > 1000) poseStats.gapsOver1s++;
+          }
+          poseStats.lastRelayAt = now;
+          poseStats.relayed++;
+          toSpectators(text);
+        }
         return;
       }
       // The spectator is read-only.
@@ -900,10 +926,12 @@ wss.on("connection", (ws, req) => {
   ws.on("close", (code) => {
     clients.delete(ws);
     if (headsets.delete(ws)) {
+      poseStats.closes++;
+      poseStats.headsetSockets = headsets.size;
       if (activeHeadset === ws) activeHeadset = [...headsets].find((h) => h.readyState === 1);
       broadcast(headsetStatus());
     }
-    console.log(`[ws] ${client} closed (${code}) (${clients.size} clients)`);
+    console.log(`[ws] ${new Date().toISOString().slice(11, 19)} ${client} closed (${code}) (${clients.size} clients)`);
   });
 });
 

@@ -85,6 +85,12 @@ final class Robot {
   private var lean: Float = 0
   private var eyeX: Float = 0.05
   private var tagY: Float = 0.62
+  /// The nametag's chosen height (above or below the body) and since when a better one has been waiting: the tag only moves
+  /// after a clear, sustained improvement, so a robot working back and forth near a wall screen doesn't make it jump.
+  private var tagSlot: Float = 0.62
+  private var tagSwitchSince: TimeInterval?
+  private var tagSwitches = 0
+  func takeTagSwitches() -> Int { defer { tagSwitches = 0 }; return tagSwitches }
   private var lastNow: TimeInterval = 0
   private var speakingSince: TimeInterval = 0
   private var wasSpeaking = false
@@ -418,7 +424,7 @@ final class Robot {
   /// Where the robot hovers now (render position), for the gaze test and the bubble.
   var worldPosition: SIMD3<Float> { node.simdPosition }
   /// Above the shell: the nametag.
-  var tagPosition: SIMD3<Float> { node.simdPosition + SIMD3(0, tagY * tagScale, 0) }
+  var tagPosition: SIMD3<Float> { pos + SIMD3(0, tagY * tagScale, 0) }
   /// True while it can be seen and gazed at.
   var isVisible: Bool { alpha > 0.5 && !node.isHidden }
 
@@ -509,16 +515,34 @@ final class Robot {
     let toUser = user - node.simdPosition
     let yawUser = atan2(toUser.x, toUser.z)
     nametag.node.simdEulerAngles.y = yawUser - yaw
-    var tagTarget: Float = 0.62, tagFade: CGFloat = 1, bestArea = Float.infinity
-    let np = node.simdPosition
-    for ty in [Float(0.62), 0.8, 1.0, -0.55, -0.75] {
-      let a = ScreenRects.overlap(center: np + SIMD3(0, ty * tagScale, 0), w: 1.12 * tagScale, h: 0.17 * tagScale, user: user)
-      if a < bestArea { bestArea = a; tagTarget = ty }
-      if a == 0 { break }
+    // Judged from where the robot rests (its glide position, not the job motion or the bob), with hysteresis.
+    let overlapAt = { (ty: Float) in ScreenRects.overlap(center: self.pos + SIMD3(0, ty * self.tagScale, 0), w: 1.12 * self.tagScale, h: 0.17 * self.tagScale, user: user) }
+    let curArea = overlapAt(tagSlot)
+    var want = tagSlot
+    if curArea > 0 {
+      var bestArea = curArea
+      // Above the head only: a tag flipping under the body when a robot comes closer reads as the label jumping.
+      for ty in [Float(0.62), 0.8, 1.0] where ty != tagSlot {
+        let a = overlapAt(ty)
+        if a < bestArea * 0.5 { bestArea = a; want = ty }
+        if a == 0 { break }
+      }
+    } else if tagSlot != 0.62, overlapAt(0.62) == 0 {
+      want = 0.62 // back over the head once that's clear
     }
-    if bestArea > 0 { tagFade = 0.4 }
-    tagY += (tagTarget - tagY) * 0.12
-    nametag.node.simdPosition = SIMD3(0, tagY * tagScale, 0)
+    // A robot on its way somewhere keeps its tag where it is; the height is chosen once it has settled.
+    let settled = simd_distance(target, pos) < 0.15
+    if want != tagSlot, settled {
+      let since = tagSwitchSince ?? now
+      tagSwitchSince = since
+      if now - since > 0.8 { tagSlot = want; tagSwitchSince = nil; tagSwitches += 1 }
+    } else {
+      tagSwitchSince = nil
+    }
+    let tagFade: CGFloat = overlapAt(tagSlot) > 0 ? 0.4 : 1
+    tagY += (tagSlot - tagY) * 0.12
+    // The node bobs with the job motion; the tag holds its height (it only moves sideways with the robot).
+    nametag.node.simdPosition = SIMD3(0, tagY * tagScale - off.y, 0)
     let pulseTag: Float = speaking ? 1 + 0.07 * sin(Float(now - speakingSince) * 7) : 1
     let ts = tagScale * pulseTag
     nametag.node.simdScale = SIMD3(repeating: ts)

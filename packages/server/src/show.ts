@@ -63,6 +63,8 @@ const OPTION_KIND = {
   buy: { label: "Buy trusted batteries", icon: "battery", speaker: "supply" as CrewId, tradeoff: "Fewer batteries, and they arrive later.", tradeoffIntent: "The trusted supplier has fewer batteries, and they arrive later." },
 };
 type OptionKind = keyof typeof OPTION_KIND;
+/** How long the card stays up after the choice (showing what was chosen) before it leaves the view. */
+const DECISION_LINGER_MS = 2500;
 
 const kindOf = (o: { id: string; leverId?: string; actions: { type: string }[] }): OptionKind | undefined =>
   o.leverId === "drill_off" || o.id === "lever-drill_off" ? "drill" : o.leverId === "lab_pause" || o.id === "lever-lab_pause" ? "lab" : o.actions.some((a) => a.type === "approve_requisition") ? "buy" : undefined;
@@ -422,6 +424,9 @@ export class Show {
     if (!this.decision || this.decision.id !== escalationId || this.decision.chosen) return;
     const o = this.decision.options.find((x) => x.id === optionId);
     this.decision.chosen = optionId;
+    this.decisionChosenAt = Date.now();
+    // The card shows what was chosen for a moment, then leaves (clients hide it when the decision is gone).
+    this.at(DECISION_LINGER_MS + 100, () => this.host.notify());
     const targets = new Set(this.decision.options.map((x) => x.tradeoffTarget));
     this.queue = this.queue.filter((x) => !targets.has(x.spec.target));
     for (const c of Object.keys(this.crew) as CrewId[]) this.crew[c].approach = false;
@@ -439,6 +444,7 @@ export class Show {
   }
 
   private reacted = new Set<string>();
+  private decisionChosenAt = 0;
   /** The engine refused the choice (e.g. it changed under the judge): back to the card. */
   onDecisionRefused(escalationId: string): void {
     if (!this.decision || this.decision.id !== escalationId) return;
@@ -719,7 +725,7 @@ export class Show {
         reality: this.act === "explore" ? { offer: true, on: this.realityOn, caption: "This is real Mars. The base isn't built yet.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
       },
       world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust, quote: this.quoteFields() },
-      decision: this.decision && (this.act === "decision" || this.act === "consequence") ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy, tradeoffTarget }) => ({ id, label, icon, speaker, proposedBy, cost: tradeoffTarget.replace(/\.$/, "") })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
+      decision: this.decision && (this.act === "decision" || (this.act === "consequence" && Date.now() - this.decisionChosenAt < DECISION_LINGER_MS)) ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy, tradeoffTarget }) => ({ id, label, icon, speaker, proposedBy, cost: tradeoffTarget.replace(/\.$/, "") })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
       moneyExtra: { savedBig: this.savedBig, incoming: this.incoming },
     };
   }

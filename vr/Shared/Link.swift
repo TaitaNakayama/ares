@@ -71,9 +71,9 @@ struct VRState: Decodable {
   var decision: Decision?
 }
 
-/// WebSocket link to the Mac. Tries every baked server URL until one answers,
-/// reconnects forever, and retries the first connection (iOS may deny it while
-/// showing the Local Network prompt).
+/// WebSocket link to the Mac. Tries every baked server URL at once and keeps the first that answers (the headset carries
+/// the Mac's addresses on every network it might be on: USB link-local, venue Wi-Fi, hotspot), reconnects forever the same
+/// way, and treats 4 s without a message from the server as a lost link (the server pushes state at least every second).
 final class Link: NSObject, @unchecked Sendable {
   enum Status: Equatable { case connecting(String), connected(String), offline, replay }
   private(set) var status: Status = .connecting("")
@@ -94,8 +94,11 @@ final class Link: NSObject, @unchecked Sendable {
   private var task: URLSessionWebSocketTask?
   private var session: URLSession!
   private var candidates: [String] = []
-  private var index = 0
   private var current: URL?
+  /// The attempts in flight (one per candidate) until one answers; then just the winner.
+  private var attempts: [URLSessionWebSocketTask: URL] = [:]
+  private var attemptRound = 0
+  private var lastMessageAt = Date.distantPast
   private let lock = NSLock()
   private var everConnected = false
   // Thinking roles: the server's set (vr_state / push) plus asks made here that the server has not confirmed yet.
@@ -213,57 +216,100 @@ final class Link: NSObject, @unchecked Sendable {
   }
 
 
+  /// One round: a connection attempt to every candidate at once. The first to deliver the server's hello wins; the rest
+  /// are cancelled. (One at a time with a 4 s timeout each, a lost USB link meant a minute of dead hotspot addresses.)
   private func connectNext() {
     guard !candidates.isEmpty else { return }
-    let s = candidates[index % candidates.count]
-    index += 1
-    guard let url = URL(string: s) else { return connectNext() }
-    setStatus(.connecting(url.host ?? s))
-    NSLog("[link] trying %@", url.host ?? s)
-    let t = session.webSocketTask(with: url)
-    t.maximumMessageSize = 8 * 1024 * 1024
-    task = t
-    current = url
-    t.resume()
-    // Connected = the server's first message arrived (it sends "hello" immediately).
-    receive(t)
-    // A blocked connection can hang; give up on this candidate after a few seconds.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-      guard let self, self.task === t, case .connecting = self.status else { return }
-      t.cancel()
-      self.connectNext()
+    lock.lock()
+    for t in attempts.keys { t.cancel() }
+    attempts = [:]
+    attemptRound += 1
+    let round = attemptRound
+    task = nil
+    lock.unlock()
+    setStatus(.connecting(candidates.count == 1 ? (URL(string: candidates[0])?.host ?? "") : "\(candidates.count) addresses"))
+    for s in candidates {
+      guard let url = URL(string: s) else { continue }
+      let t = session.webSocketTask(with: url)
+      t.maximumMessageSize = 8 * 1024 * 1024
+      lock.lock()
+      attempts[t] = url
+      lock.unlock()
+      t.resume()
+      receive(t)
+    }
+    NSLog("[link] trying %d addresses", candidates.count)
+    // Nobody answered: start a new round.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+      guard let self else { return }
+      self.lock.lock()
+      let stillWaiting = self.attemptRound == round && self.task == nil
+      self.lock.unlock()
+      if stillWaiting { self.connectNext() }
     }
   }
 
   private func keepAlive(_ t: URLSessionWebSocketTask) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
       guard let self, self.task === t else { return }
+      // The server sends state at least every second: silence means the route is gone (a pulled USB cable can leave the
+      // socket open with nothing arriving), even if no error has been reported yet.
+      if Date().timeIntervalSince(self.lastMessageAt) > 4 { return self.lost(t) }
       t.sendPing { err in
-        if err != nil { self.lost(t) } else { self.keepAlive(t) }
+        if err != nil { self.lost(t) }
       }
+      self.keepAlive(t)
     }
   }
 
   private func lost(_ t: URLSessionWebSocketTask) {
-    guard task === t else { return }
+    lock.lock()
+    let isCurrent = task === t
+    if !isCurrent { attempts[t] = nil }
+    lock.unlock()
+    guard isCurrent else { return }
+    NSLog("[link] lost %@", current?.host ?? "?")
     t.cancel()
     setStatus(.offline)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connectNext() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.connectNext() }
   }
 
   private func receive(_ t: URLSessionWebSocketTask) {
     t.receive { [weak self] result in
       guard let self else { return }
       switch result {
-      case .failure(let err):
-        NSLog("[link] %@ failed: %@", self.current?.host ?? "?", err.localizedDescription)
+      case .failure:
         self.lost(t)
       case .success(let msg):
+        guard self.claim(t) else { return } // a losing attempt: dropped
         if case .string(let s) = msg { self.handle(s) }
         if case .data(let d) = msg, let s = String(data: d, encoding: .utf8) { self.handle(s) }
         self.receive(t)
       }
     }
+  }
+
+  /// A message arrived on `t`: true if `t` is (or now becomes) the connection. The first attempt to answer wins the round.
+  private func claim(_ t: URLSessionWebSocketTask) -> Bool {
+    lock.lock()
+    if task === t {
+      lastMessageAt = Date()
+      lock.unlock()
+      return true
+    }
+    guard task == nil, let url = attempts[t] else {
+      lock.unlock()
+      t.cancel()
+      return false
+    }
+    task = t
+    current = url
+    lastMessageAt = Date()
+    for (other, _) in attempts where other !== t { other.cancel() }
+    attempts = [t: url]
+    lock.unlock()
+    NSLog("[link] connected via %@", url.host ?? "?")
+    return true
   }
 
   private func handle(_ s: String) {
