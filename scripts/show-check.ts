@@ -32,7 +32,7 @@ for (let i = 0; i < RUNS; i++) {
     const st = await get("/api/vr/stats").catch(() => ({}));
     if (typeof st.fps === "number" && st.link?.startsWith("Live")) fpsMin = Math.min(fpsMin, st.fps);
     if (log.act === "explore" && log.lines.some((l: any) => l.act === "explore")) break;
-    if (Date.now() - t0 > 6 * 60_000) break;
+    if (Date.now() - t0 > 8 * 60_000) break;
   }
   const state = await get("/api/state");
   const snap = state.snapshot;
