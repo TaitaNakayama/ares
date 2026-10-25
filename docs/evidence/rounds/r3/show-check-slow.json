@@ -1,0 +1,919 @@
+[
+ {
+  "seed": "slow-1",
+  "choice": "drill",
+  "seconds": 263.407,
+  "acts": [
+   {
+    "act": "title",
+    "t": 1.006
+   },
+   {
+    "act": "outside",
+    "t": 5.043
+   },
+   {
+    "act": "entering",
+    "t": 54.305
+   },
+   {
+    "act": "inside",
+    "t": 59.327
+   },
+   {
+    "act": "crisis",
+    "t": 70.39
+   },
+   {
+    "act": "decision",
+    "t": 177.933
+   },
+   {
+    "act": "consequence",
+    "t": 198.035
+   },
+   {
+    "act": "later",
+    "t": 228.208
+   },
+   {
+    "act": "resolved",
+    "t": 243.284
+   },
+   {
+    "act": "explore",
+    "t": 263.395
+   }
+  ],
+  "lines": 24,
+  "llmLines": 24,
+  "cachedLines": 24,
+  "fallbacks": [],
+  "broken": [],
+  "checks": {
+   "every line keeps the text rules": true,
+   "acts in order, title to explore": true,
+   "short delivery paid only for what arrived": true,
+   "no payment to the scam supplier": true,
+   "Earth confirmed the scam, supplier locked": true,
+   "the amount saved shown": true,
+   "the choice shown in the world": true,
+   "the card offered three options": true,
+   "the Act 4 offer was made": true
+  },
+  "headsetFpsMin": null,
+  "log": [
+   {
+    "at": 6510,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Welcome, Commander. The crew keeps our base alive.",
+    "via": "llm",
+    "cached": true,
+    "ms": 8
+   },
+   {
+    "at": 16811,
+    "act": "outside",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Arm grinding ancient river-delta rock. Want a closer look?",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 27712,
+    "act": "outside",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Two crates are missing. I won't pay for those.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 38613,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "rim",
+    "text": "Crew, dust storm rising over the crater rim.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 48921,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Commander, head inside the base right now.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 59927,
+    "act": "inside",
+    "speaker": "life",
+    "to": "judge",
+    "text": "Welcome back inside, Commander. The air is fresh.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 70228,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Rules, I paid only for crates that arrived.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 80530,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "I'm Rules. I check every payment before money leaves.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 91430,
+    "act": "crisis",
+    "speaker": "life",
+    "to": "engineer",
+    "text": "Storm's cutting solar power. Oxygen makers need it.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 101732,
+    "act": "crisis",
+    "speaker": "engineer",
+    "to": "supply",
+    "text": "We can't power everything. Supply, find batteries fast.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 112034,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "I found batteries for sale on Earth.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 121735,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "Supply, who's selling them? We need to know quickly.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 132636,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Our usual supplier, but roughly triple the normal price.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 143537,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Same quote, but payment goes to a new bank account.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 155038,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "That's a scam. I've blocked the payment.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 164739,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Asked Earth to verify bank change. Reply takes 25 minutes.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 176241,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Scam blocked. No batteries before Earth answers. What goes, Commander?",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 187742,
+    "act": "decision",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Pausing the lab could spoil our samples.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 197443,
+    "act": "decision",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Our trusted supplier has fewer batteries, arriving later.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 207744,
+    "act": "consequence",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Drill powered down. Oxygen makers are stable.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 217445,
+    "act": "consequence",
+    "speaker": "life",
+    "to": "judge",
+    "text": "Air is safe. Stored water lasts nine days.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 229489,
+    "act": "later",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Earth confirmed that bank account was a scam.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 243093,
+    "act": "later",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Storm's thinning, power's returning. The base made it, Commander.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 262997,
+    "act": "explore",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "See the real Mars? Look at me and tap.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   }
+  ]
+ },
+ {
+  "seed": "slow-2",
+  "choice": "lab",
+  "seconds": 263.194,
+  "acts": [
+   {
+    "act": "title",
+    "t": 1.003
+   },
+   {
+    "act": "outside",
+    "t": 5.021
+   },
+   {
+    "act": "entering",
+    "t": 54.208
+   },
+   {
+    "act": "inside",
+    "t": 59.232
+   },
+   {
+    "act": "crisis",
+    "t": 70.278
+   },
+   {
+    "act": "decision",
+    "t": 177.789
+   },
+   {
+    "act": "consequence",
+    "t": 198.889
+   },
+   {
+    "act": "later",
+    "t": 228.014
+   },
+   {
+    "act": "resolved",
+    "t": 243.086
+   },
+   {
+    "act": "explore",
+    "t": 263.187
+   }
+  ],
+  "lines": 24,
+  "llmLines": 24,
+  "cachedLines": 24,
+  "fallbacks": [],
+  "broken": [],
+  "checks": {
+   "every line keeps the text rules": true,
+   "acts in order, title to explore": true,
+   "short delivery paid only for what arrived": true,
+   "no payment to the scam supplier": true,
+   "Earth confirmed the scam, supplier locked": true,
+   "the amount saved shown": true,
+   "the choice shown in the world": true,
+   "the card offered three options": true,
+   "the Act 4 offer was made": true
+  },
+  "headsetFpsMin": null,
+  "log": [
+   {
+    "at": 6502,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Welcome, Commander. The crew keeps our base alive.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 16803,
+    "act": "outside",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Arm grinding ancient river-delta rock. Want a closer look?",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 27704,
+    "act": "outside",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Two crates are missing. I won't pay for those.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 38605,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "rim",
+    "text": "Crew, dust storm rising over the crater rim.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 48906,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Commander, head inside the base right now.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 59913,
+    "act": "inside",
+    "speaker": "life",
+    "to": "judge",
+    "text": "Welcome back inside, Commander. The air is fresh.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 70214,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Rules, I paid only for crates that arrived.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 80515,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "I'm Rules. I check every payment before money leaves.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 91416,
+    "act": "crisis",
+    "speaker": "life",
+    "to": "engineer",
+    "text": "Storm's cutting solar power. Oxygen makers need it.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 101716,
+    "act": "crisis",
+    "speaker": "engineer",
+    "to": "supply",
+    "text": "We can't power everything. Supply, find batteries fast.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 112016,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "I found batteries for sale on Earth.",
+    "via": "llm",
+    "cached": true,
+    "ms": 3
+   },
+   {
+    "at": 121715,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "Supply, who's selling them? We need to know quickly.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 132615,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Our usual supplier, at roughly triple the normal price.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 143515,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Same quote, but payment goes to a new bank account.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 155016,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "That's a scam. I've blocked the payment.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 164717,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Asked Earth to verify bank change. Reply takes 25 minutes.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 176217,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Scam blocked. No batteries before Earth answers. What goes, Commander?",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 187718,
+    "act": "decision",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Pausing the lab could spoil our samples.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 197420,
+    "act": "decision",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Our trusted supplier has fewer batteries, arriving later.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 207722,
+    "act": "consequence",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Lab's paused. I'll keep the samples cold.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 217423,
+    "act": "consequence",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Power's steady. The oxygen makers are stable.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 228874,
+    "act": "later",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Earth confirmed that bank account was a scam.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 242477,
+    "act": "later",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Storm's thinning, power's returning. The base made it, Commander.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 262381,
+    "act": "explore",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "See the real Mars? Look at me and tap.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   }
+  ]
+ },
+ {
+  "seed": "slow-3",
+  "choice": "buy",
+  "seconds": 262.25,
+  "acts": [
+   {
+    "act": "title",
+    "t": 1.003
+   },
+   {
+    "act": "outside",
+    "t": 5.019
+   },
+   {
+    "act": "entering",
+    "t": 54.249
+   },
+   {
+    "act": "inside",
+    "t": 59.273
+   },
+   {
+    "act": "crisis",
+    "t": 70.324
+   },
+   {
+    "act": "decision",
+    "t": 177.868
+   },
+   {
+    "act": "consequence",
+    "t": 197.964
+   },
+   {
+    "act": "later",
+    "t": 227.08
+   },
+   {
+    "act": "resolved",
+    "t": 242.15
+   },
+   {
+    "act": "explore",
+    "t": 262.239
+   }
+  ],
+  "lines": 24,
+  "llmLines": 24,
+  "cachedLines": 23,
+  "fallbacks": [],
+  "broken": [],
+  "checks": {
+   "every line keeps the text rules": true,
+   "acts in order, title to explore": true,
+   "short delivery paid only for what arrived": true,
+   "no payment to the scam supplier": true,
+   "Earth confirmed the scam, supplier locked": true,
+   "the amount saved shown": true,
+   "the choice shown in the world": true,
+   "the card offered three options": true,
+   "the Act 4 offer was made": true
+  },
+  "headsetFpsMin": null,
+  "log": [
+   {
+    "at": 6503,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Welcome, Commander. The crew keeps our base alive.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 16803,
+    "act": "outside",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Arm grinding ancient river-delta rock. Want a closer look?",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 27706,
+    "act": "outside",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Two crates are missing. I won't pay for those.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 38606,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "rim",
+    "text": "Crew, dust storm rising over the crater rim.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 48907,
+    "act": "outside",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Commander, head inside the base right now.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 59913,
+    "act": "inside",
+    "speaker": "life",
+    "to": "judge",
+    "text": "Welcome back inside, Commander. The air is fresh.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 70215,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Rules, I paid only for crates that arrived.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 80516,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "I'm Rules. I check every payment before money leaves.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 91416,
+    "act": "crisis",
+    "speaker": "life",
+    "to": "engineer",
+    "text": "Storm's cutting solar power. Oxygen makers need it.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 101717,
+    "act": "crisis",
+    "speaker": "engineer",
+    "to": "supply",
+    "text": "We can't power everything. Supply, find batteries fast.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 112019,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "I found batteries for sale on Earth.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 121720,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "Supply, who's selling them? We need to know quickly.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 132621,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Our usual supplier, at nearly triple the normal price.",
+    "via": "llm",
+    "ms": 2181
+   },
+   {
+    "at": 143524,
+    "act": "crisis",
+    "speaker": "supply",
+    "to": "rules",
+    "text": "Same quote, but payment goes to a new bank account.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 155024,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "supply",
+    "text": "That's a scam. I've blocked the payment.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 164725,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Asked Earth to verify bank change. Reply takes 25 minutes.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 176225,
+    "act": "crisis",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Scam blocked. No batteries before Earth answers. What goes, Commander?",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 187728,
+    "act": "decision",
+    "speaker": "science",
+    "to": "judge",
+    "text": "Pausing the lab could spoil our samples.",
+    "via": "llm",
+    "cached": true,
+    "ms": 2
+   },
+   {
+    "at": 197429,
+    "act": "decision",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Our trusted supplier has fewer batteries, arriving later.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 207731,
+    "act": "consequence",
+    "speaker": "supply",
+    "to": "judge",
+    "text": "Batteries ordered from our trusted supplier.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 216833,
+    "act": "consequence",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "I'll ration power until the batteries arrive.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 228281,
+    "act": "later",
+    "speaker": "rules",
+    "to": "judge",
+    "text": "Earth confirmed that bank account was a scam.",
+    "via": "llm",
+    "cached": true,
+    "ms": 1
+   },
+   {
+    "at": 241884,
+    "act": "later",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "Storm's thinning, power's returning. The base made it, Commander.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   },
+   {
+    "at": 261789,
+    "act": "explore",
+    "speaker": "engineer",
+    "to": "judge",
+    "text": "See the real Mars? Look at me and tap.",
+    "via": "llm",
+    "cached": true,
+    "ms": 0
+   }
+  ]
+ }
+]
