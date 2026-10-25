@@ -70,7 +70,7 @@ const kindOf = (o: { id: string; leverId?: string; actions: { type: string }[] }
 export class Show {
   act: Act = "title";
   active = false;
-  private title: { text: string; style: "black" | "window" | "end" } | null = null;
+  private title: { text: string; style: "black" | "window" | "end"; sub?: string } | null = null;
   private cue: Cue = null;
   private crew: Record<CrewId, CrewState> = Show.initialCrew();
   private speaking: { seq: number; speaker: CrewId; to: To; text: string; holdMs: number; via: "llm" | "rules" } | null = null;
@@ -143,8 +143,15 @@ export class Show {
     this.host.notify();
   }
 
+  /** The title card states the stake before anything happens: Earth is too far away to help in time. */
   private openingTitle() {
-    return { text: `JEZERO CRATER, MARS · SOL ${this.world.sol(this.world.start)}`, style: "black" as const };
+    let sub: string | undefined;
+    try {
+      sub = `Any answer from Earth takes ${Math.round((2 * this.orch.engine.remoteLatencyMs) / 60_000)} minutes. The crew is on its own.`;
+    } catch {
+      // the engine isn't ready yet
+    }
+    return { text: `JEZERO CRATER, MARS · SOL ${this.world.sol(this.world.start)}`, style: "black" as const, ...(sub ? { sub } : {}) };
   }
 
   private at(ms: number, fn: () => void): void {
@@ -174,16 +181,16 @@ export class Show {
     this.unsub = this.orch.on((m) => this.onMessage(m));
     this.set({ act: "title", title: this.openingTitle(), cue: null });
     // Act 1: outside.
-    this.at(3000, () => this.set({ act: "outside", title: null }));
-    this.at(5000, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars. The crew keeps the base alive: power, air, water.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
+    this.at(5000, () => this.set({ act: "outside", title: null }));
+    this.at(6500, () => this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Greet the commander, who just stepped out onto Mars. The crew keeps the base alive: power, air, water.", facts: "All systems normal.", target: "Welcome, Commander. The crew has the base." }));
     this.at(9500, () =>
       this.line({
         speaker: "science", actor: "science", to: "judge", intent: "You're grinding into ancient river-delta rock with your arm. Ask if they want a closer look.", target: "Grinding into ancient delta rock. Want a closer look?",
         onStart: () => { this.set({ cue: "science" }); this.at(9000, () => { if (this.cue === "science") this.set({ cue: null }); }); },
       }),
     );
-    this.at(12_000, () => this.orch.scheduleAll(this.world.beatDelivery(this.orch.engine)));
-    this.at(23_500, () => {
+    this.at(13_500, () => this.orch.scheduleAll(this.world.beatDelivery(this.orch.engine)));
+    this.at(25_000, () => {
       this.crewSet("engineer", { lookAt: "rim", mood: "worried" });
       this.stormStarted = true;
       this.stormRealAt = Date.now();
@@ -212,7 +219,8 @@ export class Show {
       this.at(1500, () => this.line({ speaker: "life", actor: "life", to: "judge", intent: "Welcome the commander back inside. The air is fresh.", facts: "Oxygen 99%. Air quality good.", target: "Welcome back, Commander. Air's fresh." }));
       // The crates come back: Supply tells Rules it paid only for what arrived, and Rules signs off a quiet day.
       this.at(3000, () => this.line({ speaker: "supply", actor: "money", to: "rules", intent: "Tell Rules you paid only for the crates that actually arrived.", facts: "The filter invoice was paid for the delivered crates only.", target: "We only paid for the crates that came." }));
-      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Praise Supply for catching the missing crates, then tell the commander it is otherwise a quiet day.", facts: "No open flags. No pending payments.", target: "Good catch. Otherwise, a quiet day." }));
+      // Rules says what it is for (the judge never learned it otherwise).
+      this.at(3200, () => this.line({ speaker: "rules", actor: "rules", to: "judge", intent: "Introduce yourself to the commander: you check every payment before any money leaves the base.", facts: "Rules approves every payment and checks every supplier. Nothing is flagged today.", target: "I check every payment before money leaves." }));
       this.at(11_000, () => this.crisis());
     });
     return "entering the base";
@@ -225,8 +233,8 @@ export class Show {
     this.orch.scheduleAll(this.world.raiseBatteryNeed(this.orch.engine));
     const facts = this.powerFacts();
     this.line({ speaker: "life", actor: "life", to: "engineer", intent: "The storm is cutting solar power. The oxygen makers need it.", facts, target: "Power's dropping. The oxygen makers need it." });
-    this.line({ speaker: "engineer", actor: "engineer", to: "life", intent: "There isn't enough power to run air, the ice drill and the lab together.", facts, target: "We can't run air, drill, and lab." });
-    this.line({ speaker: "life", actor: "life", to: "engineer", gapMs: 1000, intent: "Push back: air always comes first.", facts, target: "Air comes first. Always." });
+    // One cause, one ask: the Engineer can't run everything, so Supply has to find batteries (which is why Supply speaks next).
+    this.line({ speaker: "engineer", actor: "engineer", to: "supply", intent: "There isn't enough power to run everything. Tell Supply to find batteries, fast.", facts, target: "We can't run everything. Supply, find batteries. Fast." });
   }
 
   private onMessage(m: OrchestratorMessage): void {
@@ -298,7 +306,8 @@ export class Show {
         if (esc.to !== "local_authority" || esc.subject.kind !== "requisition" || esc.subject.id !== this.batteryReq || this.decision) break;
         this.buildDecision(esc);
         this.line({
-          speaker: "rules", actor: "rules", to: "judge", gapMs: 1500, intent: "Earth can't answer before the power runs short. Ask the commander what the base should give up.", target: "We can't wait, Commander. What do we give up?",
+          // The two plots meet here: blocking the scam means no batteries before Earth answers, so something has to go.
+          speaker: "rules", actor: "rules", to: "judge", gapMs: 1500, intent: "Because you blocked the scam, there are no batteries before Earth answers. Ask the commander what the base gives up.", facts: "The scam batteries are blocked. Earth's answer comes after the power runs short.", target: "Without those batteries, something has to go. Your call.",
           onStart: () => {
             this.crewSet("rules", { approach: true, lookAt: "judge" });
             for (const c of ["engineer", "life", "science", "supply"] as CrewId[]) this.crewSet(c, { lookAt: "judge" });
@@ -500,8 +509,9 @@ export class Show {
   private closingLine(): void {
     if (this.closed) return;
     this.closed = true;
+    // The Engineer closes the survival story (Rules already said the scam part; the lock is on the Money screen).
     this.line({
-      speaker: "rules", actor: "rules", to: "judge", intent: "You've locked the scam supplier. The base is safe.", target: "Supplier blocked. The base is safe, Commander.",
+      speaker: "engineer", actor: "engineer", to: "judge", intent: "The storm is thinning and power is coming back. Tell the commander the base made it.", facts: "The storm is thinning. Power is recovering. The scam supplier is locked.", target: "Storm's passing. We made it, Commander.",
       onStart: () => {
         this.crewSet("rules", { mood: "calm", approach: false });
         this.stormEnded = true;
@@ -519,7 +529,7 @@ export class Show {
     this.at(8000, () => {
       this.set({ act: "explore", title: null });
       for (const c of Object.keys(this.crew) as CrewId[]) this.crewSet(c, { lookAt: null, mood: "calm" });
-      this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Offer to show the commander where the crew really is.", target: "Want to see where we really are?", onStart: () => this.set({ cue: "engineer" }) });
+      this.line({ speaker: "engineer", actor: "engineer", to: "judge", intent: "Offer to show the commander the real Mars: look at you and tap.", target: "Want to see the real Mars? Look at me, tap.", onStart: () => this.set({ cue: "engineer" }) });
     });
   }
 
@@ -651,6 +661,31 @@ export class Show {
 
   // ---------------------------------------------------------------- what clients read
 
+  /** The flagged battery quote, for a screen, from the moment Supply mentions it (the facts went by too fast spoken). */
+  private quoteFields(): Record<string, unknown> | null {
+    if (!this.batteryReq || !this.quoteSaid) return null;
+    const eng = this.orch.engine;
+    for (const q of eng.quotes.values()) {
+      if (q.requisitionId !== this.batteryReq) continue;
+      const failed = new Set(eng.quoteRules(q).filter((r) => !r.ok).map((r) => r.rule));
+      const pc = eng.priceCheck(q.vendorId, q.sku, q.unitPrice);
+      const newAccount = failed.has("vendor.bank_matches_master");
+      if (!newAccount && !pc.anomalous) continue;
+      const qty = Math.min(q.qtyAvailable, eng.requisitions.get(this.batteryReq)?.qty ?? q.qtyAvailable);
+      return {
+        vendor: eng.vendors.get(q.vendorId)?.name ?? q.vendorId,
+        qty,
+        unit: compact(q.unitPrice),
+        normal: pc.ratio > 0 ? compact(Math.round(q.unitPrice / pc.ratio)) : null,
+        ratio: Number(pc.ratio.toFixed(1)),
+        total: compact(q.unitPrice * qty),
+        newAccount,
+        status: this.earthAnswered ? "scam" : "checking",
+      };
+    }
+    return null;
+  }
+
   vrFields(): Record<string, unknown> {
     const w = this.world;
     const now = this.orch.engine.now;
@@ -678,8 +713,8 @@ export class Show {
         closeupOpen: this.closeupOpen,
         reality: this.act === "explore" ? { offer: true, on: this.realityOn, caption: "This is real Mars. The base isn't built yet.", credit: "Perseverance Mastcam-Z, sols 53-64, Van Zyl Overlook. NASA/JPL-Caltech/ASU/MSSS" } : null,
       },
-      world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust },
-      decision: this.decision && (this.act === "decision" || this.act === "consequence") ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy }) => ({ id, label, icon, speaker, proposedBy })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
+      world: { power: { socPct: Math.round(t.socPct), level, panels: beforeCrisis ? 1 : base.power.panels }, life: base.life, lab: base.lab, drill: base.drill, tau: base.tau, alarm, dust, quote: this.quoteFields() },
+      decision: this.decision && (this.act === "decision" || this.act === "consequence") ? { id: this.decision.id, kind: this.decision.kind, options: this.decision.options.map(({ id, label, icon, speaker, proposedBy, tradeoffTarget }) => ({ id, label, icon, speaker, proposedBy, cost: tradeoffTarget.replace(/\.$/, "") })), gazed: this.decision.gazed, chosen: this.decision.chosen } : null,
       moneyExtra: { savedBig: this.savedBig, incoming: this.incoming },
     };
   }

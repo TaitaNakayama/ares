@@ -32,8 +32,8 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 
 | t | What happens | Speaker → to | Target line |
 |---|---|---|---|
-| 0:00 | Black. Title "JEZERO CRATER, MARS · SOL 214". Wind. | | |
-| 0:03 | Fade in on the real Jezero terrain. Ahead: the base. Left: the cargo lander. Right: the solar field and the ice drill. | | |
+| 0:00 | Black. Title "JEZERO CRATER, MARS · SOL 214", and under it (round 3) "Any answer from Earth takes 25 minutes. The crew is on its own." (the stake, before anything happens; the number is the real round-trip light time). Wind. | | |
+| 0:05 | Fade in on the real Jezero terrain. Ahead: the base. Left: the cargo lander. Right: the solar field and the ice drill. | | |
 | 0:05 | Engineer floats up beside the judge. | engineer → judge | "Welcome, Commander. The crew has the base." [7 / 0] |
 | 0:10 | Science grinds a rock with its arm, dust puffing. **Cue: Science** (glows; tap = the real Perseverance stereo image in 3D for ~5 s with its caption, then back; the next line waits while it's open). | science → judge | "Grinding into ancient delta rock. Want a closer look?" [9 / 0] |
 | 0:20 | Supply at the lander scans crates (hologram 34/36). Beat 1 runs: delivery 34 of 36, invoice bills 36. | supply → judge | "Two crates missing. I won't pay for those." [8 / 1] |
@@ -48,17 +48,16 @@ Every target line below was checked against rule 2 (words / numbers in brackets)
 | 0:40 | The door seals. Warm light, soft hum, plants under grow lights, glowing screens, the storm through the window. The two agents not met yet are mid-task and glance up. | | |
 | 0:42 | Life at the oxygen machine by the plants. | life → judge | "Welcome back, Commander. Air's fresh." [5 / 0] |
 | 0:46 | Supply by the crates, the crates come back. | supply → rules | "We only paid for the crates that came." [8 / 0] |
-| 0:47 | Rules at the main console. | rules → judge | "Good catch. Otherwise, a quiet day." [5 / 0] (round 2: replaces "Quiet day. Nothing suspicious." so the missing crates resolve) |
+| 0:47 | Rules at the main console introduces its job (round 3: the round-2 judge never learned what Rules is for). | rules → judge | "I check every payment before money leaves." [7 / 0] |
 | ~0:50 | The storm hits: window dark brown, panels outside fade, the Power screen drops into red, a low alarm. The need for batteries is raised. | life → engineer | "Power's dropping. The oxygen makers need it." [7 / 0] |
-| | | engineer → life | "We can't run air, drill, and lab." [7 / 0] |
-| | Pushback (round 2). | life → engineer | "Air comes first. Always." [4 / 0] |
-| | Quotes arrive (Supply records them). | supply → rules | "I found batteries on Earth." [5 / 0] |
+| | One cause, one ask (round 3: replaces two lines of talk with no visible effect). | engineer → supply | "We can't run everything. Supply, find batteries. Fast." [8 / 0] |
+| | Quotes arrive (Supply records them). From here the Quote screen shows the flagged quote: supplier, 12 × price, 3× normal, NEW BANK ACCOUNT, total, "checking with Earth" (round 3). | supply → rules | "I found batteries on Earth." [5 / 0] |
 | | Quick question (round 2). | rules → supply | "Who's selling them?" [3 / 0] |
 | | The usual supplier's quote is flagged: price ≈ 3x history. | supply → rules | "Our usual supplier. Triple the normal price." [7 / 1] |
 | | Same quote: bank details differ from the master. | supply → rules | "And they want payment to a new account." [8 / 0] |
 | | Rules turns red, eyes narrow; requests verification. | rules → supply | "That's a scam. Payment blocked." [5 / 0] |
 | | | rules → judge | "I've asked Earth to check. That takes 25 minutes." [9 / 1] (the number is the real round-trip light time for the scene's date, rounded) |
-| | Held beat (1.5 s). Rules floats toward the judge; the others turn to face them. Rules escalates with its options. | rules → judge | "We can't wait, Commander. What do we give up?" [9 / 0] |
+| | Held beat (1.5 s). Rules floats toward the judge; the others turn to face them. Rules escalates with its options. The line ties the scam to the decision (round 3). | rules → judge | "Without those batteries, something has to go. Your call." [9 / 0] |
 
 ## Act 3: The decision (~40 s)
 
@@ -77,11 +76,11 @@ Then:
 | Window text "25 MINUTES LATER" (time-lapse to Earth's reply). | | |
 | Earth's answer arrives: the bank change was fake. The Money screen shows one big number: the amount saved. | rules → judge | "Earth confirms it. That account was a scam." [8 / 0] |
 | The payoff stands alone on the window for ~4 s (round 2): "SCAM BLOCKED · $1.4M SAVED". | | |
-| Rules locks the supplier. | rules → judge | "Supplier blocked. The base is safe, Commander." [7 / 0] |
+| Rules locks the supplier (shown on the Money and Quote screens). The Engineer closes the survival story (round 3: the round-2 Rules line repeated the scam line). | engineer → judge | "Storm's passing. We made it, Commander." [6 / 0] |
 | The storm thins. End card over the window: "An AI crew that keeps a Mars base alive. And knows when to ask you." | | |
 
 ## Act 4: Optional explore
-- engineer → judge: "Want to see where we really are?" [7 / 0]. **Cue: Engineer.** Tap: the base, crew and props fade into the real Perseverance panorama. Caption: "This is real Mars. The base isn't built yet." plus the credit (Mastcam-Z, sols 53-64, Van Zyl Overlook; NASA/JPL-Caltech/ASU/MSSS). Tap again to come back.
+- engineer → judge: "Want to see the real Mars? Look at me, tap." [9 / 0] (round 3: says how). **Cue: Engineer.** Tap: the base, crew and props fade into the real Perseverance panorama. Caption: "This is real Mars. The base isn't built yet." plus the credit (Mastcam-Z, sols 53-64, Van Zyl Overlook; NASA/JPL-Caltech/ASU/MSSS). Tap again to come back.
 - Then free exploration: look at any robot and press to ask what it's doing (live, under the same text rules); the stereo view at Science; markers.
 - The console stays (freeform events and presets, scorecard, policy editor, trace, safe mode). Presets and freeform events now reach Life and Science when relevant (the pump → Life; an injury → Life; a lab or sample problem → Science; a supplier failing → Rules/Supply).
 
@@ -117,7 +116,8 @@ Then:
   "scene": {
     "act": "title" | "outside" | "entering" | "inside" | "crisis" | "decision" | "consequence" | "later" | "resolved" | "explore",
     "part": "outside" | "inside",                      // legacy, kept in sync
-    "title": { "text": "JEZERO CRATER, MARS · SOL 214", "style": "black" | "window" | "end" } | null,
+    "title": { "text": "JEZERO CRATER, MARS · SOL 214", "style": "black" | "window" | "end",
+               "sub": "Any answer from Earth takes 25 minutes. The crew is on its own." /* optional second line (round 3) */ } | null,
     "cue": "science" | "door" | "card" | "engineer" | null,   // the one glowing thing to look at
     "closeupOpen": false,                              // the server knows the stereo view is open (lines wait)
     "reality": { "offer": true, "caption": "This is real Mars. The base isn't built yet.", "credit": "…" } | null
@@ -127,11 +127,14 @@ Then:
     "life": { "o2Pct": 98, "waterDays": 9 },
     "lab": "on" | "paused",
     "drill": "on" | "off",
-    "tau": 4.6, "alarm": false, "dust": 0.0-1.0       // dust = window darkness / storm thickness (thins at the end)
+    "tau": 4.6, "alarm": false, "dust": 0.0-1.0,      // dust = window darkness / storm thickness (thins at the end)
+    "quote": { "vendor": "Meridian Power Systems", "qty": 12, "unit": "$114k", "normal": "$38k", "ratio": 3,
+               "total": "$1.4M", "newAccount": true, "status": "checking" | "scam" } | null   // round 3: the flagged quote, from Supply's first mention
   },
   "decision": { "id": "ESC-0001",
                 "options": [ { "id": "lever-drill_off", "label": "Shut down the drill", "icon": "drill" | "flask" | "battery",
-                               "speaker": "life", "proposedBy": "Rules" | null } ],
+                               "speaker": "life", "proposedBy": "Rules" | null,
+                               "cost": "No new water for a while" } ],   // round 3: the tradeoff, printed on the option
                 "gazed": "lever-drill_off" | null, "chosen": null } | null,
   "money": { /* legacy */ "savedBig": "$1.4M" | null, "incoming": { "label": "6 batteries", "eta": "next cargo" } | null }
 }
