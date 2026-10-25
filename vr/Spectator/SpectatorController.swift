@@ -22,7 +22,9 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private var mode: BadgeView.Mode = .replay
   private var lastReplay: Bool?
   /// `--director`: the spectator camera follows the story (the speaker, the cue, the decision card) instead of a mouse or a drift.
-  private let directorArg = CommandLine.arguments.contains("--director")
+  private let directorArg = CommandLine.arguments.contains("--director") || CommandLine.arguments.contains("--director-only")
+  /// `--director-only`: the director camera even while a headset is live (review captures with the phone on the desk).
+  private let directorOnly = CommandLine.arguments.contains("--director-only")
   /// Shared with the render thread: where the director wants to look (world heading in radians, ring convention: 0 = -Z, right positive; pitch in degrees), nil = straight ahead.
   private var directorOn = false
   private var directorAim: (heading: Float, pitch: Float)?
@@ -189,7 +191,7 @@ final class SpectatorController: NSViewController, SCNSceneRendererDelegate {
   private func tick() {
     let now = CACurrentMediaTime()
     lastTick = now
-    let live = pose.isLive(now: now)
+    let live = !directorOnly && pose.isLive(now: now)
     #if DEBUG
     let newMode: BadgeView.Mode = live ? .live : (directorArg ? .director : .mouse)
     let replay = !live && !link.isConnectedToServer
