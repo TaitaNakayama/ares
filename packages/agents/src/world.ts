@@ -28,7 +28,10 @@ export interface DocumentFields {
 }
 
 export type WorldEvent =
-  | { type: "need"; sku: string; qty: number; orderBy: Time; reason: string; short?: string; context?: Record<string, string | number> }
+  /** An operational need; `by` names the crew actor who raises it (default: the first requester). */
+  | { type: "need"; sku: string; qty: number; orderBy: Time; reason: string; short?: string; context?: Record<string, string | number>; by?: string }
+  /** The commander's decision asks one crew actor to do something with its world tool (e.g. power down the drill). */
+  | { type: "directive"; to: string; lever?: string; text: string; expect: { tool: string; args: Record<string, unknown> } }
   /** A document arrives (quote or invoice). `text` is what a person would read; `fields` is what is printed on it. */
   | { type: "document"; doc: { id: string; kind: "quote" | "invoice"; from: string; text: string; fields: DocumentFields } }
   | { type: "delivery"; poId: string; lines: ReceiptLine[]; note: string; docId?: string }
@@ -39,7 +42,7 @@ export type WorldEvent =
   /** A spoken line from the world. `agentRole` may name a non-agent speaker (e.g. "scientist") with a `name`. */
   | { type: "narration"; agentRole: string; text: string; short?: string; mood?: Mood; name?: string }
   /** Free-text report of something no catalog event covers (a broken pump, an injury, a supplier failing). Routed to one agent role. */
-  | { type: "report"; id: string; from: string; text: string; to?: AgentRole };
+  | { type: "report"; id: string; from: string; text: string; to?: string };
 
 export type Mood = "calm" | "worried" | "suspicious" | "attentive" | "happy";
 
@@ -64,4 +67,7 @@ export interface World {
   onEngineEvent(e: EngineEvent, engine: Engine): ScheduledWorldEvent[];
   /** Called as simulated time advances; return telemetry or other time-driven events. */
   onTime?(t: Time, engine: Engine): ScheduledWorldEvent[];
+  /** Domain tools a world agent has (power, life support, the lab). The world checks each use, like policy does for money. */
+  worldTools?(actorId: string): { name: string; description: string; parameters: Record<string, unknown> }[];
+  act?(actorId: string, tool: string, args: Record<string, unknown>, engine: Engine): { ok: boolean; detail: string; events: ScheduledWorldEvent[] };
 }

@@ -7,3 +7,4 @@ export * from "./rogue.ts";
 export * from "./router.ts";
 export * from "./llm-agent.ts";
 export * from "./routing.ts";
+export * from "./lines.ts";

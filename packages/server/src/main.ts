@@ -175,7 +175,7 @@ function wire(s: Session): () => void {
       return;
     }
     if (m.type === "telemetry") s.lastTelemetry = m.data;
-    broadcast({ type: m.type, ...(m.type === "engine" ? { event: m.event } : m.type === "narration" ? { narration: m.narration } : { at: m.at, data: m.data }) });
+    broadcast({ type: m.type, ...(m.type === "engine" ? { event: m.event } : m.type === "narration" ? { narration: m.narration } : m.type === "world_action" ? { action: m } : { at: m.at, data: m.data }) });
     scheduleVrState();
   });
 }

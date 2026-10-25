@@ -122,15 +122,17 @@ describe("LlmBrain", () => {
 describe("checkLine", () => {
   const facts = "Quote Q-1 from V-tharsis: 222128799 cents/unit (3.02x median). Cash 500000000 cents.";
   it("accepts numbers in any of the forms a person would say them", () => {
-    expect(checkLine("Tharsis wants $2,221,287.99 per unit, 3.02x the usual.", facts)).toBe("ok");
-    expect(checkLine("That's $2.2M a unit against $5.0M cash.", facts)).toBe("ok");
+    expect(checkLine("Tharsis wants $2,221,287.99 per unit.", facts)).toBe("ok");
+    expect(checkLine("That's $2.2M a unit.", facts)).toBe("ok");
+    expect(checkLine("That's $2.2M a unit against $5.0M cash.", facts)).toMatch(/2 numbers/);
   });
   it("rejects invented numbers, ids, markdown and out-of-character text", () => {
     expect(checkLine("We saved $88.9M today.", facts)).toMatch(/number/);
     expect(checkLine("Rejecting Q-7.", facts)).toMatch(/id Q-7/);
     expect(checkLine("**Bold** claim", facts)).toBe("markdown");
     expect(checkLine("As an AI language model I can't.", facts)).toBe("out of character");
-    expect(checkLine("x".repeat(170), facts)).toBe("too long");
+    expect(checkLine("word ".repeat(12), facts)).toMatch(/12 words/);
+    expect(checkLine("Payment blocked; asking Earth.", facts)).toBe("semicolon");
   });
 });
 
